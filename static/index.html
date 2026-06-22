@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PilotRH — Gestion RH intelligente · Industrie textile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --ink:#1a1d29; --ink-2:#232838; --ink-3:#2e3447;
+  --ivory:#f6f3ec; --surface:#ffffff; --surface-2:#fbf9f4;
+  --gold:#c19a3e; --gold-soft:#e9dcb6; --gold-line:#d8c489;
+  --thread:#b1432d;
+  --text:#1f2330; --muted:#6c7180; --faint:#9aa0ad;
+  --line:#e7e1d4; --line-2:#efebe0;
+  --present:#2f8f5b; --present-bg:#e6f3ec;
+  --late:#c9871f; --late-bg:#fbf0d9;
+  --absent:#bf3f2b; --absent-bg:#f9e4df;
+  --leave:#4f66c2; --leave-bg:#e7ebfa;
+  --mission:#7d5fa8; --mission-bg:#efe8f6;
+  --radius:14px; --radius-sm:9px;
+  --shadow:0 1px 2px rgba(26,29,41,.04),0 8px 24px -12px rgba(26,29,41,.12);
+  --shadow-lg:0 24px 60px -20px rgba(26,29,41,.32);
+  --sans:'Inter',system-ui,sans-serif;
+  --display:'Fraunces',Georgia,serif;
+  --mono:'JetBrains Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:var(--sans);background:var(--ivory);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select,textarea{font-family:inherit;font-size:14px;color:var(--text)}
+a{color:inherit}
+::selection{background:var(--gold-soft)}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#cfc9bb;border-radius:6px}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ---------- App shell ---------- */
+.app{display:grid;grid-template-columns:248px 1fr;height:100vh;overflow:hidden}
+
+/* Sidebar */
+.side{background:var(--ink);color:#cdd1dc;display:flex;flex-direction:column;overflow:hidden}
+.brand{padding:22px 20px 18px;border-bottom:1px solid rgba(255,255,255,.06)}
+.brand .mark{display:flex;align-items:center;gap:11px}
+.brand .glyph{width:34px;height:34px;border-radius:9px;background:linear-gradient(150deg,var(--gold),#9d7a2c);display:grid;place-items:center;flex:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
+.brand .glyph svg{width:19px;height:19px}
+.brand .name{font-family:var(--display);font-weight:600;font-size:19px;color:#fff;letter-spacing:.2px;line-height:1}
+.brand .sub{font-size:10.5px;color:#8087a0;letter-spacing:.14em;text-transform:uppercase;margin-top:4px}
+.nav{flex:1;overflow-y:auto;padding:12px 12px 18px}
+.nav-group{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#6a718c;padding:14px 12px 7px;font-weight:600}
+.nav-item{display:flex;align-items:center;gap:11px;width:100%;padding:9px 12px;border-radius:9px;color:#aeb4c6;font-size:13.5px;font-weight:500;position:relative;transition:.15s;text-align:left}
+.nav-item svg{width:17px;height:17px;flex:none;opacity:.85}
+.nav-item:hover{background:rgba(255,255,255,.05);color:#e7eaf2}
+.nav-item.active{background:var(--ink-3);color:#fff}
+.nav-item.active::before{content:"";position:absolute;left:-12px;top:8px;bottom:8px;width:3px;border-radius:3px;background:repeating-linear-gradient(180deg,var(--gold) 0 4px,transparent 4px 7px)}
+.nav-item .pill{margin-left:auto;font-size:10.5px;background:var(--thread);color:#fff;border-radius:20px;padding:1px 7px;font-weight:600;font-family:var(--mono)}
+.nav-item.active .pill{background:var(--gold)}
+.side-foot{padding:14px;border-top:1px solid rgba(255,255,255,.06)}
+.role-box{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:10px;background:rgba(255,255,255,.04)}
+.role-box .av{width:30px;height:30px;border-radius:8px;background:var(--gold);color:var(--ink);display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+.role-box .who{font-size:12.5px;color:#e7eaf2;font-weight:600;line-height:1.2}
+.role-box .who small{display:block;font-weight:400;color:#8087a0;font-size:10.5px;margin-top:1px}
+
+/* Main */
+.main{overflow-y:auto;position:relative}
+.topbar{position:sticky;top:0;z-index:30;background:rgba(246,243,236,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:15px 30px;display:flex;align-items:center;gap:18px}
+.topbar h1{font-family:var(--display);font-weight:600;font-size:21px;letter-spacing:.1px}
+.topbar .crumb{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);font-weight:600;margin-bottom:2px}
+.topbar .spacer{flex:1}
+.searchbox{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 12px;width:240px}
+.searchbox input{border:none;outline:none;background:none;width:100%}
+.searchbox svg{width:15px;height:15px;color:var(--faint)}
+.date-chip{font-family:var(--mono);font-size:12px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:8px 12px;white-space:nowrap}
+.icon-btn{width:38px;height:38px;border-radius:10px;background:var(--surface);border:1px solid var(--line);display:grid;place-items:center;position:relative}
+.icon-btn svg{width:17px;height:17px;color:var(--muted)}
+.icon-btn .dot{position:absolute;top:8px;right:8px;width:7px;height:7px;border-radius:50%;background:var(--thread);box-shadow:0 0 0 2px var(--ivory)}
+.page{padding:26px 30px 60px;max-width:1320px}
+.view{display:none}
+.view.active{display:block;animation:fade .3s ease}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* Generic bits */
+.eyebrow{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);font-weight:600}
+.section-h{display:flex;align-items:flex-end;gap:14px;margin:6px 0 18px}
+.section-h h2{font-family:var(--display);font-size:24px;font-weight:600}
+.section-h .seam{flex:1;height:1px;background:repeating-linear-gradient(90deg,var(--gold-line) 0 7px,transparent 7px 13px);opacity:.6;margin-bottom:8px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.grid{display:grid;gap:16px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border-radius:10px;font-weight:600;font-size:13px;transition:.15s;border:1px solid transparent;white-space:nowrap}
+.btn svg{width:16px;height:16px}
+.btn-primary{background:var(--ink);color:#fff}
+.btn-primary:hover{background:var(--ink-2)}
+.btn-gold{background:var(--gold);color:#241c06}
+.btn-gold:hover{background:#ab882f}
+.btn-ghost{background:var(--surface);border-color:var(--line);color:var(--text)}
+.btn-ghost:hover{border-color:var(--gold-line);background:var(--surface-2)}
+.tag{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap}
+.t-present{background:var(--present-bg);color:var(--present)}
+.t-late{background:var(--late-bg);color:var(--late)}
+.t-absent{background:var(--absent-bg);color:var(--absent)}
+.t-leave{background:var(--leave-bg);color:var(--leave)}
+.t-mission{background:var(--mission-bg);color:var(--mission)}
+.t-neutral{background:#eee9dd;color:var(--muted)}
+.dotmark{width:7px;height:7px;border-radius:50%;display:inline-block}
+
+/* KPI cards */
+.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin-bottom:22px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:15px 16px;position:relative;overflow:hidden}
+.kpi .lab{font-size:11.5px;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:6px}
+.kpi .val{font-family:var(--display);font-size:30px;font-weight:600;margin-top:7px;line-height:1}
+.kpi .sub{font-size:11px;color:var(--faint);margin-top:5px}
+.kpi .ic{position:absolute;top:13px;right:13px;width:30px;height:30px;border-radius:9px;display:grid;place-items:center}
+.kpi .ic svg{width:16px;height:16px}
+
+/* Tables */
+.tablecard{overflow:hidden}
+.table-head{display:flex;align-items:center;gap:12px;padding:15px 18px;border-bottom:1px solid var(--line)}
+.table-head h3{font-size:15px;font-weight:700}
+.table-head .spacer{flex:1}
+table.tbl{width:100%;border-collapse:collapse}
+table.tbl th{text-align:left;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);font-weight:600;padding:11px 18px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;white-space:nowrap}
+table.tbl th:hover{color:var(--gold)}
+table.tbl th .arr{opacity:.4;font-size:9px}
+table.tbl td{padding:12px 18px;border-bottom:1px solid var(--line-2);font-size:13px;vertical-align:middle}
+table.tbl tr:last-child td{border-bottom:none}
+table.tbl tbody tr{transition:background .12s}
+table.tbl tbody tr:hover{background:var(--surface-2)}
+.emp-cell{display:flex;align-items:center;gap:10px}
+.emp-cell .ava{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;font-weight:700;font-size:12px;color:#fff;flex:none}
+.emp-cell b{font-weight:600;font-size:13px}
+.emp-cell small{display:block;color:var(--muted);font-size:11px}
+.mono{font-family:var(--mono)}
+.linkish{color:var(--gold);font-weight:600;cursor:pointer}
+.linkish:hover{text-decoration:underline}
+
+/* Filter bar */
+.filterbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:16px}
+.field{display:flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:7px 11px}
+.field svg{width:15px;height:15px;color:var(--faint)}
+.field input,.field select{border:none;outline:none;background:none;font-size:13px;min-width:120px}
+.field label{font-size:11px;color:var(--muted);font-weight:600}
+
+/* Two-col layouts */
+.split{display:grid;grid-template-columns:1.6fr 1fr;gap:16px}
+.chartcard{padding:16px 18px 18px}
+.chartcard h3{font-size:14px;font-weight:700;margin-bottom:2px}
+.chartcard .csub{font-size:11.5px;color:var(--muted);margin-bottom:12px}
+.chart-wrap{position:relative;height:240px}
+.chart-wrap.sm{height:200px}
+
+/* Modal */
+.overlay{position:fixed;inset:0;background:rgba(26,29,41,.5);backdrop-filter:blur(3px);z-index:100;display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto}
+.overlay.open{display:flex}
+.modal{background:var(--surface);border-radius:18px;width:100%;max-width:760px;box-shadow:var(--shadow-lg);animation:pop .24s ease;overflow:hidden}
+.modal.wide{max-width:920px}
+.modal.narrow{max-width:520px}
+@keyframes pop{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
+.modal-head{padding:20px 24px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px}
+.modal-head h3{font-family:var(--display);font-size:20px;font-weight:600}
+.modal-head .x{margin-left:auto;width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:var(--muted)}
+.modal-head .x:hover{background:var(--surface-2);color:var(--text)}
+.modal-body{padding:22px 24px;max-height:70vh;overflow-y:auto}
+.modal-foot{padding:16px 24px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;background:var(--surface-2)}
+
+/* Employee profile */
+.profile-top{display:flex;gap:18px;align-items:center;margin-bottom:20px}
+.profile-top .big-av{width:74px;height:74px;border-radius:16px;display:grid;place-items:center;font-weight:700;font-size:26px;color:#fff;flex:none}
+.profile-top h2{font-family:var(--display);font-size:24px;font-weight:600}
+.profile-top .meta{color:var(--muted);font-size:13px;margin-top:3px}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 26px}
+.info-block{margin-bottom:18px}
+.info-block h4{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);font-weight:600;margin-bottom:10px;padding-bottom:7px;border-bottom:1px dashed var(--gold-line)}
+.info-row{display:flex;justify-content:space-between;gap:14px;padding:5px 0;font-size:13px}
+.info-row span{color:var(--muted)}
+.info-row b{font-weight:600;text-align:right}
+.doc-chip{display:inline-flex;align-items:center;gap:7px;background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:12px;margin:0 7px 7px 0}
+.doc-chip svg{width:14px;height:14px;color:var(--gold)}
+
+/* Alerts */
+.alert-row{display:flex;align-items:center;gap:13px;padding:13px 18px;border-bottom:1px solid var(--line-2)}
+.alert-row:last-child{border-bottom:none}
+.alert-row .ai{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;flex:none}
+.alert-row .ai svg{width:17px;height:17px}
+.alert-row .txt b{font-weight:600;font-size:13.5px}
+.alert-row .txt small{display:block;color:var(--muted);font-size:12px;margin-top:1px}
+.alert-row .when{margin-left:auto;font-size:11.5px;color:var(--faint);font-family:var(--mono);white-space:nowrap}
+
+/* Import dropzone */
+.dropzone{border:2px dashed var(--gold-line);border-radius:16px;background:var(--surface-2);padding:40px;text-align:center;transition:.18s}
+.dropzone.drag{background:var(--gold-soft);border-color:var(--gold)}
+.dropzone .dz-ic{width:54px;height:54px;border-radius:14px;background:var(--gold-soft);display:grid;place-items:center;margin:0 auto 14px}
+.dropzone .dz-ic svg{width:26px;height:26px;color:var(--gold)}
+.dropzone h3{font-family:var(--display);font-size:19px;font-weight:600;margin-bottom:5px}
+.dropzone p{color:var(--muted);font-size:13px;margin-bottom:16px}
+
+/* AI assistant */
+.ai-wrap{display:grid;grid-template-columns:1fr;gap:0;height:calc(100vh - 220px);min-height:440px;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--surface)}
+.ai-stream{flex:1;overflow-y:auto;padding:22px 24px}
+.ai-msg{display:flex;gap:12px;margin-bottom:18px;max-width:760px}
+.ai-msg .b-av{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;flex:none;font-weight:700;font-size:12px}
+.ai-msg.user{margin-left:auto;flex-direction:row-reverse}
+.ai-msg.user .b-av{background:var(--ink);color:#fff}
+.ai-msg.bot .b-av{background:linear-gradient(150deg,var(--gold),#9d7a2c);color:#241c06}
+.ai-bubble{background:var(--surface-2);border:1px solid var(--line);border-radius:13px;padding:12px 15px;font-size:13.5px;line-height:1.55}
+.ai-msg.user .ai-bubble{background:var(--ink);color:#eef0f6;border-color:transparent}
+.ai-bubble p{margin:0 0 8px}.ai-bubble p:last-child{margin:0}
+.ai-bubble strong{font-weight:600}
+.ai-bubble ul{margin:6px 0 6px 18px}
+.ai-input{border-top:1px solid var(--line);padding:14px 18px;display:flex;gap:10px;align-items:flex-end;background:var(--surface)}
+.ai-input textarea{flex:1;border:1px solid var(--line);border-radius:12px;padding:11px 13px;resize:none;outline:none;max-height:120px;background:var(--surface-2)}
+.ai-input textarea:focus{border-color:var(--gold-line)}
+.suggest{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.suggest button{font-size:12px;background:var(--surface-2);border:1px solid var(--line);border-radius:20px;padding:7px 13px;color:var(--text);font-weight:500;transition:.15s}
+.suggest button:hover{border-color:var(--gold-line);background:var(--gold-soft)}
+.typing{display:inline-flex;gap:4px;align-items:center}
+.typing span{width:6px;height:6px;border-radius:50%;background:var(--gold);animation:bnce 1s infinite}
+.typing span:nth-child(2){animation-delay:.15s}.typing span:nth-child(3){animation-delay:.3s}
+@keyframes bnce{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-5px);opacity:1}}
+
+/* RSE */
+.rse-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+.rse-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;position:relative}
+.rse-card .rl{font-size:11.5px;color:var(--muted);font-weight:600}
+.rse-card .rv{font-family:var(--display);font-size:32px;font-weight:600;margin:8px 0 4px}
+.rse-card .rb{height:6px;border-radius:6px;background:var(--line);overflow:hidden;margin-top:8px}
+.rse-card .rb i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--gold),var(--gold-line))}
+.progress-note{font-size:11px;color:var(--faint);margin-top:6px}
+
+/* Toast */
+.toast-wrap{position:fixed;bottom:24px;right:24px;z-index:200;display:flex;flex-direction:column;gap:10px}
+.toast{background:var(--ink);color:#fff;padding:13px 17px;border-radius:12px;box-shadow:var(--shadow-lg);font-size:13px;font-weight:500;display:flex;align-items:center;gap:10px;animation:slidein .3s ease;max-width:340px}
+.toast svg{width:17px;height:17px;flex:none}
+.toast.ok svg{color:#5fd49a}.toast.warn svg{color:var(--gold)}
+@keyframes slidein{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+
+/* OCR result */
+.ocr-line{display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.ocr-line span{color:var(--muted)}.ocr-line b{font-weight:600}
+.scan-anim{height:4px;background:linear-gradient(90deg,transparent,var(--gold),transparent);border-radius:4px;animation:scan 1.3s linear infinite}
+@keyframes scan{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+
+.empty{text-align:center;padding:46px 20px;color:var(--muted)}
+.empty svg{width:40px;height:40px;color:var(--gold-line);margin-bottom:12px}
+.mini-bar{display:flex;gap:3px;align-items:flex-end;height:30px}
+.mini-bar i{flex:1;background:var(--gold-soft);border-radius:2px;min-height:3px}
+
+@media(max-width:1100px){.kpis{grid-template-columns:repeat(3,1fr)}.rse-grid{grid-template-columns:repeat(2,1fr)}.split{grid-template-columns:1fr}}
+@media(max-width:860px){.app{grid-template-columns:1fr}.side{display:none}.page{padding:18px}.kpis{grid-template-columns:repeat(2,1fr)}.info-grid{grid-template-columns:1fr}.searchbox{display:none}}
+/* Day navigation + segments */
+.daynav{display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:5px}
+.daynav button{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;color:var(--muted)}
+.daynav button:hover{background:var(--surface-2);color:var(--text)}
+.daynav input[type=date]{border:none;outline:none;background:none;font-weight:600;font-family:var(--mono);font-size:13px;padding:0 4px}
+.seg{display:inline-flex;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
+.seg button{padding:6px 13px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.seg button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.tinput{border:1px solid var(--line);border-radius:7px;padding:5px 7px;font-family:var(--mono);font-size:12.5px;width:84px;outline:none;background:var(--surface)}
+.tinput:focus{border-color:var(--gold-line)}
+.ssel{border:1px solid var(--line);border-radius:7px;padding:5px 7px;font-size:12px;outline:none;background:var(--surface)}
+.cat-tag{font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:5px}
+.cat-ouv{background:#eef3e9;color:#5a6b2f}.cat-cad{background:#efe8f6;color:var(--mission)}
+.rep-tot td{background:var(--surface-2);font-weight:700;border-top:2px solid var(--line)}
+.hist-line{display:grid;grid-template-columns:90px 1fr auto;gap:12px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--line);font-size:12.5px}
+.hist-line .hd{font-family:var(--mono);color:var(--muted)}
+.range-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:16px}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+<div class="overlay" id="overlay"></div>
+<div class="toast-wrap" id="toasts"></div>
+<script>
+/* ============================================================
+   PilotRH v2 — RH intelligente · Industrie textile · DBS Fashion
+   Pointage journalier + paramètres horaires + rapports paie
+   ============================================================ */
+
+const I = {
+  grid:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>',
+  clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.5"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 5.2a3.5 3.5 0 0 1 0 6.6"/><path d="M21 20c0-2.5-1.6-4.7-4-5.6"/></svg>',
+  doc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg>',
+  calx:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/><path d="M9.5 14.5l5 3M14.5 14.5l-5 3"/></svg>',
+  late:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M5 4 8 6M19 4l-3 2"/></svg>',
+  cal:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>',
+  report:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3h11l3 3v15a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M8 12v5M12 9v8M16 13v4"/></svg>',
+  bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 19a2 2 0 0 0 4 0"/></svg>',
+  leaf:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 20a7 7 0 0 1-7-7c0-5 5-9 16-9 0 8-4 13-9 13z"/><path d="M4 20c4-5 7-7 12-9"/></svg>',
+  spark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.8 4.8L18 9.5l-4.2 1.7L12 16l-1.8-4.8L6 9.5l4.2-1.7z"/><path d="M19 14l.7 1.9L21.5 17l-1.8.7L19 19.5l-.7-1.8L16.5 17l1.8-.6z"/></svg>',
+  shield:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>',
+  search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+  up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V6M5 12l7-7 7 7"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
+  x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  send:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg>',
+  cloud:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 18a4 4 0 0 1-.5-7.97A6 6 0 0 1 18 9a4 4 0 0 1 .5 8.97"/><path d="M12 12v6M9 15l3-3 3 3"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>',
+  warn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>',
+  download:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg>',
+  filter:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>',
+  cake:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21h16M5 21v-6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6"/><path d="M12 8V5M9 6V4M15 6V4M4 16c2 0 2 1.5 4 1.5S12 16 12 16s2 1.5 4 1.5S20 16 20 16"/></svg>',
+  briefcase:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+  heart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20s-7-4.4-9.5-9C1 8 2.5 4.5 6 4.5c2 0 3.2 1.2 4 2.5.8-1.3 2-2.5 4-2.5 3.5 0 5 3.5 3.5 6.5C19 15.6 12 20 12 20z"/></svg>',
+  scissors:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M8.5 8 20 19M8.5 16 20 5"/></svg>',
+  gear:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>',
+  chevL:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>',
+  chevR:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>',
+};
+
+const SERVICES = ['Couture','Coupe','Finition','Repassage','Qualité','Méthodes','Magasin'];
+const ATELIERS = ['Atelier A','Atelier B','Atelier C'];
+const POSTES = ['Couturière piqueuse','Mécanicienne','Repasseuse','Contrôleuse qualité','Coupeuse','Finition main','Chef d\u2019atelier','Agent de méthode','Préparatrice','Magasinier'];
+const CONTRATS = ['CDI','CDD','CIVP','SIVP'];
+const CADRE_POSTES = ['Chef d\u2019atelier','Agent de méthode'];
+const AV_COLORS = ['#b1432d','#c19a3e','#2f8f5b','#4f66c2','#7d5fa8','#0d8a8a','#a8553e','#5a6b2f'];
+
+/* ---------- Utils ---------- */
+const $ = s => document.querySelector(s);
+const today = new Date('2026-06-19T08:30:00');
+const pad = n => String(n).padStart(2,'0');
+function isoOf(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
+const TODAY = isoOf(today);
+function initials(n){const p=n.trim().split(/\s+/);return ((p[0]||'')[0]||'')+((p[1]||'')[0]||'')}
+function avColor(n){let h=0;for(const c of n)h=(h*31+c.charCodeAt(0))>>>0;return AV_COLORS[h%AV_COLORS.length]}
+function age(d){const b=new Date(d);let a=today.getFullYear()-b.getFullYear();if(today.getMonth()<b.getMonth()||(today.getMonth()===b.getMonth()&&today.getDate()<b.getDate()))a--;return a}
+function anciennete(d){return (today-new Date(d))/(365.25*864e5)}
+function ancLabel(d){const y=anciennete(d);const yr=Math.floor(y);const mo=Math.round((y-yr)*12);return yr+' an'+(yr>1?'s':'')+(mo?' '+mo+' mois':'')}
+function fmtDate(d){const x=new Date(d);return pad(x.getDate())+'/'+pad(x.getMonth()+1)+'/'+x.getFullYear()}
+function fmtJour(iso){return new Date(iso+'T12:00').toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}
+function toMin(t){if(!t)return null;const[h,m]=t.split(':').map(Number);return h*60+m}
+function fromMin(m){m=Math.round(m);return pad(Math.floor(m/60)%24)+':'+pad(m%60)}
+function hDec(min){return (min/60)}
+function fr2(n){return Number(n).toFixed(2).replace('.',',')}
+function hLabel(min){const h=Math.floor(min/60),m=Math.round(min%60);return h+'h'+(m?pad(m):'')}
+function hash(s){let h=2166136261;for(const c of s)h=(h^c.charCodeAt(0))*16777619>>>0;return h}
+function toast(msg,type='ok'){const t=document.createElement('div');t.className='toast '+type;t.innerHTML=(type==='ok'?I.check:I.warn)+'<span>'+msg+'</span>';$('#toasts').appendChild(t);setTimeout(()=>{t.style.opacity=0;t.style.transform='translateX(20px)';setTimeout(()=>t.remove(),300)},3200)}
+
+/* ---------- Données ---------- */
+const SEED = [
+  ['Salma','Ben Ali','Couturière piqueuse','Couture','Atelier A','CDI','2018-03-12','1994-06-21','Mariée',2,'Bac','salma.benali@dbs.tn','22 314 008','Nabeul',980],
+  ['Rim','Trabelsi','Mécanicienne','Couture','Atelier A','CDI','2016-09-01','1990-11-03','Mariée',3,'9ème','rim.t@dbs.tn','24 778 102','Hammamet',1050],
+  ['Nour','Jlassi','Contrôleuse qualité','Qualité','Atelier A','CDI','2019-01-20','1996-02-14','Célibataire',0,'Licence','nour.j@dbs.tn','27 449 551','Beni Khiar',1120],
+  ['Ines','Gharbi','Couturière piqueuse','Couture','Atelier B','CDD','2023-04-03','2001-09-30','Célibataire',0,'Bac','ines.g@dbs.tn','29 005 720','Dar Chaabane',860],
+  ['Hela','Mbarki','Repasseuse','Repassage','Atelier B','CDI','2015-06-15','1988-04-09','Divorcée',2,'6ème','hela.m@dbs.tn','21 660 314','Nabeul',940],
+  ['Sirine','Khelifi','Finition main','Finition','Atelier B','CIVP','2024-11-04','2003-12-12','Célibataire',0,'Bac','sirine.k@dbs.tn','26 118 944','Korba',720],
+  ['Amira','Bouzid','Coupeuse','Coupe','Atelier C','CDI','2017-02-28','1992-07-18','Mariée',1,'Bac','amira.b@dbs.tn','23 887 661','Nabeul',1010],
+  ['Mariem','Saidi','Couturière piqueuse','Couture','Atelier A','CDI','2020-08-17','1998-01-25','Mariée',1,'9ème','mariem.s@dbs.tn','28 332 410','Beni Khiar',900],
+  ['Olfa','Hamdi','Chef d\u2019atelier','Couture','Atelier A','CDI','2012-05-02','1985-10-08','Mariée',2,'Maîtrise','olfa.h@dbs.tn','22 901 008','Nabeul',1680],
+  ['Wafa','Chaabane','Finition main','Finition','Atelier C','CDD','2022-10-10','1999-05-16','Célibataire',0,'Bac','wafa.c@dbs.tn','25 776 320','Maamoura',840],
+  ['Dorra','Mejri','Contrôleuse qualité','Qualité','Atelier B','CDI','2019-09-09','1995-03-22','Mariée',0,'Licence','dorra.m@dbs.tn','24 110 552','Hammamet',1140],
+  ['Sonia','Ferchichi','Repasseuse','Repassage','Atelier C','CDI','2014-11-25','1987-08-30','Veuve',3,'Primaire','sonia.f@dbs.tn','21 447 889','Nabeul',960],
+  ['Yosra','Bouaziz','Préparatrice','Coupe','Atelier C','CDI','2021-03-15','1997-11-11','Célibataire',0,'Bac','yosra.b@dbs.tn','29 663 200','Dar Chaabane',880],
+  ['Imen','Nasri','Couturière piqueuse','Couture','Atelier B','CDI','2018-07-07','1993-09-05','Mariée',2,'9ème','imen.n@dbs.tn','23 220 119','Korba',940],
+  ['Rania','Ayari','Mécanicienne','Couture','Atelier B','CDD','2023-12-01','2000-04-19','Célibataire',0,'Bac','rania.a@dbs.tn','27 008 443','Nabeul',900],
+  ['Fatma','Zaied','Couturière piqueuse','Couture','Atelier A','CDI','2013-10-14','1986-12-02','Mariée',4,'6ème','fatma.z@dbs.tn','22 556 781','Beni Khiar',1000],
+  ['Mohamed','Karoui','Agent de méthode','Méthodes','Atelier A','CDI','2016-01-11','1989-06-27','Marié',2,'Maîtrise','mohamed.k@dbs.tn','98 447 220','Nabeul',1750],
+  ['Karim','Sassi','Magasinier','Magasin','Atelier C','CDI','2020-02-03','1991-02-08','Marié',1,'Bac','karim.s@dbs.tn','98 110 663','Hammamet',1100],
+];
+function buildEmployees(){
+  return SEED.map((r,i)=>({
+    id:'E'+pad(i+1), nom:r[1], prenom:r[0], poste:r[2], service:r[3], atelier:r[4],
+    contrat:r[5], embauche:r[6], naissance:r[7], famille:r[8], enfants:r[9], niveau:r[10],
+    email:r[11], tel:r[12], adresse:r[13], salaire:r[14],
+    cin:'0'+(8000000+i*13127).toString().slice(0,7),
+    sexe:(r[0]==='Mohamed'||r[0]==='Karim')?'H':'F',
+    categorie: CADRE_POSTES.includes(r[2])?'Cadre':'Ouvrier',
+    responsable: r[2]==='Chef d\u2019atelier'?'Direction':'Olfa Hamdi',
+    actif:true,
+  }));
+}
+
+const DEFAULT_SETTINGS = {heureDebut:'07:30', toleranceRetard:15, heureFin:'16:30', graceHS:15, modeHS:'seuil', pause:30};
+const DAYS_FR=['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
+function normalizeSettings(s){
+  s=s||{};
+  if(s.modeHS===undefined)s.modeHS='fin';
+  if(!s.jours){
+    const deb=s.heureDebut||'07:30',fin=s.heureFin||'16:30',pa=(s.pause!==undefined?s.pause:30),tol=(s.toleranceRetard!==undefined?s.toleranceRetard:15),gr=(s.graceHS!==undefined?s.graceHS:15);
+    s.jours={};[1,2,3,4,5].forEach(d=>s.jours[d]={actif:true,debut:deb,fin:fin,pause:pa,tol:tol,grace:gr});
+    s.jours[6]={actif:true,debut:deb,fin:'13:00',pause:0,tol:tol,grace:gr};
+    s.jours[0]={actif:false,debut:deb,fin:fin,pause:0,tol:tol,grace:gr};
+  }
+  for(let d=0;d<7;d++){const r=s.jours[d]||{};s.jours[d]={actif:(r.actif===undefined?(d!==0):r.actif),debut:r.debut||'07:30',fin:r.fin||(d===6?'13:00':'16:30'),pause:(r.pause!==undefined?r.pause:(d===6?0:30)),tol:(r.tol!==undefined?r.tol:15),grace:(r.grace!==undefined?r.grace:15)};}
+  if(!s.periodes)s.periodes=[];
+  s.periodes.forEach(p=>{p.lunven=p.lunven||{debut:'07:00',fin:'14:00',pause:0};p.samedi=p.samedi||{actif:false,debut:'07:00',fin:'13:00',pause:0};if(p.tol===undefined)p.tol=15;if(p.grace===undefined)p.grace=15;});
+  return s;
+}
+function regimeFor(ds){
+  const s=S();const w=new Date(ds+'T12:00').getDay();
+  if(s.periodes)for(const p of s.periodes){if(p.du<=ds&&ds<=p.au){
+    if(w===0)return{actif:false};
+    if(w===6)return p.samedi&&p.samedi.actif?{actif:true,debut:p.samedi.debut,fin:p.samedi.fin,pause:+p.samedi.pause||0,tol:p.tol||15,grace:p.grace||15}:{actif:false};
+    return{actif:true,debut:p.lunven.debut,fin:p.lunven.fin,pause:+p.lunven.pause||0,tol:p.tol||15,grace:p.grace||15};
+  }}
+  return (s.jours||{})[w]||{actif:true,debut:'07:30',fin:'16:30',pause:30,tol:15,grace:15};
+}
+
+/* génère un pointage par jour ouvré entre deux dates */
+function genPointages(emps,s){
+  const out={};
+  const start=new Date('2026-05-01T12:00'), end=new Date(TODAY+'T12:00');
+  for(let d=new Date(start); d<=end; d.setDate(d.getDate()+1)){
+    if(d.getDay()===0) continue;            // dimanche repos
+    const ds=isoOf(d);
+    if(ds===TODAY) continue;                // aujourd'hui = jeu de démo dédié
+    const rec={};
+    emps.forEach(e=>{
+      const r=hash(ds+e.id)%100;
+      if(r<4){rec[e.id]={statut:'absent',entree:'',sortie:''}; return}
+      if(r<7){rec[e.id]={statut:'leave',entree:'',sortie:''}; return}
+      let em=toMin(s.heureEntree)+((hash(ds+e.id+'in')%9)-3);     // -3..+5
+      if(r>=85) em=toMin(s.heureEntree)+12+(hash(ds+e.id+'l')%30); // ~15% en retard
+      let om=toMin(s.heureSortie)+((hash(ds+e.id+'out')%7)-2);
+      if(r>=78) om=toMin(s.heureSortie)+25+(hash(ds+e.id+'hs')%70); // heures sup
+      rec[e.id]={statut:'present',entree:fromMin(em),sortie:fromMin(om)};
+    });
+    out[ds]=rec;
+  }
+  out[TODAY]=showcaseDay();
+  return out;
+}
+function showcaseDay(){
+  const p={E01:['present','07:58','16:30'],E02:['present','08:23','16:30'],E03:['present','07:51','16:30'],
+    E04:['absent','',''],E05:['present','07:46','16:30'],E06:['present','08:11','16:30'],
+    E07:['present','08:00','17:45'],E08:['leave','',''],E09:['present','07:40','16:30'],
+    E10:['mission','',''],E11:['present','07:55','16:30'],E12:['present','07:49','18:05'],
+    E13:['present','08:34','16:30'],E14:['present','07:57','16:30'],E15:['absent','',''],
+    E16:['present','08:02','16:30'],E17:['present','07:35','16:30'],E18:['autorisation','07:55','11:00']};
+  const r={};Object.entries(p).forEach(([k,v])=>r[k]={statut:v[0],entree:v[1],sortie:v[2]});return r;
+}
+
+const SEED_ABS=[['E04','Maladie','2026-06-19','2026-06-21',3,'injustifiée','En attente certificat'],['E15','Absence','2026-06-19','2026-06-19',1,'injustifiée','Non signalée'],['E05','Maladie','2026-06-08','2026-06-10',3,'justifiée','Certificat médical fourni'],['E02','Maladie','2026-05-21','2026-05-22',2,'justifiée','Certificat médical fourni'],['E07','Maladie','2026-04-15','2026-04-18',4,'justifiée','Certificat médical fourni']];
+const SEED_CONGES=[['E08','Congé annuel','2026-06-15','2026-06-26',10,'Validé'],['E03','Congé annuel','2026-07-06','2026-07-17',10,'En attente'],['E18','Autorisation de sortie','2026-06-19','2026-06-19',0.5,'Validé'],['E12','Congé sans solde','2026-07-20','2026-07-24',5,'En attente']];
+const SEED_DOCS=[['E05','Certificat médical','2026-06-08','Dr. Slim Ouni — arrêt 3 jours','IA'],['E01','Contrat CDI','2018-03-12','Contrat à durée indéterminée signé','Manuel'],['E09','Évaluation annuelle','2026-01-15','Évaluation 2025 — note 4.6/5','Manuel'],['E03','Diplôme','2019-01-20','Licence en gestion textile','IA'],['E07','Certificat médical','2026-04-15','Dr. Lamia Ben Salah — arrêt 4 jours','IA']];
+const ABS_HISTORY=[{m:'Janv.',taux:4.2},{m:'Févr.',taux:3.8},{m:'Mars',taux:5.1},{m:'Avr.',taux:4.6},{m:'Mai',taux:3.9},{m:'Juin',taux:4.4}];
+
+/* ---------- État ---------- */
+let DB={}, ROLE='Administrateur', VIEW='dashboard', SORT={}, charts={}, aiHistory=[], apiKey='';
+let PRES_DATE=TODAY;
+
+function seedDB(){
+  const emps=buildEmployees();
+  const s={...DEFAULT_SETTINGS};
+  DB={ employees:emps, settings:s, pointages:genPointages(emps,s),
+    absences:SEED_ABS.map(a=>({id:a[0],type:a[1],debut:a[2],fin:a[3],jours:a[4],statut:a[5],note:a[6]})),
+    conges:SEED_CONGES.map(c=>({id:c[0],type:c[1],debut:c[2],fin:c[3],jours:c[4],statut:c[5]})),
+    documents:SEED_DOCS.map((d,i)=>({docId:'D'+pad(i+1),id:d[0],type:d[1],date:d[2],resume:d[3],source:d[4]})) };
+}
+async function load(){
+  try{const r=await fetch('/api/state');DB=await r.json();}catch(e){DB={employees:[],settings:{...DEFAULT_SETTINGS},pointages:{},absences:[],conges:[],documents:[]}}
+  DB.settings=normalizeSettings(DB.settings);
+}
+let _saveT;function save(){clearTimeout(_saveT);_saveT=setTimeout(()=>{fetch('/api/state-meta',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({employees:DB.employees,settings:DB.settings,documents:DB.documents,conges:DB.conges,absences:DB.absences})}).catch(()=>{})},400)}
+function persistPointage(date,id){const r=(DB.pointages[date]||{})[id]||{statut:'absent',entree:'',sortie:''};fetch('/api/pointage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:date,id:id,statut:r.statut,entree:r.entree,sortie:r.sortie,qui:ROLE})}).catch(()=>{});}
+function persistDay(date){const recs=DB.pointages[date]||{};fetch('/api/day',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:date,recs:recs})}).catch(()=>{});}
+function persistAll(){fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(DB)}).catch(()=>{});}
+async function loadAudit(){try{const r=await fetch('/api/audit?limit=40');const rows=await r.json();const tb=document.getElementById('auditBody');if(tb)tb.innerHTML=rows.map(a=>`<tr><td><b>${a.qui}</b></td><td style="color:var(--muted)">${a.action}</td><td class="mono" style="font-size:12px">${(a.ts||'').replace('T',' ')}</td></tr>`).join('')||'<tr><td colspan="3"><div class="empty">Aucune entrée</div></td></tr>';}catch(e){}}
+async function resetDB(){if(confirm('Recharger les données depuis le serveur (annule les modifications non enregistrées) ?')){await load();render();toast('Données rechargées')}}
+
+const S=()=>DB.settings;
+const emp=id=>DB.employees.find(e=>e.id===id)||{prenom:'?',nom:'',service:'',poste:'',categorie:'Ouvrier'};
+const empName=id=>{const e=emp(id);return e.prenom+' '+e.nom};
+const isCadre=id=>emp(id).categorie==='Cadre';
+
+/* enregistrement de pointage d'une journée */
+function dayRec(date){return DB.pointages[date]||null}
+function empRec(date,id){const r=dayRec(date);return (r&&r[id])||{statut:'absent',entree:'',sortie:''}}
+
+/* métriques dérivées selon paramètres horaires */
+function metrics(rec,date){
+  const reg=regimeFor(date||TODAY);
+  if(!rec||rec.statut==='absent')return{statut:'absent',worked:false,heures:0,retard:0,hs:0,late:false};
+  if(['leave','mission'].includes(rec.statut)&&!rec.entree)return{statut:rec.statut,worked:false,heures:0,retard:0,hs:0,late:false};
+  const e=toMin(rec.entree),o=toMin(rec.sortie);
+  let heures=0,retard=0,hs=0,late=false;
+  if(e!=null){
+    if(reg.actif===false){                   // jour normalement chômé, travaillé exceptionnellement
+      if(o!=null){hs=Math.max(0,o-e-(+reg.pause||0));}
+    } else {
+      const debut=toMin(reg.debut),fin=toMin(reg.fin),grace=+reg.grace||0,tol=+reg.tol||0,pause=+reg.pause||0;
+      late=e>debut+tol; retard=late?(e-debut):0;
+      if(o!=null){
+        const effIn=Math.max(e,debut),effOut=Math.min(o,fin);
+        let norm=Math.max(0,effOut-effIn); if(norm>pause)norm-=pause; heures=norm;
+        if(o>=fin+grace){hs=(S().modeHS==='fin')?(o-fin):(o-(fin+grace));} hs=Math.max(0,hs);
+      }
+    }
+  }
+  let statut=rec.statut==='present'?(late?'late':'present'):rec.statut;
+  return{statut,worked:true,heures,retard,hs,late};
+}
+
+/* ---------- composants ---------- */
+function avatar(id,sz){const e=emp(id);const n=e.prenom+' '+e.nom;return `<span class="ava" style="width:${sz}px;height:${sz}px;background:${avColor(n)}">${initials(n)}</span>`}
+function empCell(id){const e=emp(id);return `<div class="emp-cell" onclick="openProfile('${id}')" style="cursor:pointer"><span class="ava" style="background:${avColor(e.prenom+' '+e.nom)}">${initials(e.prenom+' '+e.nom)}</span><div><b>${e.prenom} ${e.nom}</b><small>${e.poste} · ${e.categorie}</small></div></div>`}
+const STATUT_TAG={present:['t-present','Présente'],late:['t-late','En retard'],absent:['t-absent','Absente'],leave:['t-leave','En congé'],mission:['t-mission','En mission'],autorisation:['t-leave','Autorisation']};
+function statutTag(s){const[c,l]=STATUT_TAG[s]||['t-neutral',s];return `<span class="tag ${c}">${l}</span>`}
+function catTag(c){return `<span class="cat-tag ${c==='Cadre'?'cat-cad':'cat-ouv'}">${c==='Cadre'?'Cadre · jour':'Ouvrier · heure'}</span>`}
+
+/* ============================================================ NAV ============= */
+const NAV=[
+  {grp:'Pilotage'},{v:'dashboard',ic:I.grid,t:'Tableau de bord'},{v:'presences',ic:I.clock,t:'Présences'},{v:'rapports',ic:I.report,t:'Rapports & paie'},
+  {grp:'Personnel'},{v:'personnel',ic:I.users,t:'Personnel'},{v:'documents',ic:I.doc,t:'Documents'},{v:'absences',ic:I.calx,t:'Absences'},{v:'retards',ic:I.late,t:'Retards'},{v:'conges',ic:I.cal,t:'Congés & sorties'},
+  {grp:'Intelligence'},{v:'alertes',ic:I.bell,t:'Alertes'},{v:'rse',ic:I.leaf,t:'RSE & bien-être'},{v:'assistant',ic:I.spark,t:'Assistant IA'},
+  {grp:'Système'},{v:'parametres',ic:I.shield,t:'Sécurité & accès'},
+];
+function alertCount(){return computeAlerts().length}
+function todayProblems(){const r=dayRec(TODAY);if(!r)return 0;let n=0;DB.employees.forEach(e=>{const m=metrics(r[e.id]);if(m.statut==='late'||m.statut==='absent')n++});return n}
+function shell(){
+  const nav=NAV.map(n=>{
+    if(n.grp)return `<div class="nav-group">${n.grp}</div>`;
+    const pill=n.v==='alertes'?`<span class="pill">${alertCount()}</span>`:(n.v==='presences'?`<span class="pill">${todayProblems()}</span>`:'');
+    return `<button class="nav-item ${VIEW===n.v?'active':''}" onclick="go('${n.v}')">${n.ic}<span>${n.t}</span>${pill}</button>`;
+  }).join('');
+  return `<aside class="side"><div class="brand"><div class="mark"><div class="glyph">${I.scissors}</div><div><div class="name">PilotRH</div><div class="sub">DBS Fashion</div></div></div></div>
+    <nav class="nav">${nav}</nav>
+    <div class="side-foot"><div class="role-box"><div class="av">${initials(ROLE)}</div><div class="who">${ROLE}<small>Session active</small></div></div></div></aside>
+    <main class="main" id="main"></main>`;
+}
+function topbar(crumb,title,actions=''){
+  return `<div class="topbar"><div><div class="crumb">${crumb}</div><h1>${title}</h1></div><div class="spacer"></div>
+    <div class="searchbox">${I.search}<input placeholder="Rechercher…" oninput="quickSearch(this.value)"></div>
+    <div class="date-chip">${today.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'long'})}</div>
+    <button class="icon-btn" onclick="go('alertes')">${I.bell}${alertCount()?'<span class="dot"></span>':''}</button>${actions}</div>`;
+}
+function go(v){VIEW=v;render()}
+function render(){
+  $('#app').innerHTML=shell();
+  ({dashboard:renderDashboard,presences:renderPresences,rapports:renderRapports,personnel:renderPersonnel,documents:renderDocuments,absences:renderAbsences,retards:renderRetards,conges:renderConges,alertes:renderAlertes,rse:renderRSE,assistant:renderAssistant,parametres:renderParametres}[VIEW]||renderDashboard)($('#main'));
+}
+
+/* ============================================================ DASHBOARD ====== */
+function counts(date){const r=dayRec(date)||{};const c={present:0,late:0,absent:0,leave:0,mission:0,autorisation:0};
+  DB.employees.forEach(e=>{const m=metrics(r[e.id],date);if(c[m.statut]!==undefined)c[m.statut]++});return c}
+function renderDashboard(m){
+  const c=counts(TODAY),tot=DB.employees.length,presentTot=c.present+c.late+c.autorisation;
+  m.innerHTML=topbar('Pilotage RH','Tableau de bord')+`<div class="page view active">
+    <div class="kpis">
+      ${kpi('Effectif total',tot,'employées inscrites',I.users,'var(--ink)','#eee9dd')}
+      ${kpi('Présentes',presentTot,Math.round(presentTot/tot*100)+'% de l\u2019effectif',I.check,'var(--present)','var(--present-bg)')}
+      ${kpi('En retard',c.late,'à traiter ce matin',I.late,'var(--late)','var(--late-bg)')}
+      ${kpi('Absentes',c.absent,'pointages manquants',I.warn,'var(--absent)','var(--absent-bg)')}
+      ${kpi('En congé',c.leave,'congés validés',I.cal,'var(--leave)','var(--leave-bg)')}
+      ${kpi('En mission',c.mission,'hors site',I.briefcase,'var(--mission)','var(--mission-bg)')}
+    </div>
+    <div class="split" style="margin-bottom:16px">
+      <div class="card chartcard"><h3>Évolution de l\u2019absentéisme</h3><div class="csub">Taux mensuel — 6 derniers mois</div><div class="chart-wrap"><canvas id="cAbs"></canvas></div></div>
+      <div class="card chartcard"><h3>Répartition par service</h3><div class="csub">Effectif par atelier</div><div class="chart-wrap"><canvas id="cServ"></canvas></div></div>
+    </div>
+    <div class="split">
+      <div class="card tablecard"><div class="table-head">${I.clock}<h3>À traiter aujourd\u2019hui</h3><div class="spacer"></div><span class="linkish" onclick="go('presences')">Présences →</span></div>${miniMoves()}</div>
+      <div class="card tablecard"><div class="table-head">${I.bell}<h3>Alertes prioritaires</h3><div class="spacer"></div><span class="linkish" onclick="go('alertes')">Tout voir →</span></div>${computeAlerts().slice(0,4).map(alertRow).join('')||'<div class="empty">Aucune alerte</div>'}</div>
+    </div></div>`;
+  drawAbs();drawServ();
+}
+function kpi(l,v,s,ic,col,bg){return `<div class="kpi"><div class="ic" style="background:${bg};color:${col}">${ic}</div><div class="lab">${l}</div><div class="val">${v}</div><div class="sub">${s}</div></div>`}
+function miniMoves(){
+  const r=dayRec(TODAY)||{};const rows=[];
+  DB.employees.forEach(e=>{const m=metrics(r[e.id]);if(m.statut==='late'||m.statut==='absent')rows.push({id:e.id,m,rec:r[e.id]})});
+  if(!rows.length)return '<div class="empty">Rien à signaler ✓</div>';
+  return '<table class="tbl"><tbody>'+rows.slice(0,5).map(x=>{
+    const d=x.m.statut==='late'?('Arrivée '+x.rec.entree+' · +'+x.m.retard+' min'):'Pointage manquant';
+    return `<tr><td>${empCell(x.id)}</td><td>${statutTag(x.m.statut)}</td><td style="color:var(--muted);font-size:12px">${d}</td></tr>`}).join('')+'</tbody></table>';
+}
+
+/* ============================================================ PRÉSENCES ====== */
+function shiftDay(n){const d=new Date(PRES_DATE+'T12:00');d.setDate(d.getDate()+n);PRES_DATE=isoOf(d);renderPresences($('#main'))}
+function setDay(v){if(v)PRES_DATE=v;renderPresences($('#main'))}
+function renderPresences(m){
+  const exists=!!dayRec(PRES_DATE);
+  const c=exists?counts(PRES_DATE):null;
+  m.innerHTML=topbar('Suivi quotidien','Présences',
+    `<button class="icon-btn" title="Paramètres horaires" onclick="openSettings()">${I.gear}</button>
+     <button class="btn btn-ghost" onclick="syncNow()">${I.cloud} Synchroniser</button>
+     <button class="btn btn-ghost" onclick="pdfDailyFor(PRES_DATE)">${I.download} PDF du jour</button>
+     <button class="btn btn-gold" onclick="openImport()">${I.cloud} Importer pointage</button>`)+`<div class="page view active">
+    <div class="range-bar">
+      <div class="daynav"><button onclick="shiftDay(-1)">${I.chevL}</button><input type="date" value="${PRES_DATE}" onchange="setDay(this.value)"><button onclick="shiftDay(1)">${I.chevR}</button></div>
+      <button class="btn btn-ghost" onclick="setDay('${TODAY}')">Aujourd\u2019hui</button>
+      <div style="flex:1"></div>
+      <div class="date-chip" style="text-transform:capitalize">${fmtJour(PRES_DATE)}</div>
+    </div>`;
+  if(!exists){
+    m.querySelector('.page').innerHTML+=`<div class="card"><div class="empty">${I.cal}<div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px">Journée non créée</div>
+      <div style="margin-bottom:16px">Aucun pointage pour le ${fmtDate(PRES_DATE)}. Créez la journée puis saisissez ou importez les pointages.</div>
+      <button class="btn btn-gold" onclick="createDay()">${I.plus} Créer la journée</button></div></div></div>`;
+    return;
+  }
+  m.querySelector('.page').innerHTML+=`
+    <div class="kpis" style="grid-template-columns:repeat(6,1fr)">
+      ${miniKpi('Présentes',c.present,'var(--present)')}${miniKpi('Retards',c.late,'var(--late)')}${miniKpi('Absentes',c.absent,'var(--absent)')}
+      ${miniKpi('Congé',c.leave,'var(--leave)')}${miniKpi('Mission',c.mission,'var(--mission)')}${miniKpi('Autoris.',c.autorisation,'var(--leave)')}
+    </div>
+    <div class="card tablecard">
+      <div class="table-head">${I.clock}<h3>Feuille de pointage — saisie à la main</h3><div class="spacer"></div>
+        <div class="field">${I.filter}<select id="fStatut" onchange="fillPres()"><option value="">Tous statuts</option><option value="present">Présentes</option><option value="late">Retards</option><option value="absent">Absentes</option><option value="leave">Congé</option></select></div>
+        <div class="field"><label>Service</label><select id="fServ" onchange="fillPres()"><option value="">Tous</option>${SERVICES.map(s=>`<option>${s}</option>`).join('')}</select></div>
+        <div class="field"><label>Atelier</label><select id="fAtel" onchange="fillPres()"><option value="">Tous</option>${ATELIERS.map(s=>`<option>${s}</option>`).join('')}</select></div>
+        <div class="field">${I.search}<input id="fQ" placeholder="Nom…" oninput="fillPres()"></div>
+      </div>
+      <table class="tbl"><thead><tr><th onclick="sortBy('pres','name')">Employée</th><th>Cat.</th><th>Statut</th><th onclick="sortBy('pres','in')">Entrée</th><th>Sortie</th><th onclick="sortBy('pres','h')">Heures</th><th onclick="sortBy('pres','ret')">Retard</th><th onclick="sortBy('pres','hs')">H. sup.</th></tr></thead><tbody id="presBody"></tbody></table>
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--muted)">Modifiez directement les heures et le statut ci-dessus — les heures travaillées, retards et heures supplémentaires se recalculent automatiquement selon vos paramètres horaires (début ${S().heureDebut} · fin ${S().heureFin} · tolérance ${S().toleranceRetard} min · délai H.sup ${S().graceHS} min).</div>
+    </div>`;
+  fillPres();
+}
+function miniKpi(l,v,col){return `<div class="kpi"><div class="lab" style="color:${col}"><span class="dotmark" style="background:${col}"></span>${l}</div><div class="val">${v}</div></div>`}
+function fillPres(){
+  const f=($('#fStatut')||{}).value||'',sv=($('#fServ')||{}).value||'',at=($('#fAtel')||{}).value||'',q=(($('#fQ')||{}).value||'').toLowerCase();
+  const r=dayRec(PRES_DATE)||{};
+  let rows=DB.employees.map(e=>({e,rec:r[e.id]||{statut:'absent',entree:'',sortie:''},m:metrics(r[e.id],PRES_DATE)}))
+    .filter(x=>(!f||x.m.statut===f)&&(!sv||x.e.service===sv)&&(!at||x.e.atelier===at)&&(!q||(x.e.prenom+' '+x.e.nom).toLowerCase().includes(q)));
+  if(SORT.pres){const s=SORT.pres;rows=[...rows].sort((a,b)=>{let va,vb;
+    if(s.k==='name'){va=a.e.nom;vb=b.e.nom}else if(s.k==='in'){va=a.rec.entree||'99';vb=b.rec.entree||'99'}
+    else if(s.k==='h'){va=a.m.heures;vb=b.m.heures}else if(s.k==='ret'){va=a.m.retard;vb=b.m.retard}else{va=a.m.hs;vb=b.m.hs}
+    return(va>vb?1:va<vb?-1:0)*s.dir});}
+  $('#presBody').innerHTML=rows.map(x=>{
+    const {e,rec,m}=x;
+    const opts=['present','absent','leave','mission','autorisation'].map(o=>`<option value="${o}" ${rec.statut===o?'selected':''}>${{present:'Présente',absent:'Absente',leave:'Congé',mission:'Mission',autorisation:'Autorisation'}[o]}</option>`).join('');
+    const showTimes=rec.statut==='present'||rec.statut==='autorisation';
+    return `<tr>
+      <td>${empCell(e.id)}</td><td>${catTag(e.categorie)}</td>
+      <td><select class="ssel" onchange="editPres('${e.id}','statut',this.value)">${opts}</select> ${m.late?'<span class="tag t-late" style="margin-left:4px">Retard</span>':''}</td>
+      <td>${showTimes?`<input class="tinput" type="time" value="${rec.entree||''}" onchange="editPres('${e.id}','entree',this.value)">`:'<span style="color:var(--faint)">—</span>'}</td>
+      <td>${showTimes?`<input class="tinput" type="time" value="${rec.sortie||''}" onchange="editPres('${e.id}','sortie',this.value)">`:'<span style="color:var(--faint)">—</span>'}</td>
+      <td>${m.worked&&m.heures?'<b>'+hLabel(m.heures)+'</b>':'—'}</td>
+      <td>${m.retard?'<b style="color:var(--late)">+'+m.retard+' min</b>':'—'}</td>
+      <td>${m.hs?'<b style="color:var(--mission)">'+hLabel(m.hs)+'</b>':'—'}</td>
+    </tr>`;
+  }).join('');
+}
+function editPres(id,field,val){
+  if(!DB.pointages[PRES_DATE])DB.pointages[PRES_DATE]={};
+  if(!DB.pointages[PRES_DATE][id])DB.pointages[PRES_DATE][id]={statut:'absent',entree:'',sortie:''};
+  const rec=DB.pointages[PRES_DATE][id];
+  rec[field]=val;
+  if(field==='statut'&&val==='absent'){rec.entree='';rec.sortie=''}
+  if(field==='statut'&&(val==='present')&&!rec.entree){rec.entree=S().heureEntree;rec.sortie=S().heureSortie}
+  persistPointage(PRES_DATE,id);fillPres();
+}
+function createDay(){
+  const rec={};DB.employees.forEach(e=>{if(e.actif)rec[e.id]={statut:'present',entree:S().heureEntree,sortie:S().heureSortie}});
+  DB.pointages[PRES_DATE]=rec;persistDay(PRES_DATE);renderPresences($('#main'));toast('Journée du '+fmtDate(PRES_DATE)+' créée');
+}
+
+/* paramètres horaires */
+function openSettings(){
+  window._cfg=normalizeSettings(JSON.parse(JSON.stringify(S())));
+  openModal(`<div class="modal-head">${I.gear}<h3>Paramètres horaires</h3><button class="x" onclick="closeModal()">${I.x}</button></div><div class="modal-body" id="setBody"></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-gold" onclick="saveSettings()">${I.check} Enregistrer & recalculer</button></div>`,'wide');
+  renderSettings();
+}
+function renderSettings(){
+  const c=window._cfg;const order=[1,2,3,4,5,6,0];
+  const dayRow=d=>{const r=c.jours[d];const dis=r.actif?'':'disabled';return `<tr>
+    <td style="font-weight:600">${DAYS_FR[d]}</td>
+    <td><input type="checkbox" ${r.actif?'checked':''} onchange="cfgDay(${d},'actif',this.checked)"></td>
+    <td><input class="tinput" type="time" value="${r.debut}" ${dis} onchange="cfgDay(${d},'debut',this.value)"></td>
+    <td><input class="tinput" type="time" value="${r.fin}" ${dis} onchange="cfgDay(${d},'fin',this.value)"></td>
+    <td><input class="tinput" style="width:58px" type="number" value="${r.pause}" ${dis} onchange="cfgDay(${d},'pause',+this.value)"></td>
+    <td><input class="tinput" style="width:58px" type="number" value="${r.tol}" ${dis} onchange="cfgDay(${d},'tol',+this.value)"></td>
+    <td><input class="tinput" style="width:58px" type="number" value="${r.grace}" ${dis} onchange="cfgDay(${d},'grace',+this.value)"></td></tr>`;};
+  const per=c.periodes.map((p,i)=>`<div class="card" style="padding:12px 14px;margin-bottom:10px;background:var(--surface-2)">
+    <div style="display:flex;gap:9px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+      <input class="tinput" style="width:190px;font-family:var(--sans)" value="${p.nom}" onchange="cfgPer(${i},'nom',this.value)">
+      <span style="font-size:12px;color:var(--muted)">du</span><input class="tinput" type="date" value="${p.du}" onchange="cfgPer(${i},'du',this.value)">
+      <span style="font-size:12px;color:var(--muted)">au</span><input class="tinput" type="date" value="${p.au}" onchange="cfgPer(${i},'au',this.value)">
+      <button class="linkish" style="margin-left:auto;color:var(--thread)" onclick="delPeriode(${i})">Supprimer</button>
+    </div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:12.5px;align-items:center">
+      <div><b>Lun→Ven</b>&nbsp; <input class="tinput" type="time" value="${p.lunven.debut}" onchange="cfgPerReg(${i},'lunven','debut',this.value)"> → <input class="tinput" type="time" value="${p.lunven.fin}" onchange="cfgPerReg(${i},'lunven','fin',this.value)"> &nbsp;pause <input class="tinput" style="width:55px" type="number" value="${p.lunven.pause}" onchange="cfgPerReg(${i},'lunven','pause',+this.value)"></div>
+      <div><label style="font-weight:600"><input type="checkbox" ${p.samedi.actif?'checked':''} onchange="cfgPerReg(${i},'samedi','actif',this.checked)"> Samedi</label>&nbsp; <input class="tinput" type="time" value="${p.samedi.debut}" ${p.samedi.actif?'':'disabled'} onchange="cfgPerReg(${i},'samedi','debut',this.value)"> → <input class="tinput" type="time" value="${p.samedi.fin}" ${p.samedi.actif?'':'disabled'} onchange="cfgPerReg(${i},'samedi','fin',this.value)"></div>
+    </div></div>`).join('');
+  $('#setBody').innerHTML=`
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:11px;color:var(--muted);font-weight:600">Mode heures sup.</label>
+      <select class="ssel" onchange="cfgMode(this.value)"><option value="seuil" ${c.modeHS==='seuil'?'selected':''}>Mode A — à partir de fin + délai (ex. 16h45)</option><option value="fin" ${c.modeHS==='fin'?'selected':''}>Mode B — bloc depuis l’heure de fin (16h30)</option></select></div>
+    <h4 style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin:16px 0 8px;border-bottom:1px dashed var(--gold-line);padding-bottom:6px">Semaine de référence</h4>
+    <table class="tbl" style="font-size:12.5px"><thead><tr><th>Jour</th><th>Ouvré</th><th>Début</th><th>Fin</th><th>Pause</th><th>Tol.</th><th>Délai HS</th></tr></thead><tbody>${order.map(dayRow).join('')}</tbody></table>
+    <div style="display:flex;align-items:center;margin:18px 0 8px;border-bottom:1px dashed var(--gold-line);padding-bottom:6px"><h4 style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin:0">Périodes spéciales (Ramadan, été…)</h4><button class="btn btn-ghost" style="margin-left:auto;padding:4px 11px;font-size:12px" onclick="addPeriode()">${I.plus} Ajouter</button></div>
+    ${per||'<div style="color:var(--muted);font-size:12.5px;padding:4px 0">Aucune période spéciale — la semaine de référence s’applique toute l’année.</div>'}
+    <div style="margin-top:10px;font-size:11.5px;color:var(--faint)">Une période spéciale remplace la semaine de référence sur sa plage de dates (séance unique en juillet–août, Ramadan…). Tout le calcul (heures, retards, heures sup.) suit la période active à la date du pointage.</div>`;
+}
+function cfgDay(d,f,v){window._cfg.jours[d][f]=v;if(f==='actif')renderSettings();}
+function cfgMode(v){window._cfg.modeHS=v;}
+function cfgPer(i,f,v){window._cfg.periodes[i][f]=v;}
+function cfgPerReg(i,which,f,v){window._cfg.periodes[i][which][f]=v;if(f==='actif')renderSettings();}
+function addPeriode(){window._cfg.periodes.push({nom:'Nouvelle période',du:TODAY,au:TODAY,lunven:{debut:'07:00',fin:'14:00',pause:0},samedi:{actif:false,debut:'07:00',fin:'13:00',pause:0},tol:15,grace:15});renderSettings();}
+function delPeriode(i){window._cfg.periodes.splice(i,1);renderSettings();}
+function setFld(l,id,t,v,h){return `<div class="info-block" style="margin-bottom:0"><label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:5px">${l}</label><input id="${id}" type="${t}" value="${v}" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;outline:none"><div style="font-size:11px;color:var(--faint);margin-top:5px">${h}</div></div>`}
+function saveSettings(){DB.settings=window._cfg;save();closeModal();render();toast('Paramètres enregistrés · valeurs recalculées');}
+
+/* import */
+function openImport(){
+  openModal(`<div class="modal-head">${I.cloud}<h3>Importer le pointage — ${fmtDate(PRES_DATE)}</h3><button class="x" onclick="closeModal()">${I.x}</button></div>
+  <div class="modal-body">
+    <div class="dropzone" id="dz" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="dropFile(event)">
+      <div class="dz-ic">${I.cloud}</div><h3>Glissez le fichier d\u2019export</h3>
+      <p><b>.mdb</b> (base ZKTeco — lecture directe par le serveur) · ou CSV / TXT</p>
+      <input type="file" id="fileInput" accept=".csv,.txt,.xlsx,.mdb" style="display:none" onchange="handleFile(this.files[0])">
+      <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">${I.up} Choisir un fichier</button>
+    </div>
+    <div style="margin-top:16px;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:12.5px;color:var(--muted)">
+      <b style="color:var(--text)">Format attendu</b> — une ligne par pointage :<br><code class="mono" style="display:block;margin-top:6px;color:var(--text)">CIN ; Nom ; Date ; Heure_entrée ; Heure_sortie</code>
+      <div style="margin-top:8px">Rapprochement par CIN puis par nom. Retards (selon vos paramètres) et oublis détectés automatiquement.</div>
+    </div>
+    <div style="text-align:center;margin-top:16px"><button class="btn btn-ghost" onclick="simulateImport()">${I.spark} Simuler un import</button></div>
+  </div>`);
+}
+function dropFile(e){e.preventDefault();$('#dz').classList.remove('drag');if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0])}
+function normName(s){return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim()}
+function findEmp(matricule,nom){
+  let e=DB.employees.find(x=>x.cin===matricule||x.matricule===matricule||x.id===matricule);
+  if(e)return e;
+  const n=normName(nom);
+  return DB.employees.find(x=>normName(x.prenom+' '+x.nom)===n||normName(x.nom+' '+x.prenom)===n);
+}
+function normDate(s){ // accepte YYYY-MM-DD, DD/MM/YYYY, "YYYY-MM-DD HH:MM:SS"
+  if(!s)return '';s=s.trim();
+  let m=s.match(/(\d{4})-(\d{2})-(\d{2})/);if(m)return m[1]+'-'+m[2]+'-'+m[3];
+  m=s.match(/(\d{2})\/(\d{2})\/(\d{4})/);if(m)return m[3]+'-'+m[2]+'-'+m[1];
+  return '';
+}
+function normTime(s){if(!s)return '';const m=s.match(/(\d{1,2}):(\d{2})/);return m?pad(+m[1])+':'+m[2]:''}
+function handleFile(f){
+  if(!f)return;
+  if(f.name.endsWith('.mdb')){importMdb(f);return}
+  if(f.name.endsWith('.xlsx')){toast('Excel reçu — démonstration en mode CSV','warn');simulateImport();return}
+  const r=new FileReader();
+  r.onload=ev=>{
+    const lines=ev.target.result.split(/\r?\n/).filter(l=>l.trim());
+    let matched=0,late=0,miss=0;const touched=new Set();
+    lines.forEach((l,idx)=>{
+      if(idx===0&&/matricule|cin|nom|badge/i.test(l)&&!/\d{2}:\d{2}/.test(l))return;
+      const p=l.split(/[;,\t]/).map(x=>x.trim());
+      // colonnes : matricule ; nom ; date ; entrée ; sortie
+      const e=findEmp(p[0],p[1]);if(!e)return;
+      const date=normDate(p[2])||PRES_DATE;
+      const entree=normTime(p[3]),sortie=normTime(p[4]);
+      if(!DB.pointages[date])DB.pointages[date]={};
+      touched.add(date);matched++;
+      if(!entree){DB.pointages[date][e.id]={statut:'absent',entree:'',sortie:''};miss++}
+      else{const rec={statut:'present',entree,sortie:sortie||entree};DB.pointages[date][e.id]=rec;if(metrics(rec).late)late++}
+    });
+    // les employées sans ligne ce(s) jour(s) = absentes
+    touched.forEach(date=>{DB.employees.forEach(e=>{if(e.actif&&!DB.pointages[date][e.id])DB.pointages[date][e.id]={statut:'absent',entree:'',sortie:''}})});
+    if(touched.size){const ds=[...touched].sort();PRES_DATE=ds[ds.length-1]}
+    persistAll();closeModal();renderPresences($('#main'));
+    toast(matched+' pointages sur '+touched.size+' jour(s) · '+late+' retard(s), '+miss+' oubli(s)');
+  };
+  r.readAsText(f);
+}
+async function importMdb(f){
+  toast('Lecture de la base Access (.mdb) sur le serveur…');
+  const fd=new FormData();fd.append('file',f);
+  try{const r=await fetch('/api/import-mdb',{method:'POST',body:fd});if(!r.ok)throw new Error(r.status);DB=await r.json();closeModal();renderPresences($('#main'));toast('Base .mdb importée — '+DB.employees.length+' employées');}
+  catch(e){toast('Échec import .mdb ('+e.message+')','warn')}
+}
+async function uploadPhoto(id,f){
+  if(!f)return;const fd=new FormData();fd.append('file',f);
+  try{const r=await fetch('/api/employee/'+id+'/photo',{method:'POST',body:fd});const d=await r.json();emp(id).photo=d.photo;toast('Photo enregistrée');openProfile(id);}
+  catch(x){toast('Échec photo','warn')}
+}
+function simulateImport(){
+  DB.pointages[PRES_DATE]=PRES_DATE===TODAY?showcaseDay():genOneDay(PRES_DATE);
+  persistDay(PRES_DATE);closeModal();renderPresences($('#main'));const c=counts(PRES_DATE);
+  toast('Import simulé · '+c.late+' retards, '+c.absent+' absences');
+}
+function genOneDay(ds){const rec={};const s=S();DB.employees.forEach(e=>{const r=hash(ds+e.id)%100;
+  if(r<5){rec[e.id]={statut:'absent',entree:'',sortie:''};return}
+  let em=toMin(s.heureDebut)+((hash(ds+e.id)%9)-3);if(r>=85)em+=15;
+  rec[e.id]={statut:'present',entree:fromMin(em),sortie:s.heureFin}});return rec}
+
+/* ============================================================ RAPPORTS & PAIE = */
+function monthBounds(ym){const[y,mo]=ym.split('-').map(Number);return[ym+'-01',isoOf(new Date(y,mo,0))]}
+function eachDay(a,b,fn){for(let d=new Date(a+'T12:00');d<=new Date(b+'T12:00');d.setDate(d.getDate()+1))fn(isoOf(d))}
+function summarize(a,b){
+  return DB.employees.map(e=>{
+    let jT=0,jA=0,jC=0,hN=0,hS=0,ret=0,rt=0;
+    eachDay(a,b,ds=>{const rec=dayRec(ds);if(!rec||!rec[e.id])return;const m=metrics(rec[e.id],ds);
+      if(m.statut==='absent'){jA++}else if(m.statut==='leave'){jC++}
+      else{jT++;if(m.worked){hN+=m.heures;hS+=m.hs;ret+=m.retard;if(m.late)rt++}}});
+    return{e,jT,jA,jC,hN,hS,ret,rt};
+  });
+}
+let REP_FROM='2026-06-01',REP_TO=TODAY;
+function renderRapports(m){
+  m.innerHTML=topbar('Rapports & paie','Rapports & paie')+`<div class="page view active">
+    <div class="card" style="padding:16px 18px;margin-bottom:16px">
+      <div class="range-bar" style="margin:0">
+        <div class="field"><label>Du</label><input type="date" id="repFrom" value="${REP_FROM}" onchange="REP_FROM=this.value;fillRep()"></div>
+        <div class="field"><label>Au</label><input type="date" id="repTo" value="${REP_TO}" onchange="REP_TO=this.value;fillRep()"></div>
+        <div style="flex:1"></div>
+        <button class="btn btn-ghost" onclick="pdfDaily()">${I.download} PDF journalier</button>
+        <button class="btn btn-gold" onclick="pdfMonthly()">${I.download} PDF paie (mois)</button>
+        <button class="btn btn-ghost" onclick="dlMonthly()" title="Export tableur">CSV</button>
+      </div>
+    </div>
+    <div class="card tablecard">
+      <div class="table-head">${I.report}<h3>Synthèse sur la période</h3><div class="spacer"></div><span style="font-size:12px;color:var(--muted)">Ouvrières en heures · cadres en jours</span></div>
+      <table class="tbl"><thead><tr><th>Employée</th><th>Cat.</th><th>Jours trav.</th><th>Absences</th><th>Congé</th><th>H. normales</th><th>H. sup.</th><th>Retards</th><th>Base paie</th></tr></thead><tbody id="repBody"></tbody></table>
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--muted)">Le <b>rapport journalier</b> exporte le détail d\u2019une journée (entrée, sortie, heures, retard, H.sup). Le <b>rapport de paie</b> agrège le mois sélectionné : pour les ouvrières, le total d\u2019heures (normales + supplémentaires) ; pour les cadres, le nombre de jours travaillés — prêt à transmettre au comptable.</div>
+    </div>`;
+  fillRep();
+}
+function fillRep(){
+  const rows=summarize(REP_FROM,REP_TO);
+  let TjT=0,ThN=0,ThS=0,Tret=0;
+  $('#repBody').innerHTML=rows.map(r=>{
+    TjT+=r.jT;ThN+=r.hN;ThS+=r.hS;Tret+=r.ret;
+    const base=r.e.categorie==='Cadre'?`<b>${r.jT} j</b>`:`<b>${fr2(hDec(r.hN+r.hS))} h</b>`;
+    return `<tr><td>${empCell(r.e.id)}</td><td>${catTag(r.e.categorie)}</td><td>${r.jT}</td><td>${r.jA?'<b style="color:var(--absent)">'+r.jA+'</b>':'0'}</td><td>${r.jC||'0'}</td>
+      <td>${r.e.categorie==='Cadre'?'<span style="color:var(--faint)">—</span>':fr2(hDec(r.hN))+' h'}</td>
+      <td>${r.hS?'<b style="color:var(--mission)">'+fr2(hDec(r.hS))+' h</b>':'—'}</td>
+      <td>${r.ret?r.ret+' min':'—'}</td><td>${base}</td></tr>`;
+  }).join('')+`<tr class="rep-tot"><td colspan="2">TOTAL</td><td>${TjT}</td><td colspan="2"></td><td>${fr2(hDec(ThN))} h</td><td>${fr2(hDec(ThS))} h</td><td>${Tret} min</td><td></td></tr>`;
+}
+async function downloadPDF(payload,filename){
+  toast('Génération du PDF…');
+  try{const r=await fetch('/api/report/pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(!r.ok)throw new Error(r.status);const blob=await r.blob();const u=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=u;a.download=filename;a.click();toast('PDF téléchargé');}
+  catch(e){toast('Échec PDF — serveur requis ('+e.message+')','warn')}
+}
+function hcell(min){return min?fr2(hDec(min)):'0'}
+function dailySections(ds){
+  const rec=dayRec(ds)||{};const pres=[],ret=[],abs=[];
+  DB.employees.forEach(e=>{const m=metrics(rec[e.id],ds);const r=rec[e.id]||{};const mat=e.matricule||e.cin||e.id;
+    if(m.statut==='absent')abs.push([mat,e.prenom+' '+e.nom,'Absente']);
+    else if(m.statut==='leave')abs.push([mat,e.prenom+' '+e.nom,'Congé']);
+    else if(m.statut==='late')ret.push([mat,e.prenom+' '+e.nom,r.entree||'',r.sortie||'','+'+m.retard+' min',hcell(m.heures)+' h',hcell(m.hs)+' h']);
+    else pres.push([mat,e.prenom+' '+e.nom,r.entree||'',r.sortie||'',hcell(m.heures)+' h',hcell(m.hs)+' h']);
+  });
+  return [
+    {title:'Présents ('+pres.length+')',columns:['Matricule','Nom','Entrée','Sortie','Heures','H. sup.'],rows:pres},
+    {title:'Retards ('+ret.length+')',columns:['Matricule','Nom','Entrée','Sortie','Retard','Heures','H. sup.'],rows:ret},
+    {title:'Absents / Congés ('+abs.length+')',columns:['Matricule','Nom','Motif'],rows:abs},
+  ];
+}
+function pdfDailyFor(ds){downloadPDF({title:'Liste journalière des présences',subtitle:'DBS Fashion · '+fmtJour(ds),sections:dailySections(ds)},'liste_journaliere_'+ds+'.pdf')}
+function pdfDaily(){pdfDailyFor(REP_TO)}
+function pdfMonthly(){
+  const ym=REP_TO.slice(0,7);const mb=monthBounds(ym);const rows=summarize(mb[0],mb[1]).map(r=>{
+    const base=r.e.categorie==='Cadre'?(r.jT+' j'):(fr2(hDec(r.hN+r.hS))+' h');
+    return [r.e.matricule||r.e.cin||r.e.id,r.e.prenom+' '+r.e.nom,r.e.categorie,String(r.jT),String(r.jA),String(r.jC),fr2(hDec(r.hN))+' h',r.hS?fr2(hDec(r.hS))+' h':'-',r.ret?r.ret+' min':'-',base];
+  });
+  downloadPDF({title:'Rapport de paie — '+ym,subtitle:'DBS Fashion · Ouvrières en heures · Cadres en jours travaillés',
+    sections:[{title:'Synthèse mensuelle',columns:['Mat.','Nom','Cat.','J.trav','Abs','Congé','H.norm.','H.sup.','Retards','Base paie'],rows:rows}]},'rapport_paie_'+ym+'.pdf');
+}
+async function syncNow(){
+  toast('Synchronisation avec la pointeuse…');
+  try{const r=await fetch('/api/sync',{method:'POST'});const d=await r.json();
+    if(d.error){toast('Sync : '+d.error,'warn');return}
+    await load();render();toast('Synchronisé'+(d.last?' ('+d.last.replace('T',' ')+')':''));}
+  catch(e){toast('Sync indisponible','warn')}
+}
+function csvDL(name,rows){const csv=rows.map(r=>r.join(';')).join('\r\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=name;a.click();}
+function dlDaily(){
+  const ds=REP_TO,rec=dayRec(ds);
+  if(!rec){toast('Aucun pointage pour le '+fmtDate(ds),'warn');return}
+  const rows=[['Rapport journalier — DBS Fashion','',fmtDate(ds)],[],['Matricule','Nom','Catégorie','Statut','Entrée','Sortie','Heures travaillées','Retard (min)','Heures sup.']];
+  DB.employees.forEach(e=>{const m=metrics(rec[e.id]);const r=rec[e.id]||{};
+    rows.push([e.id,e.prenom+' '+e.nom,e.categorie,STATUT_TAG[m.statut][1],r.entree||'',r.sortie||'',m.heures?fr2(hDec(m.heures)):'0',m.retard||'0',m.hs?fr2(hDec(m.hs)):'0']);});
+  csvDL('rapport_journalier_'+ds+'.csv',rows);toast('Rapport journalier exporté');
+}
+function dlMonthly(){
+  const ym=REP_TO.slice(0,7);const[a,b]=monthBounds(ym);const rows0=summarize(a,b);
+  const rows=[['Rapport de paie — DBS Fashion','','Mois : '+ym],[],['Matricule','Nom','Catégorie','Base de paie','Quantité paie','Jours travaillés','Jours absents','Jours congé','Heures normales','Heures sup.','Retards (min)']];
+  rows0.forEach(r=>{const base=r.e.categorie==='Cadre'?'Jours':'Heures';const qty=r.e.categorie==='Cadre'?r.jT:fr2(hDec(r.hN+r.hS));
+    rows.push([r.e.id,r.e.prenom+' '+r.e.nom,r.e.categorie,base,qty,r.jT,r.jA,r.jC,fr2(hDec(r.hN)),fr2(hDec(r.hS)),r.ret]);});
+  csvDL('rapport_paie_'+ym+'.csv',rows);toast('Rapport de paie ('+ym+') exporté — prêt pour le comptable');
+}
+
+/* ============================================================ PERSONNEL ====== */
+function renderPersonnel(m){
+  m.innerHTML=topbar('Dossiers personnel','Personnel ('+DB.employees.length+')',`<button class="btn btn-gold" onclick="openAddEmp()">${I.plus} Nouvelle employée</button>`)+`<div class="page view active">
+    <div class="filterbar">
+      <div class="field">${I.search}<input id="pSearch" placeholder="Nom, poste…" oninput="fillPers()"></div>
+      <div class="field"><label>Service</label><select id="pServ" onchange="fillPers()"><option value="">Tous</option>${SERVICES.map(s=>`<option>${s}</option>`).join('')}</select></div>
+      <div class="field"><label>Catégorie</label><select id="pCat" onchange="fillPers()"><option value="">Toutes</option><option>Ouvrier</option><option>Cadre</option></select></div>
+      <div class="field"><label>Contrat</label><select id="pCtr" onchange="fillPers()"><option value="">Tous</option>${CONTRATS.map(s=>`<option>${s}</option>`).join('')}</select></div>
+    </div>
+    <div class="card tablecard"><table class="tbl"><thead><tr><th onclick="sortBy('pers','name')">Employée</th><th>Poste</th><th>Cat.</th><th>Atelier</th><th onclick="sortBy('pers','age')">Âge</th><th onclick="sortBy('pers','anc')">Ancienneté</th><th>Contrat</th><th></th></tr></thead><tbody id="persBody"></tbody></table></div>
+    </div>`;
+  fillPers();
+}
+function fillPers(){
+  const q=($('#pSearch')||{}).value?.toLowerCase()||'',sv=($('#pServ')||{}).value||'',ca=($('#pCat')||{}).value||'',ct=($('#pCtr')||{}).value||'';
+  let rows=DB.employees.filter(e=>((e.prenom+' '+e.nom+' '+e.poste).toLowerCase().includes(q))&&(!sv||e.service===sv)&&(!ca||e.categorie===ca)&&(!ct||e.contrat===ct));
+  if(SORT.pers){const s=SORT.pers;rows=[...rows].sort((a,b)=>{let va,vb;if(s.k==='name'){va=a.nom;vb=b.nom}else if(s.k==='age'){va=age(a.naissance);vb=age(b.naissance)}else{va=anciennete(a.embauche);vb=anciennete(b.embauche)}return(va>vb?1:va<vb?-1:0)*s.dir})}
+  $('#persBody').innerHTML=rows.map(e=>`<tr><td>${empCell(e.id)}</td><td>${e.poste}</td><td>${catTag(e.categorie)}</td><td>${e.atelier}</td><td class="mono">${age(e.naissance)} ans</td><td>${ancLabel(e.embauche)}</td><td><span class="tag ${e.contrat==='CDI'?'t-present':'t-neutral'}">${e.contrat}</span></td><td><span class="linkish" onclick="openProfile('${e.id}')">Fiche →</span></td></tr>`).join('')||'<tr><td colspan="8"><div class="empty">Aucune employée</div></td></tr>';
+}
+function openProfile(id){
+  const e=emp(id),docs=DB.documents.filter(d=>d.id===id),abs=DB.absences.filter(a=>a.id===id);
+  const ym=TODAY.slice(0,7),[a,b]=monthBounds(ym);const sum=summarize(a,b).find(s=>s.e.id===id);
+  openModal(`<div class="modal-head"><button class="x" style="margin-left:0" onclick="closeModal()">${I.x}</button><h3>Fiche signalétique</h3></div>
+  <div class="modal-body">
+    <div class="profile-top">${e.photo?`<img src="${e.photo}" class="big-av" style="object-fit:cover">`:`<div class="big-av" style="background:${avColor(e.prenom+' '+e.nom)}">${initials(e.prenom+' '+e.nom)}</div>`}
+      <div style="flex:1"><h2>${e.prenom} ${e.nom}</h2><div class="meta">${e.poste} · ${e.service} · ${e.atelier}</div>
+      <div style="margin-top:7px"><input type="file" id="photoIn" accept="image/*" style="display:none" onchange="uploadPhoto('${e.id}',this.files[0])"><button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="document.getElementById('photoIn').click()">${e.photo?'Changer la photo':'Ajouter une photo'}</button></div>
+      <div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap"><span class="tag ${e.contrat==='CDI'?'t-present':'t-neutral'}">${e.contrat}</span>${catTag(e.categorie)}<span class="tag t-neutral">Mat. ${e.id}</span><span class="tag t-neutral">${ancLabel(e.embauche)}</span></div></div></div>
+    <div class="info-grid">
+      <div class="info-block"><h4>Informations personnelles</h4>${row('CIN',e.cin)}${row('Naissance',fmtDate(e.naissance)+' ('+age(e.naissance)+' ans)')}${row('Lieu',e.adresse)}${row('Téléphone',e.tel)}${row('Email',e.email)}</div>
+      <div class="info-block"><h4>Situation familiale & sociale</h4>${row('Situation',e.famille)}${row('Enfants',e.enfants)}${row('Niveau scolaire',e.niveau)}${row('Sexe',e.sexe==='F'?'Femme':'Homme')}</div>
+      <div class="info-block"><h4>Informations professionnelles</h4>${row('Poste',e.poste)}${row('Catégorie',e.categorie+(e.categorie==='Cadre'?' (jour travaillé)':' (heures)'))}${row('Responsable',e.responsable)}${row('Embauche',fmtDate(e.embauche))}${row('Salaire',e.salaire+' TND')}</div>
+      <div class="info-block"><h4>Synthèse mois (${ym})</h4>${row('Jours travaillés',sum?sum.jT:0)}${row('Heures (norm.+sup.)',sum?fr2(hDec(sum.hN+sum.hS))+' h':'0')}${row('Retards',sum?sum.rt:0)}${row('Absences',sum?sum.jA:0)}</div>
+    </div>
+    <div class="info-block"><h4>Historique de pointage</h4>
+      <div class="range-bar" style="margin:0 0 12px"><div class="field"><label>Du</label><input type="date" id="hFrom" value="${a}" onchange="fillHist('${id}')"></div><div class="field"><label>Au</label><input type="date" id="hTo" value="${TODAY}" onchange="fillHist('${id}')"></div></div>
+      <div id="histBox"></div>
+    </div>
+    <div class="info-block"><h4>Dossier numérique</h4>${docs.map(d=>`<span class="doc-chip">${I.doc} ${d.type} <small style="color:var(--faint)">${fmtDate(d.date)}</small></span>`).join('')||'<span style="color:var(--muted);font-size:13px">Aucun document</span>'}</div>
+  </div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Fermer</button><button class="btn btn-primary" onclick="closeModal();go('documents')">${I.doc} Documents</button></div>`,'wide');
+  fillHist(id);
+}
+function fillHist(id){
+  const a=$('#hFrom').value,b=$('#hTo').value;const lines=[];
+  eachDay(a,b,ds=>{const rec=dayRec(ds);if(!rec||!rec[id])return;const m=metrics(rec[id],ds);const r=rec[id];
+    let detail;
+    if(m.statut==='absent')detail='<span class="tag t-absent">Absente</span>';
+    else if(m.statut==='leave')detail='<span class="tag t-leave">Congé</span>';
+    else if(m.statut==='mission')detail='<span class="tag t-mission">Mission</span>';
+    else detail=`${r.entree||'—'} → ${r.sortie||'—'} · <b>${hLabel(m.heures)}</b>${m.late?' · <span style="color:var(--late)">+'+m.retard+'min</span>':''}${m.hs?' · <span style="color:var(--mission)">'+hLabel(m.hs)+' sup</span>':''}`;
+    lines.push(`<div class="hist-line"><span class="hd">${fmtDate(ds)}</span><span>${detail}</span><span>${statutTag(m.statut)}</span></div>`);
+  });
+  $('#histBox').innerHTML=lines.reverse().slice(0,40).join('')||'<div style="color:var(--muted);font-size:13px;padding:8px 0">Aucun pointage sur la période.</div>';
+}
+function row(l,v){return `<div class="info-row"><span>${l}</span><b>${v}</b></div>`}
+function openAddEmp(){
+  openModal(`<div class="modal-head">${I.users}<h3>Nouvelle employée</h3><button class="x" onclick="closeModal()">${I.x}</button></div>
+  <div class="modal-body"><div class="info-grid" style="gap:14px 16px">
+    ${fld('Prénom','np')}${fld('Nom','nn')}${fld('CIN','ncin')}${fld('Téléphone','ntel')}
+    ${fldSel('Poste','npos',POSTES)}${fldSel('Catégorie','ncat',['Ouvrier','Cadre'])}
+    ${fldSel('Service','nserv',SERVICES)}${fldSel('Atelier','natel',ATELIERS)}
+    ${fldSel('Contrat','nctr',CONTRATS)}${fld('Salaire (TND)','nsal','number')}
+    ${fld('Date de naissance','nnais','date')}${fld('Date d\u2019embauche','nemb','date')}
+    ${fldSel('Situation','nfam',['Célibataire','Mariée','Divorcée','Veuve'])}${fld('Nombre d\u2019enfants','nenf','number')}
+    ${fld('Email','nmail')}
+  </div><div style="font-size:12px;color:var(--muted);margin-top:8px">La catégorie détermine le calcul de paie : <b>Ouvrier</b> = en heures · <b>Cadre</b> = en jours travaillés.</div></div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-gold" onclick="saveNewEmp()">${I.check} Créer la fiche</button></div>`,'wide');
+}
+function fld(l,id,t='text'){return `<div class="info-block" style="margin-bottom:0"><label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:5px">${l}</label><input id="${id}" type="${t}" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;outline:none"></div>`}
+function fldSel(l,id,o){return `<div class="info-block" style="margin-bottom:0"><label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:5px">${l}</label><select id="${id}" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;outline:none">${o.map(x=>`<option>${x}</option>`).join('')}</select></div>`}
+function saveNewEmp(){
+  const g=id=>($('#'+id)||{}).value||'';
+  if(!g('np')||!g('nn')){toast('Prénom et nom requis','warn');return}
+  const id='E'+pad(DB.employees.length+1);
+  DB.employees.push({id,prenom:g('np'),nom:g('nn'),poste:g('npos'),categorie:g('ncat'),service:g('nserv'),atelier:g('natel'),contrat:g('nctr'),embauche:g('nemb')||TODAY,naissance:g('nnais')||'1995-01-01',famille:g('nfam'),enfants:+g('nenf')||0,niveau:'Bac',email:g('nmail'),tel:g('ntel'),adresse:'Nabeul',salaire:+g('nsal')||800,cin:g('ncin')||'00000000',sexe:'F',responsable:'Olfa Hamdi',actif:true});
+  if(DB.pointages[TODAY])DB.pointages[TODAY][id]={statut:'present',entree:S().heureDebut,sortie:S().heureFin};
+  save();if(DB.pointages[TODAY]&&DB.pointages[TODAY][id])persistPointage(TODAY,id);closeModal();go('personnel');toast('Fiche créée pour '+g('np')+' '+g('nn'));
+}
+
+/* ============================================================ DOCUMENTS ====== */
+function renderDocuments(m){
+  m.innerHTML=topbar('Gestion documentaire','Documents & lecture IA',`<button class="btn btn-gold" onclick="openOCR()">${I.spark} Numériser</button>`)+`<div class="page view active">
+    <div class="split"><div class="card tablecard">
+      <div class="table-head">${I.doc}<h3>Dossiers numériques (${DB.documents.length})</h3><div class="spacer"></div><div class="field">${I.search}<input id="dSearch" placeholder="Type, employée…" oninput="fillDoc()"></div></div>
+      <table class="tbl"><thead><tr><th>Employée</th><th>Type</th><th>Date</th><th>Source</th><th></th></tr></thead><tbody id="docBody"></tbody></table></div>
+      <div><div class="card chartcard" style="margin-bottom:16px"><h3>Lecture automatique (OCR + IA)</h3><div class="csub" style="margin-top:6px">Scannez un certificat, contrat, CIN ou diplôme : l\u2019IA lit, identifie le type, extrait nom et dates, classe le document et met à jour l\u2019absence.</div><button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:14px" onclick="openOCR()">${I.up} Importer une image / PDF</button></div>
+      <div class="card chartcard"><h3>Répartition des documents</h3><div class="csub">Par type</div><div class="chart-wrap sm"><canvas id="cDocs"></canvas></div></div></div></div>
+    </div>`;
+  fillDoc();drawDocs();
+}
+function fillDoc(){const q=($('#dSearch')||{}).value?.toLowerCase()||'';const rows=DB.documents.filter(d=>(empName(d.id)+' '+d.type).toLowerCase().includes(q));
+  $('#docBody').innerHTML=rows.map(d=>`<tr><td>${empCell(d.id)}</td><td><b>${d.type}</b><small style="display:block;color:var(--muted);font-size:11px">${d.resume}</small></td><td class="mono">${fmtDate(d.date)}</td><td><span class="tag ${d.source==='IA'?'t-leave':'t-neutral'}">${d.source==='IA'?'Lu par IA':'Manuel'}</span></td><td><span class="linkish" onclick="openProfile('${d.id}')">Dossier →</span></td></tr>`).join('')||'<tr><td colspan="5"><div class="empty">Aucun document</div></td></tr>';
+}
+function openOCR(){
+  openModal(`<div class="modal-head">${I.spark}<h3>Numériser & analyser</h3><button class="x" onclick="closeModal()">${I.x}</button></div>
+  <div class="modal-body" id="ocrBody"><div class="dropzone" id="ocrDz" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="ocrDrop(event)">
+    <div class="dz-ic">${I.doc}</div><h3>Déposez une photo ou un PDF</h3><p>Certificat · contrat · CIN · diplôme</p>
+    <input type="file" id="ocrInput" accept="image/*,.pdf" style="display:none" onchange="ocrPick(this.files[0])">
+    <button class="btn btn-primary" onclick="document.getElementById('ocrInput').click()">${I.up} Choisir un fichier</button></div>
+    <div style="text-align:center;margin-top:14px"><button class="btn btn-ghost" onclick="ocrDemo()">${I.spark} Démonstration</button></div></div>`,'narrow');
+}
+function ocrDrop(e){e.preventDefault();$('#ocrDz').classList.remove('drag');if(e.dataTransfer.files[0])ocrPick(e.dataTransfer.files[0])}
+function ocrPick(f){if(f)runOCR(f)}
+async function runOCR(file){
+  $('#ocrBody').innerHTML=`<div style="text-align:center;padding:30px 10px"><div class="dz-ic" style="margin:0 auto 16px;background:var(--gold-soft)">${I.spark}</div><h3 style="font-family:var(--display);font-size:18px">Analyse en cours…</h3><p style="color:var(--muted);margin:8px 0 18px">Lecture OCR · extraction des informations</p><div class="scan-anim"></div></div>`;
+  try{
+    const fd=new FormData();fd.append('file',file);fd.append('names',DB.employees.map(e=>e.prenom+' '+e.nom).join(', '));
+    const r=await fetch('/api/ocr',{method:'POST',body:fd});if(!r.ok)throw new Error('OCR '+r.status);
+    const data=parseJSON((await r.json()).text);showOCR(data,true);
+  }catch(err){showOCR({type:'Document',nom:'',resume:'Lecture impossible (clé API requise hors Claude). Classez manuellement.',date_debut:'',date_fin:'',employee_match:''},false,err.message)}
+}
+function ocrDemo(){showOCR({type:'Certificat médical',nom:'Ines Gharbi',date_debut:'2026-06-19',date_fin:'2026-06-21',resume:'Arrêt de 3 jours — Dr. Slim Ouni',employee_match:'Ines Gharbi'},true)}
+function showOCR(d,ok,err){
+  const match=DB.employees.find(e=>(e.prenom+' '+e.nom)===d.employee_match)||DB.employees.find(e=>d.nom&&(e.prenom+' '+e.nom).toLowerCase().includes((d.nom||'').toLowerCase().split(' ')[0]));
+  window._ocr={d,matchId:match?match.id:''};
+  $('#ocrBody').innerHTML=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px"><span class="tag ${ok?'t-present':'t-late'}">${ok?'Analyse réussie':'Analyse partielle'}</span><span style="font-size:12px;color:var(--muted)">${err||'Informations extraites'}</span></div>
+    <div class="ocr-line"><span>Type</span><b>${d.type||'—'}</b></div><div class="ocr-line"><span>Nom détecté</span><b>${d.nom||'—'}</b></div>
+    ${d.date_debut?`<div class="ocr-line"><span>Début</span><b>${fmtDate(d.date_debut)}</b></div>`:''}${d.date_fin?`<div class="ocr-line"><span>Fin</span><b>${fmtDate(d.date_fin)}</b></div>`:''}
+    <div class="ocr-line"><span>Résumé</span><b style="max-width:60%;text-align:right">${d.resume||'—'}</b></div>
+    <div class="ocr-line"><span>Employée</span><b>${match?(match.prenom+' '+match.nom):'<span style="color:var(--late)">Non identifié</span>'}</b></div>
+    <div style="margin-top:18px;display:flex;gap:10px;justify-content:flex-end"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-gold" onclick="confirmOCR()">${I.check} Classer</button></div>`;
+}
+function confirmOCR(){
+  const{d,matchId}=window._ocr||{};if(!matchId){toast('Aucune employée associée','warn');return}
+  DB.documents.unshift({docId:'D'+pad(DB.documents.length+1),id:matchId,type:d.type,date:d.date_debut||TODAY,resume:d.resume||'Document numérisé',source:'IA'});
+  if(d.type==='Certificat médical'&&d.date_debut){const j=d.date_fin?Math.round((new Date(d.date_fin)-new Date(d.date_debut))/864e5)+1:1;
+    DB.absences.unshift({id:matchId,type:'Maladie',debut:d.date_debut,fin:d.date_fin||d.date_debut,jours:j,statut:'justifiée',note:'Certificat lu par IA'});
+    if(DB.pointages[TODAY]&&d.date_debut===TODAY)DB.pointages[TODAY][matchId]={statut:'absent',entree:'',sortie:''};
+    toast('Certificat classé · absence justifiée ('+j+'j)');}
+  else toast('Document classé · '+empName(matchId));
+  save();if(matchId&&DB.pointages[TODAY]&&DB.pointages[TODAY][matchId])persistPointage(TODAY,matchId);closeModal();go('documents');
+}
+
+/* ============================================================ ABSENCES ======= */
+function renderAbsences(m){
+  const tot=DB.absences.reduce((s,a)=>s+a.jours,0),inj=DB.absences.filter(a=>a.statut==='injustifiée').reduce((s,a)=>s+a.jours,0);
+  m.innerHTML=topbar('Suivi des absences','Absences')+`<div class="page view active">
+    <div class="kpis" style="grid-template-columns:repeat(4,1fr)">${kpi('Jours d\u2019absence',tot,'cumul',I.calx,'var(--absent)','var(--absent-bg)')}${kpi('Injustifiées',inj,'sans justificatif',I.warn,'var(--late)','var(--late-bg)')}${kpi('Taux',(tot/(DB.employees.length*125)*100).toFixed(1)+'%','absentéisme',I.calx,'var(--ink)','#eee9dd')}${kpi('Dossiers',DB.absences.length,'enregistrements',I.doc,'var(--leave)','var(--leave-bg)')}</div>
+    <div class="card tablecard"><div class="table-head">${I.calx}<h3>Historique</h3><div class="spacer"></div><div class="field">${I.filter}<select id="aFilt" onchange="fillAbs()"><option value="">Toutes</option><option value="justifiée">Justifiées</option><option value="injustifiée">Injustifiées</option></select></div></div>
+    <table class="tbl"><thead><tr><th>Employée</th><th>Type</th><th>Période</th><th>Jours</th><th>Statut</th><th>Note</th></tr></thead><tbody id="absBody"></tbody></table></div></div>`;
+  fillAbs();
+}
+function fillAbs(){const f=($('#aFilt')||{}).value||'';const rows=DB.absences.filter(a=>!f||a.statut===f);
+  $('#absBody').innerHTML=rows.map(a=>`<tr><td>${empCell(a.id)}</td><td>${a.type}</td><td class="mono">${fmtDate(a.debut)}${a.fin!==a.debut?' → '+fmtDate(a.fin):''}</td><td><b>${a.jours}</b> j</td><td><span class="tag ${a.statut==='justifiée'?'t-present':'t-absent'}">${a.statut}</span></td><td style="color:var(--muted);font-size:12px">${a.note}</td></tr>`).join('');
+}
+
+/* ============================================================ RETARDS ======== */
+function renderRetards(m){
+  const r=dayRec(TODAY)||{};const lates=[];DB.employees.forEach(e=>{const mm=metrics(r[e.id]);if(mm.statut==='late')lates.push({id:e.id,min:mm.retard,heure:r[e.id].entree})});
+  const totMin=lates.reduce((s,l)=>s+l.min,0);
+  const[a,b]=monthBounds(TODAY.slice(0,7));const rank=summarize(a,b).filter(s=>s.rt>0).sort((x,y)=>y.rt-x.rt);
+  m.innerHTML=topbar('Ponctualité','Retards')+`<div class="page view active">
+    <div class="kpis" style="grid-template-columns:repeat(4,1fr)">${kpi('Retards du jour',lates.length,'après '+S().heureDebut,I.late,'var(--late)','var(--late-bg)')}${kpi('Minutes perdues',totMin,'cumul du jour',I.clock,'var(--absent)','var(--absent-bg)')}${kpi('Retards / mois',rank.reduce((s,x)=>s+x.rt,0),'mois en cours',I.late,'var(--ink)','#eee9dd')}${kpi('Tolérance',S().toleranceRetard+' min','seuil paramétré',I.gear,'var(--gold)','var(--gold-soft)')}</div>
+    <div class="split"><div class="card tablecard"><div class="table-head">${I.late}<h3>Retards du jour</h3></div>
+      <table class="tbl"><thead><tr><th>Employée</th><th>Arrivée</th><th>Retard</th></tr></thead><tbody>${lates.length?lates.sort((x,y)=>y.min-x.min).map(l=>`<tr><td>${empCell(l.id)}</td><td class="mono">${l.heure}</td><td><b style="color:var(--late)">+${l.min} min</b></td></tr>`).join(''):'<tr><td colspan="3"><div class="empty">Aucun retard ✓</div></td></tr>'}</tbody></table></div>
+      <div class="card tablecard"><div class="table-head">${I.warn}<h3>Classement du mois</h3></div>
+      <table class="tbl"><thead><tr><th>#</th><th>Employée</th><th>Retards</th><th>Alerte</th></tr></thead><tbody>${rank.slice(0,8).map((x,i)=>`<tr><td class="mono">${i+1}</td><td>${empCell(x.e.id)}</td><td><b>${x.rt}</b></td><td>${x.rt>=3?'<span class="tag t-absent">Seuil dépassé</span>':'<span class="tag t-present">OK</span>'}</td></tr>`).join('')||'<tr><td colspan="4"><div class="empty">Aucun retard ce mois</div></td></tr>'}</tbody></table></div></div></div>`;
+}
+
+/* ============================================================ CONGÉS ========= */
+function renderConges(m){
+  const att=DB.conges.filter(c=>c.statut==='En attente').length;
+  m.innerHTML=topbar('Congés & autorisations','Congés & sorties',`<button class="btn btn-gold" onclick="openConge()">${I.plus} Nouvelle demande</button>`)+`<div class="page view active">
+    <div class="kpis" style="grid-template-columns:repeat(3,1fr)">${kpi('En attente',att,'à valider',I.cal,'var(--late)','var(--late-bg)')}${kpi('En congé aujourd\u2019hui',counts(TODAY).leave,'planifiées',I.leaf,'var(--leave)','var(--leave-bg)')}${kpi('Autorisations',DB.conges.filter(c=>c.type.includes('Autorisation')).length,'sorties',I.clock,'var(--present)','var(--present-bg)')}</div>
+    <div class="card tablecard"><div class="table-head">${I.cal}<h3>Demandes</h3></div>
+    <table class="tbl"><thead><tr><th>Employée</th><th>Type</th><th>Période</th><th>Durée</th><th>Statut</th><th></th></tr></thead><tbody>${DB.conges.map((c,i)=>`<tr><td>${empCell(c.id)}</td><td>${c.type}</td><td class="mono">${fmtDate(c.debut)}${c.fin!==c.debut?' → '+fmtDate(c.fin):''}</td><td>${c.jours} j</td><td><span class="tag ${c.statut==='Validé'?'t-present':'t-late'}">${c.statut}</span></td><td>${c.statut==='En attente'?`<span class="linkish" onclick="validConge(${i})">Valider</span>`:'—'}</td></tr>`).join('')}</tbody></table></div></div>`;
+}
+function validConge(i){DB.conges[i].statut='Validé';save();go('conges');toast('Demande validée')}
+function openConge(){openModal(`<div class="modal-head">${I.cal}<h3>Nouvelle demande</h3><button class="x" onclick="closeModal()">${I.x}</button></div><div class="modal-body"><div class="info-grid" style="gap:14px 16px">${fldSel('Employée','cgEmp',DB.employees.map(e=>e.prenom+' '+e.nom))}${fldSel('Type','cgType',['Congé annuel','Congé sans solde','Autorisation de sortie','Congé maladie'])}${fld('Du','cgD','date')}${fld('Au','cgF','date')}</div></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-gold" onclick="saveConge()">${I.check} Enregistrer</button></div>`)}
+function saveConge(){const e=DB.employees.find(x=>(x.prenom+' '+x.nom)===$('#cgEmp').value);const d=$('#cgD').value||TODAY,f=$('#cgF').value||d;const j=Math.max(1,Math.round((new Date(f)-new Date(d))/864e5)+1);DB.conges.unshift({id:e.id,type:$('#cgType').value,debut:d,fin:f,jours:j,statut:'En attente'});save();closeModal();go('conges');toast('Demande enregistrée')}
+
+/* ============================================================ ALERTES ======== */
+function computeAlerts(){
+  const al=[];DB.employees.forEach(e=>{const b=new Date(e.naissance);
+    if(b.getMonth()===today.getMonth())al.push({type:'Anniversaire',ic:I.cake,col:'var(--leave)',bg:'var(--leave-bg)',txt:e.prenom+' '+e.nom,sub:'Anniversaire le '+pad(b.getDate())+'/'+pad(b.getMonth()+1),when:'Ce mois'});
+    if(e.contrat!=='CDI'&&anciennete(e.embauche)<0.6){const fin=new Date(e.embauche);fin.setMonth(fin.getMonth()+(e.contrat.includes('IVP')?12:6));const dl=Math.round((fin-today)/864e5);if(dl>0&&dl<60)al.push({type:'Fin de période',ic:I.briefcase,col:'var(--late)',bg:'var(--late-bg)',txt:e.prenom+' '+e.nom,sub:'Fin '+e.contrat+' dans '+dl+' j',when:dl+' j'})}
+    const docs=DB.documents.filter(d=>d.id===e.id).map(d=>d.type);if(!docs.some(t=>t.includes('Contrat')))al.push({type:'Document manquant',ic:I.warn,col:'var(--absent)',bg:'var(--absent-bg)',txt:e.prenom+' '+e.nom,sub:'Contrat absent du dossier',when:'À régulariser'});
+  });
+  DB.absences.filter(a=>a.statut==='injustifiée'&&a.debut===TODAY).forEach(a=>al.push({type:'Absence injustifiée',ic:I.warn,col:'var(--absent)',bg:'var(--absent-bg)',txt:empName(a.id),sub:'Non signalée aujourd\u2019hui',when:'Aujourd\u2019hui'}));
+  return al;
+}
+function alertRow(a){return `<div class="alert-row"><div class="ai" style="background:${a.bg};color:${a.col}">${a.ic}</div><div class="txt"><b>${a.txt} — ${a.type}</b><small>${a.sub}</small></div><div class="when">${a.when}</div></div>`}
+function renderAlertes(m){
+  const al=computeAlerts(),g={};al.forEach(a=>(g[a.type]=g[a.type]||[]).push(a));
+  m.innerHTML=topbar('Notifications','Alertes intelligentes ('+al.length+')')+`<div class="page view active">
+    <div class="kpis" style="grid-template-columns:repeat(4,1fr)">${kpi('Total',al.length,'actives',I.bell,'var(--thread)','var(--absent-bg)')}${kpi('Docs manquants',(g['Document manquant']||[]).length,'dossiers',I.doc,'var(--absent)','var(--absent-bg)')}${kpi('Anniversaires',(g['Anniversaire']||[]).length,'ce mois',I.cake,'var(--leave)','var(--leave-bg)')}${kpi('Contrats',(g['Fin de période']||[]).length,'échéances',I.briefcase,'var(--late)','var(--late-bg)')}</div>
+    <div class="card tablecard"><div class="table-head">${I.bell}<h3>Toutes les alertes</h3></div>${al.length?al.map(alertRow).join(''):'<div class="empty">'+I.check+'<div>Aucune alerte</div></div>'}</div></div>`;
+}
+
+/* ============================================================ RSE ============ */
+function renderRSE(m){
+  const E=DB.employees;const ageMoy=(E.reduce((s,e)=>s+age(e.naissance),0)/E.length).toFixed(1);const ancMoy=(E.reduce((s,e)=>s+anciennete(e.embauche),0)/E.length).toFixed(1);const femP=Math.round(E.filter(e=>e.sexe==='F').length/E.length*100);const taux=(DB.absences.reduce((s,a)=>s+a.jours,0)/(E.length*125)*100).toFixed(1);const cdi=Math.round(E.filter(e=>e.contrat==='CDI').length/E.length*100);const formP=E.filter(e=>['Bac','Licence','Maîtrise'].includes(e.niveau)).length/E.length*100;
+  m.innerHTML=topbar('Responsabilité sociétale','RSE & bien-être',`<button class="btn btn-ghost" onclick="exportRSE()">${I.download} Rapport RSE</button>`)+`<div class="page view active">
+    <div class="rse-grid">${rse('Féminisation',femP+'%',femP,'Majorité féminine')}${rse('Âge moyen',ageMoy+' ans',ageMoy/60*100,'Pyramide équilibrée')}${rse('Ancienneté moyenne',ancMoy+' ans',ancMoy/15*100,'Fidélisation')}${rse('Absentéisme',taux+'%',100-taux*8,'Objectif < 5%')}${rse('Emplois CDI',cdi+'%',cdi,'Sécurité emploi')}${rse('Personnel formé',Math.round(formP)+'%',formP,'Bac et +')}${rse('Turn-over',(100/E.length).toFixed(1)+'%',90,'Faible rotation')}${rse('Parité encadrement','50%',50,'Mixité postes clés')}</div>
+    <div class="split"><div class="card chartcard"><h3>Répartition par âge</h3><div class="csub">Pyramide</div><div class="chart-wrap"><canvas id="cAge"></canvas></div></div><div class="card chartcard"><h3>Par ancienneté</h3><div class="csub">Séniorité</div><div class="chart-wrap"><canvas id="cAnc"></canvas></div></div></div>
+    <div class="card" style="margin-top:16px;padding:18px 20px;display:flex;gap:14px;align-items:center"><div class="ai" style="width:42px;height:42px;border-radius:12px;background:var(--gold-soft);color:var(--gold);display:grid;place-items:center;flex:none">${I.leaf}</div><div style="flex:1;font-size:13px;color:var(--muted)"><b style="color:var(--text)">Conformité RSE clients.</b> Indicateurs exportables (CSV/Excel) pour Gérard Darel, Claudie Pierlot, Ba&sh, Vanessa Bruno…</div><button class="btn btn-gold" onclick="exportRSE()">${I.download} Exporter</button></div></div>`;
+  drawAge();drawAnc();
+}
+function rse(l,v,p,n){return `<div class="rse-card"><div class="rl">${l}</div><div class="rv">${v}</div><div class="rb"><i style="width:${Math.min(100,Math.max(6,p))}%"></i></div><div class="progress-note">${n}</div></div>`}
+function exportRSE(){const E=DB.employees;const rows=[['Indicateur RSE','Valeur'],['Effectif',E.length],['Féminisation',Math.round(E.filter(e=>e.sexe==='F').length/E.length*100)+'%'],['Âge moyen',(E.reduce((s,e)=>s+age(e.naissance),0)/E.length).toFixed(1)+' ans'],['Ancienneté moyenne',(E.reduce((s,e)=>s+anciennete(e.embauche),0)/E.length).toFixed(1)+' ans'],['Absentéisme',(DB.absences.reduce((s,a)=>s+a.jours,0)/(E.length*125)*100).toFixed(1)+'%'],['CDI',Math.round(E.filter(e=>e.contrat==='CDI').length/E.length*100)+'%']];csvDL('rapport_RSE_'+TODAY+'.csv',rows);toast('Rapport RSE exporté')}
+
+/* ============================================================ ASSISTANT IA === */
+const SUG=['Qui est en retard aujourd\u2019hui ?','Heures travaillées de Salma ce mois ?','Combien d\u2019heures sup. au total ce mois ?','Qui a +10 ans d\u2019ancienneté ?','Anniversaires du mois ?'];
+function renderAssistant(m){
+  m.innerHTML=topbar('Intelligence RH','Assistant IA')+`<div class="page view active">
+    <div class="suggest">${SUG.map(s=>`<button onclick="askAI('${s.replace(/'/g,"\\'")}')">${s}</button>`).join('')}</div>
+    <div class="ai-wrap"><div class="ai-stream" id="aiStream">${aiHistory.length?aiHistory.map(renderMsg).join(''):`<div class="ai-msg bot"><div class="b-av">${I.spark}</div><div class="ai-bubble"><p><strong>Bonjour 👋 Assistant RH DBS Fashion.</strong></p><p>Posez une question sur le personnel : présences, heures, retards, paie, ancienneté… Je réponds à partir de la base.</p></div></div>`}</div>
+    <div class="ai-input"><textarea id="aiInput" rows="1" placeholder="Votre question…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();askAI()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea><button class="btn btn-gold" onclick="askAI()" style="height:42px">${I.send}</button></div></div></div>`;
+  const s=$('#aiStream');s.scrollTop=s.scrollHeight;
+}
+function renderMsg(msg){return `<div class="ai-msg ${msg.role==='user'?'user':'bot'}"><div class="b-av">${msg.role==='user'?initials(ROLE):I.spark}</div><div class="ai-bubble">${formatMD(msg.content)}</div></div>`}
+function formatMD(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/^- (.+)$/gm,'<li>$1</li>').replace(/(<li>.*<\/li>)/s,'<ul>$1</ul>').split(/\n\n+/).map(p=>p.startsWith('<ul>')?p:'<p>'+p.replace(/\n/g,'<br>')+'</p>').join('')}
+function aiContext(){
+  const[a,b]=monthBounds(TODAY.slice(0,7));const sum=summarize(a,b);
+  const E=DB.employees.map(e=>{const s=sum.find(x=>x.e.id===e.id);return `${e.prenom} ${e.nom} | ${e.poste} | ${e.categorie} | ${age(e.naissance)}ans | anc ${anciennete(e.embauche).toFixed(1)}ans | ${e.contrat} | né ${e.naissance} | mois: ${s.jT}j trav, ${fr2(hDec(s.hN+s.hS))}h, ${fr2(hDec(s.hS))}h sup, ${s.rt} retards, ${s.jA} abs`}).join('\n');
+  const r=dayRec(TODAY)||{};const att=DB.employees.map(e=>{const mm=metrics(r[e.id]);return `${e.prenom} ${e.nom}: ${STATUT_TAG[mm.statut][1]}${r[e.id]&&r[e.id].entree?' ('+r[e.id].entree+')':''}`}).join('\n');
+  return `DONNÉES RH — DBS Fashion (usine textile). Date: ${TODAY}. Paramètres: début ${S().heureDebut}, fin ${S().heureFin}, tolérance ${S().toleranceRetard}min, délai H.sup ${S().graceHS}min. Ouvrières payées en heures, cadres en jours.\n\nEMPLOYÉES (synthèse mois en cours):\n${E}\n\nPOINTAGE DU JOUR:\n${att}`;
+}
+async function askAI(preset){
+  const input=$('#aiInput');const q=preset||(input?input.value.trim():'');if(!q)return;if(input){input.value='';input.style.height='auto'}
+  aiHistory.push({role:'user',content:q});const s=$('#aiStream');
+  s.insertAdjacentHTML('beforeend',renderMsg({role:'user',content:q}));
+  s.insertAdjacentHTML('beforeend',`<div class="ai-msg bot" id="aiPending"><div class="b-av">${I.spark}</div><div class="ai-bubble"><div class="typing"><span></span><span></span><span></span></div></div></div>`);
+  s.scrollTop=s.scrollHeight;
+  try{
+    const sys='Tu es l\u2019assistant RH de DBS Fashion. Réponds en français, concis et factuel, à partir des données fournies uniquement. Gras (**) pour les chiffres clés, listes (- ) si utile.\n\n'+aiContext();
+    const res=await callClaude(aiHistory.slice(-6).map(m=>({role:m.role,content:m.content})),sys);
+    $('#aiPending')?.remove();aiHistory.push({role:'assistant',content:res});s.insertAdjacentHTML('beforeend',renderMsg({role:'assistant',content:res}));
+  }catch(err){$('#aiPending')?.remove();const fb=localAnswer(q);aiHistory.push({role:'assistant',content:fb});s.insertAdjacentHTML('beforeend',renderMsg({role:'assistant',content:fb}))}
+  s.scrollTop=s.scrollHeight;
+}
+function localAnswer(q){
+  const l=q.toLowerCase(),r=dayRec(TODAY)||{};
+  if(l.includes('retard')&&l.includes('aujourd')){const x=DB.employees.filter(e=>metrics(r[e.id]).statut==='late');return x.length?'**'+x.length+'** en retard :\n'+x.map(e=>'- '+e.prenom+' '+e.nom+' ('+r[e.id].entree+')').join('\n'):'Aucun retard aujourd\u2019hui.'}
+  if(l.includes('anniversaire')){const b=DB.employees.filter(e=>new Date(e.naissance).getMonth()===today.getMonth());return b.length?'Anniversaires :\n'+b.map(e=>'- '+e.prenom+' '+e.nom).join('\n'):'Aucun ce mois.'}
+  if(l.includes('ancienneté')||l.includes('10 ans')){const n=DB.employees.filter(e=>anciennete(e.embauche)>=10);return '**'+n.length+'** ont +10 ans :\n'+n.map(e=>'- '+e.prenom+' ('+ancLabel(e.embauche)+')').join('\n')}
+  if(l.includes('sup')){const[a,b]=monthBounds(TODAY.slice(0,7));const t=summarize(a,b).reduce((s,x)=>s+x.hS,0);return 'Total heures supplémentaires ce mois : **'+fr2(hDec(t))+' h**.'}
+  return '_(Mode hors-ligne — ajoutez une clé API dans Sécurité & accès pour des réponses complètes.)_';
+}
+
+/* ============================================================ SÉCURITÉ ======= */
+const ROLES={'Administrateur':'Accès total.','Ressources Humaines':'RH complet : personnel, présences, documents, congés, paie.','Direction':'Consultation et rapports.','Chef d\u2019atelier':'Consultation limitée à son équipe.'};
+const AUDIT=[['Olfa Hamdi','Validation congé · Salma Ben Ali','2026-06-19 08:12'],['Système','Import pointage Face ID (18 lignes)','2026-06-19 07:40'],['IA','Certificat médical classé · Ines Gharbi','2026-06-19 08:05'],['Système','Sauvegarde automatique','2026-06-19 06:00']];
+function renderParametres(m){
+  m.innerHTML=topbar('Administration','Sécurité & accès',`<button class="btn btn-ghost" onclick="openSettings()">${I.gear} Paramètres horaires</button>`)+`<div class="page view active"><div class="split"><div>
+    <div class="card tablecard" style="margin-bottom:16px"><div class="table-head">${I.shield}<h3>Rôles & permissions</h3></div><table class="tbl"><tbody>${Object.entries(ROLES).map(([r,d])=>`<tr><td style="width:170px"><b>${r}</b></td><td style="color:var(--muted)">${d}</td><td>${ROLE===r?'<span class="tag t-present">Active</span>':`<span class="linkish" onclick="switchRole('${r.replace(/'/g,"\\'")}')">Activer</span>`}</td></tr>`).join('')}</tbody></table></div>
+    <div class="card tablecard"><div class="table-head">${I.clock}<h3>Historique des modifications</h3></div><table class="tbl"><thead><tr><th>Auteur</th><th>Action</th><th>Horodatage</th></tr></thead><tbody id="auditBody"><tr><td colspan="3"><div class="empty">Chargement…</div></td></tr></tbody></table></div></div>
+    <div><div class="card chartcard" style="margin-bottom:16px"><h3>Espace salarié · QR codes</h3><div class="csub" style="margin-top:6px">Chaque ouvrière consulte son pointage du mois (présences, retards, absences) en scannant son QR personnel puis en saisissant son code à 4 chiffres. Lecture seule.</div><button class="btn btn-gold" style="width:100%;justify-content:center;margin-top:12px" onclick="window.open('/api/qr-codes.pdf','_blank')">${I.download} QR codes du personnel (PDF)</button><div style="font-size:11.5px;color:var(--faint);margin-top:10px">Imprimez et distribuez les cartes (confidentiel : chaque carte porte le code de l\u2019employée). Lien de l\u2019espace : <span class="mono">${location.origin}/moi</span></div></div><div class="card chartcard" style="margin-bottom:16px"><h3>Clé API Anthropic (optionnelle)</h3><div class="csub" style="margin-top:6px">La clé est configurée côté serveur (variable d\u2019environnement ANTHROPIC_API_KEY). Ce champ est informatif.</div><input id="apiKeyInput" type="password" placeholder="sk-ant-..." value="${apiKey}" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-top:12px;outline:none;font-family:var(--mono)"><button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:10px" onclick="saveApiKey()">${I.check} Enregistrer</button></div>
+    <div class="card chartcard" style="margin-bottom:16px"><h3>Sauvegarde des données</h3><div class="csub" style="margin-top:6px">Sauvegarde auto quotidienne. Export/import manuel.</div><div style="display:flex;gap:10px;margin-top:12px"><button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="exportDB()">${I.download} Exporter</button><button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="document.getElementById('impDB').click()">${I.up} Importer</button><input type="file" id="impDB" accept=".json" style="display:none" onchange="importDB(this.files[0])"></div><button class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:10px;color:var(--thread)" onclick="resetDB()">Réinitialiser la démo</button></div>
+    <div class="card chartcard"><h3>Intégrations futures</h3><div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">${['Paie','Production textile (PilotPro)','Contrôle qualité','ERP usine'].map(x=>`<div style="display:flex;align-items:center;gap:9px;font-size:13px"><span class="dotmark" style="background:var(--gold)"></span>${x}<span class="tag t-neutral" style="margin-left:auto">À venir</span></div>`).join('')}</div></div></div></div></div>`;
+  loadAudit();
+}
+function switchRole(r){ROLE=r;render();toast('Connecté : '+r)}
+function saveApiKey(){apiKey=$('#apiKeyInput').value.trim();localStorage.setItem('pilotrh_apikey',apiKey);toast(apiKey?'Clé enregistrée':'Clé supprimée')}
+function exportDB(){const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download='pilotrh_sauvegarde_'+TODAY+'.json';a.click();toast('Base exportée')}
+function importDB(f){if(!f)return;const r=new FileReader();r.onload=e=>{try{DB=JSON.parse(e.target.result);persistAll();render();toast('Base importée')}catch(x){toast('Fichier invalide','warn')}};r.readAsText(f)}
+
+/* ============================================================ GRAPHIQUES ===== */
+const HAS_CHART=typeof Chart!=='undefined';
+if(HAS_CHART){Chart.defaults.font.family="'Inter',sans-serif";Chart.defaults.color='#6c7180';}
+function destroy(k){if(charts[k])charts[k].destroy()}
+function drawAbs(){const c=document.getElementById('cAbs');if(!c||!HAS_CHART)return;destroy('abs');charts.abs=new Chart(c,{type:'line',data:{labels:ABS_HISTORY.map(x=>x.m),datasets:[{data:ABS_HISTORY.map(x=>x.taux),borderColor:'#c19a3e',backgroundColor:'rgba(193,154,62,.12)',fill:true,tension:.4,borderWidth:2.5,pointBackgroundColor:'#c19a3e',pointRadius:4}]},options:chOpts({suffix:'%'})})}
+function drawServ(){const c=document.getElementById('cServ');if(!c||!HAS_CHART)return;destroy('serv');const d=SERVICES.map(s=>DB.employees.filter(e=>e.service===s).length);charts.serv=new Chart(c,{type:'doughnut',data:{labels:SERVICES,datasets:[{data:d,backgroundColor:['#b1432d','#c19a3e','#2f8f5b','#4f66c2','#7d5fa8','#0d8a8a','#a8553e'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'right',labels:{boxWidth:9,boxHeight:9,padding:10,font:{size:11}}}}}})}
+function drawDocs(){const c=document.getElementById('cDocs');if(!c||!HAS_CHART)return;destroy('docs');const t={};DB.documents.forEach(d=>t[d.type]=(t[d.type]||0)+1);charts.docs=new Chart(c,{type:'bar',data:{labels:Object.keys(t),datasets:[{data:Object.values(t),backgroundColor:'#c19a3e',borderRadius:6,barThickness:22}]},options:chOpts({horizontal:true})})}
+function drawAge(){const c=document.getElementById('cAge');if(!c||!HAS_CHART)return;destroy('age');const d=[0,0,0,0];DB.employees.forEach(e=>{const a=age(e.naissance);d[a<25?0:a<35?1:a<45?2:3]++});charts.age=new Chart(c,{type:'bar',data:{labels:['<25','25-34','35-44','45+'],datasets:[{data:d,backgroundColor:['#e9dcb6','#c19a3e','#a8553e','#b1432d'],borderRadius:6,barThickness:40}]},options:chOpts({})})}
+function drawAnc(){const c=document.getElementById('cAnc');if(!c||!HAS_CHART)return;destroy('anc');const d=[0,0,0,0];DB.employees.forEach(e=>{const a=anciennete(e.embauche);d[a<2?0:a<5?1:a<10?2:3]++});charts.anc=new Chart(c,{type:'bar',data:{labels:['<2 ans','2-5','5-10','10+'],datasets:[{data:d,backgroundColor:'#4f66c2',borderRadius:6,barThickness:40}]},options:chOpts({})})}
+function chOpts(o){return{responsive:true,maintainAspectRatio:false,indexAxis:o.horizontal?'y':'x',plugins:{legend:{display:false}},scales:{x:{grid:{display:false},border:{display:false}},y:{grid:{color:'#efebe0'},border:{display:false},ticks:{callback:v=>v+(o.suffix||'')}}}}}
+
+/* ============================================================ DIVERS ========= */
+function sortBy(scope,k){const c=SORT[scope];SORT[scope]=(c&&c.k===k)?{k,dir:-c.dir}:{k,dir:1};({pers:fillPers,pres:fillPres}[scope]||(()=>render()))()}
+function openModal(html,cls=''){const o=$('#overlay');o.innerHTML='<div class="modal '+cls+'">'+html+'</div>';o.classList.add('open');o.onclick=e=>{if(e.target===o)closeModal()}}
+function closeModal(){$('#overlay').classList.remove('open');$('#overlay').innerHTML=''}
+function quickSearch(v){if(!v||v.length<2)return}
+function fileToB64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=rej;r.readAsDataURL(f)})}
+function parseJSON(t){let s=t.replace(/```json/g,'').replace(/```/g,'').trim();const a=s.indexOf('{'),b=s.lastIndexOf('}');if(a>=0&&b>=0)s=s.slice(a,b+1);return JSON.parse(s)}
+async function callClaude(messages,system){
+  const r=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,system})});
+  if(!r.ok)throw new Error('API '+r.status);return (await r.json()).text;
+}
+
+load().then(render);
+
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+access-parser==0.0.6
+python-multipart==0.0.9
+httpx==0.27.0
+reportlab==4.2.0
+qrcode==7.4.2
+pillow==10.4.0
