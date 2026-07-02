@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PilotRH — Connexion</title>
+<style>
+  :root{--ink:#141b2d;--ink2:#1a1d29;--thread:#c14029;--gold:#c19a3e;--line:#e7e1d4;--muted:#6c7180;--surface:#fbf9f4}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,'Segoe UI',system-ui,sans-serif;background:linear-gradient(135deg,#141b2d,#232c45);
+       min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;color:var(--ink)}
+  .card{background:#fff;border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.35);width:100%;max-width:390px;padding:34px 30px}
+  .brand{display:flex;align-items:center;gap:11px;margin-bottom:22px}
+  .logo{width:42px;height:42px;border-radius:11px;background:var(--ink);display:flex;align-items:center;justify-content:center;
+        color:#fff;font-weight:800;font-size:17px;letter-spacing:.02em}
+  .logo b{color:var(--thread)}
+  h1{font-size:19px;margin:0}
+  .sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+  label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:15px 0 5px}
+  input{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:11px;font-size:14px;font-family:inherit}
+  input:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(193,154,62,.15)}
+  button{width:100%;margin-top:22px;padding:13px;border:0;border-radius:11px;background:var(--ink);color:#fff;
+         font-size:14.5px;font-weight:700;cursor:pointer;transition:.15s}
+  button:hover{background:#0d1220}
+  button:disabled{opacity:.6;cursor:default}
+  .err{margin-top:14px;background:#fdecea;color:#a12318;border:1px solid #f5c6c0;border-radius:10px;
+       padding:10px 12px;font-size:13px;display:none}
+  .foot{margin-top:20px;text-align:center;font-size:11px;color:var(--muted)}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <div class="logo">P<b>R</b></div>
+      <div><h1>PilotRH</h1><div class="sub">Gestion du personnel · DBS Fashion</div></div>
+    </div>
+    <label for="login">Identifiant</label>
+    <input id="login" autocomplete="username" autofocus>
+    <label for="pass">Mot de passe</label>
+    <input id="pass" type="password" autocomplete="current-password">
+    <div class="err" id="err"></div>
+    <button id="btn" onclick="connect()">Se connecter</button>
+    <div class="foot">Accès réservé au personnel autorisé</div>
+  </div>
+<script>
+  const $=id=>document.getElementById(id);
+  async function connect(){
+    const login=$('login').value.trim(), password=$('pass').value;
+    if(!login||!password){show('Renseignez l\'identifiant et le mot de passe');return;}
+    $('btn').disabled=true;$('btn').textContent='Connexion…';$('err').style.display='none';
+    try{
+      const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
+                                        body:JSON.stringify({login,password})});
+      if(r.ok){location.href='/';return;}
+      const j=await r.json().catch(()=>({}));show(j.error||'Connexion impossible');
+    }catch(e){show('Serveur injoignable');}
+    $('btn').disabled=false;$('btn').textContent='Se connecter';
+  }
+  function show(m){const e=$('err');e.textContent=m;e.style.display='block';}
+  $('pass').addEventListener('keydown',e=>{if(e.key==='Enter')connect();});
+  $('login').addEventListener('keydown',e=>{if(e.key==='Enter')$('pass').focus();});
+</script>
+</body>
+</html>

@@ -445,6 +445,12 @@ const ABS_HISTORY=[{m:'Janv.',taux:4.2},{m:'Févr.',taux:3.8},{m:'Mars',taux:5.1
 
 /* ---------- État ---------- */
 let DB={}, ROLE='Administrateur', VIEW='dashboard', SORT={}, charts={}, aiHistory=[], apiKey='';
+let ME={login:'',nom:'Administrateur',role:'admin'};
+const ROLE_LABELS={admin:'Administrateur',rh:'RH',atelier:"Chef d'atelier",lecture:'Lecture seule'};
+const PERM={admin:{settings:1,users:1,delete:1,import:1,edit:1},rh:{settings:1,users:0,delete:1,import:1,edit:1},atelier:{settings:0,users:0,delete:0,import:0,edit:1},lecture:{settings:0,users:0,delete:0,import:0,edit:0}};
+function can(k){return !!((PERM[ME.role]||PERM.lecture)[k]);}
+async function whoami(){try{const r=await fetch('/api/whoami');if(r.ok){const d=await r.json();ME={login:d.login,nom:d.nom||d.login,role:d.role||'lecture'};ROLE=ME.nom;}}catch(e){}}
+function logout(){fetch('/api/logout',{method:'POST'}).finally(()=>location.href='/login');}
 let PRES_DATE=TODAY;
 
 function seedDB(){
@@ -531,13 +537,14 @@ function alertCount(){return computeAlerts().length}
 function todayProblems(){const r=dayRec(TODAY);if(!r)return 0;let n=0;DB.employees.forEach(e=>{const m=metrics(r[e.id]);if(m.statut==='late'||m.statut==='absent')n++});return n}
 function shell(){
   const nav=NAV.map(n=>{
+    if(n.v==='parametres'&&!can('settings')&&!can('users'))return '';
     if(n.grp)return `<div class="nav-group">${n.grp}</div>`;
     const pill=n.v==='alertes'?`<span class="pill">${alertCount()}</span>`:(n.v==='presences'?`<span class="pill">${todayProblems()}</span>`:'');
     return `<button class="nav-item ${VIEW===n.v?'active':''}" onclick="go('${n.v}')">${n.ic}<span>${n.t}</span>${pill}</button>`;
   }).join('');
   return `<aside class="side"><div class="brand"><div class="mark"><div class="glyph">${I.scissors}</div><div><div class="name">PilotRH</div><div class="sub">DBS Fashion</div></div></div></div>
     <nav class="nav">${nav}</nav>
-    <div class="side-foot"><div class="role-box"><div class="av">${initials(ROLE)}</div><div class="who">${ROLE}<small>Session active</small></div></div></div></aside>
+    <div class="side-foot"><div class="role-box"><div class="av">${initials(ME.nom)}</div><div class="who">${ME.nom}<small>${ROLE_LABELS[ME.role]||ME.role}</small></div></div><button class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:9px;font-size:12px" onclick="logout()">Se déconnecter</button></div></aside>
     <main class="main" id="main"></main>`;
 }
 function topbar(crumb,title,actions=''){
@@ -653,6 +660,7 @@ function fillPres(){
   }).join('');
 }
 function editPres(id,field,val){
+  if(!can('edit')){toast('Compte en lecture seule','warn');fillPres();return;}
   if(!DB.pointages[PRES_DATE])DB.pointages[PRES_DATE]={};
   if(!DB.pointages[PRES_DATE][id])DB.pointages[PRES_DATE][id]={statut:'absent',entree:'',sortie:''};
   const rec=DB.pointages[PRES_DATE][id];
@@ -724,7 +732,7 @@ function addPeriode(){const j={};[1,2,3,4,5,6].forEach(d=>j[d]={actif:true,debut
 function delPeriode(i){window._cfg.periodes.splice(i,1);renderSettings();}
 function setFld(l,id,t,v,h){return `<div class="info-block" style="margin-bottom:0"><label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:5px">${l}</label><input id="${id}" type="${t}" value="${v}" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;outline:none"><div style="font-size:11px;color:var(--faint);margin-top:5px">${h}</div></div>`}
 function saveSettings(){DB.settings=window._cfg;save();closeModal();render();toast('Paramètres enregistrés · valeurs recalculées');}
-function deleteEmp(id){const e=emp(id);if(!confirm('Supprimer '+e.prenom+' '+e.nom+' ?\n\nElle sera retirée de la liste et ne réapparaîtra plus lors des imports du pointage (démission).'))return;DB.employees=DB.employees.filter(x=>x.id!==id);for(const ds in DB.pointages){if(DB.pointages[ds])delete DB.pointages[ds][id];}save();fetch('/api/employee/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,qui:ROLE})}).catch(()=>{});closeModal();go('personnel');toast(e.prenom+' '+e.nom+' supprimée');}
+function deleteEmp(id){if(!can('delete')){toast('Réservé à l\'administrateur ou RH','warn');return;}const e=emp(id);if(!confirm('Supprimer '+e.prenom+' '+e.nom+' ?\n\nElle sera retirée de la liste et ne réapparaîtra plus lors des imports du pointage (démission).'))return;DB.employees=DB.employees.filter(x=>x.id!==id);for(const ds in DB.pointages){if(DB.pointages[ds])delete DB.pointages[ds][id];}save();fetch('/api/employee/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,qui:ROLE})}).catch(()=>{});closeModal();go('personnel');toast(e.prenom+' '+e.nom+' supprimée');}
 function addRamadan(){const j={};[1,2,3,4,5].forEach(d=>j[d]={actif:true,debut:'07:00',fin:'15:00',pause:30,tol:15,grace:15});j[6]={actif:true,debut:'07:00',fin:'13:00',pause:0,tol:15,grace:15};j[0]={actif:false,debut:'07:00',fin:'15:00',pause:0,tol:15,grace:15};window._cfg.periodes.push({nom:'Ramadan',du:TODAY,au:TODAY,jours:j});renderSettings();toast('Mode Ramadan ajouté — ajustez les dates et les horaires');}
 
 /* import */
@@ -949,7 +957,7 @@ function openProfile(id){
     </div>
     <div class="info-block"><h4>Dossier numérique</h4>${docs.map(d=>`<span class="doc-chip">${I.doc} ${d.type} <small style="color:var(--faint)">${fmtDate(d.date)}</small></span>`).join('')||'<span style="color:var(--muted);font-size:13px">Aucun document</span>'}</div>
   </div>
-  <div class="modal-foot"><button class="btn btn-ghost" style="color:var(--thread);margin-right:auto" onclick="deleteEmp('${id}')">Supprimer (démission)</button><button class="btn btn-ghost" onclick="closeModal()">Fermer</button><button class="btn btn-gold" onclick="openEditEmp('${id}')">${I.gear} Modifier la fiche</button><button class="btn btn-primary" onclick="closeModal();go('documents')">${I.doc} Documents</button></div>`,'wide');
+  <div class="modal-foot">${can('delete')?`<button class="btn btn-ghost" style="color:var(--thread);margin-right:auto" onclick="deleteEmp('${id}')">Supprimer (démission)</button>`:''}<button class="btn btn-ghost" onclick="closeModal()">Fermer</button><button class="btn btn-gold" onclick="openEditEmp('${id}')">${I.gear} Modifier la fiche</button><button class="btn btn-primary" onclick="closeModal();go('documents')">${I.doc} Documents</button></div>`,'wide');
   fillHist(id);
 }
 function fillHist(id){
@@ -1208,14 +1216,35 @@ const ROLES={'Administrateur':'Accès total.','Ressources Humaines':'RH complet 
 const AUDIT=[['Olfa Hamdi','Validation congé · Salma Ben Ali','2026-06-19 08:12'],['Système','Import pointage Face ID (18 lignes)','2026-06-19 07:40'],['IA','Certificat médical classé · Ines Gharbi','2026-06-19 08:05'],['Système','Sauvegarde automatique','2026-06-19 06:00']];
 function renderParametres(m){
   m.innerHTML=topbar('Administration','Sécurité & accès',`<button class="btn btn-ghost" onclick="openSettings()">${I.gear} Paramètres horaires</button>`)+`<div class="page view active"><div class="split"><div>
-    <div class="card tablecard" style="margin-bottom:16px"><div class="table-head">${I.shield}<h3>Rôles & permissions</h3></div><table class="tbl"><tbody>${Object.entries(ROLES).map(([r,d])=>`<tr><td style="width:170px"><b>${r}</b></td><td style="color:var(--muted)">${d}</td><td>${ROLE===r?'<span class="tag t-present">Active</span>':`<span class="linkish" onclick="switchRole('${r.replace(/'/g,"\\'")}')">Activer</span>`}</td></tr>`).join('')}</tbody></table></div>
+    ${usersCard()}
     <div class="card tablecard"><div class="table-head">${I.clock}<h3>Historique des modifications</h3></div><table class="tbl"><thead><tr><th>Auteur</th><th>Action</th><th>Horodatage</th></tr></thead><tbody id="auditBody"><tr><td colspan="3"><div class="empty">Chargement…</div></td></tr></tbody></table></div></div>
     <div><div class="card chartcard" style="margin-bottom:16px"><h3>Espace salarié · QR codes</h3><div class="csub" style="margin-top:6px">Chaque ouvrière consulte son pointage du mois (présences, retards, absences) en scannant son QR personnel puis en saisissant son code à 4 chiffres. Lecture seule.</div><button class="btn btn-gold" style="width:100%;justify-content:center;margin-top:12px" onclick="window.open('/api/qr-codes.pdf','_blank')">${I.download} QR codes du personnel (PDF)</button><div style="font-size:11.5px;color:var(--faint);margin-top:10px">Imprimez et distribuez les cartes (confidentiel : chaque carte porte le code de l\u2019employée). Lien de l\u2019espace : <span class="mono">${location.origin}/moi</span></div></div><div class="card chartcard" style="margin-bottom:16px"><h3>Clé API Anthropic (optionnelle)</h3><div class="csub" style="margin-top:6px">La clé est configurée côté serveur (variable d\u2019environnement ANTHROPIC_API_KEY). Ce champ est informatif.</div><input id="apiKeyInput" type="password" placeholder="sk-ant-..." value="${apiKey}" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-top:12px;outline:none;font-family:var(--mono)"><button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:10px" onclick="saveApiKey()">${I.check} Enregistrer</button></div>
     <div class="card chartcard" style="margin-bottom:16px"><h3>Sauvegarde des données</h3><div class="csub" style="margin-top:6px">Sauvegarde auto quotidienne. Export/import manuel.</div><div style="display:flex;gap:10px;margin-top:12px"><button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="exportDB()">${I.download} Exporter</button><button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="document.getElementById('impDB').click()">${I.up} Importer</button><input type="file" id="impDB" accept=".json" style="display:none" onchange="importDB(this.files[0])"></div><button class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:10px;color:var(--thread)" onclick="resetDB()">Réinitialiser la démo</button></div>
     <div class="card chartcard"><h3>Intégrations futures</h3><div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">${['Paie','Production textile (PilotPro)','Contrôle qualité','ERP usine'].map(x=>`<div style="display:flex;align-items:center;gap:9px;font-size:13px"><span class="dotmark" style="background:var(--gold)"></span>${x}<span class="tag t-neutral" style="margin-left:auto">À venir</span></div>`).join('')}</div></div></div></div></div>`;
-  loadAudit();
+  loadAudit();loadUsers();
 }
-function switchRole(r){ROLE=r;render();toast('Connecté : '+r)}
+function usersCard(){
+  if(!can('users'))return `<div class="card tablecard" style="margin-bottom:16px"><div class="table-head">${I.shield}<h3>Votre accès</h3></div><div style="padding:6px 2px;color:var(--muted);font-size:13px">Connecté en tant que <b>${ME.nom}</b> — rôle <b>${ROLE_LABELS[ME.role]||ME.role}</b>. La gestion des comptes est réservée à l'administrateur.</div></div>`;
+  return `<div class="card tablecard" style="margin-bottom:16px"><div class="table-head">${I.users}<h3>Comptes & rôles</h3></div>
+    <table class="tbl"><thead><tr><th>Identifiant</th><th>Nom</th><th>Rôle</th><th></th></tr></thead><tbody id="usersBody"><tr><td colspan="4"><div class="empty">Chargement…</div></td></tr></tbody></table>
+    <div style="border-top:1px dashed var(--line);margin-top:12px;padding-top:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <input id="u_login" class="tinput" style="width:100%" placeholder="Identifiant">
+        <input id="u_nom" class="tinput" style="width:100%" placeholder="Nom affiché">
+        <select id="u_role" class="ssel">${Object.entries(ROLE_LABELS).map(([r,l])=>`<option value="${r}">${l}</option>`).join('')}</select>
+        <input id="u_pass" type="password" class="tinput" style="width:100%" placeholder="Mot de passe">
+      </div>
+      <button class="btn btn-primary" style="margin-top:10px" onclick="saveUser()">${I.check} Ajouter / modifier</button>
+      <div style="font-size:11.5px;color:var(--faint);margin-top:8px">Rôles : Administrateur (tout) · RH (tout sauf comptes) · Chef d'atelier (présences, sans paramètres ni suppression) · Lecture seule (consultation).</div>
+    </div></div>`;
+}
+function loadUsers(){if(!can('users'))return;fetch('/api/users').then(r=>r.ok?r.json():Promise.reject()).then(us=>{const b=document.getElementById('usersBody');if(!b)return;
+  b.innerHTML=us.map(u=>`<tr><td class="mono">${u.login}</td><td>${u.nom||''}</td><td>${ROLE_LABELS[u.role]||u.role}</td><td style="text-align:right"><span class="linkish" onclick="editUser('${u.login}','${(u.nom||'').replace(/'/g,"\\'")}','${u.role}')">Modifier</span>${u.login.toLowerCase()==='admin'?'':` · <span class="linkish" style="color:var(--thread)" onclick="delUser('${u.login}')">Suppr.</span>`}</td></tr>`).join('')||'<tr><td colspan="4"><div class="empty">Aucun compte</div></td></tr>';
+}).catch(()=>{const b=document.getElementById('usersBody');if(b)b.innerHTML='<tr><td colspan="4"><div class="empty">Disponible sur le serveur déployé</div></td></tr>';});}
+function editUser(login,nom,role){$('#u_login').value=login;$('#u_nom').value=nom;$('#u_role').value=role;$('#u_pass').value='';$('#u_pass').placeholder='Nouveau mot de passe (vide = inchangé)';}
+function saveUser(){const login=$('#u_login').value.trim(),nom=$('#u_nom').value.trim(),role=$('#u_role').value,password=$('#u_pass').value;if(!login){toast('Identifiant requis','warn');return;}
+  fetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login,nom,role,password})}).then(r=>r.json()).then(d=>{if(d.error){toast(d.error,'warn');return;}toast('Compte enregistré');$('#u_login').value='';$('#u_nom').value='';$('#u_pass').value='';loadUsers();}).catch(()=>toast('Erreur','warn'));}
+function delUser(login){if(!confirm('Supprimer le compte « '+login+' » ?'))return;fetch('/api/users/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login})}).then(r=>r.json()).then(d=>{if(d.error){toast(d.error,'warn');return;}toast('Compte supprimé');loadUsers();}).catch(()=>toast('Erreur','warn'));}
 function saveApiKey(){apiKey=$('#apiKeyInput').value.trim();localStorage.setItem('pilotrh_apikey',apiKey);toast(apiKey?'Clé enregistrée':'Clé supprimée')}
 function exportDB(){const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download='pilotrh_sauvegarde_'+TODAY+'.json';a.click();toast('Base exportée')}
 function importDB(f){if(!f)return;const r=new FileReader();r.onload=e=>{try{DB=JSON.parse(e.target.result);persistAll();render();toast('Base importée')}catch(x){toast('Fichier invalide','warn')}};r.readAsText(f)}
@@ -1243,7 +1272,7 @@ async function callClaude(messages,system){
   if(!r.ok)throw new Error('API '+r.status);return (await r.json()).text;
 }
 
-load().then(render);
+whoami().then(load).then(render);
 
 </script>
 </body>

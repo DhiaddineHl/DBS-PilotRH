@@ -7,9 +7,10 @@ PilotRH — serveur applicatif (FastAPI + SQLite)
 - Journal d'audit de chaque modification (inspection du travail / vérifications)
 - Photos / documents sur le disque ; OCR + assistant IA via l'API Anthropic
 """
-import os, json, sqlite3, base64, threading, time, datetime, io, secrets, random
+import re
+import os, json, sqlite3, base64, threading, time, datetime, io, secrets, random, hashlib, hmac
 from fastapi import FastAPI, UploadFile, File, Request, Form
-from fastapi.responses import JSONResponse, FileResponse, Response
+from fastapi.responses import JSONResponse, FileResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 import httpx
 import mdb_import
@@ -72,7 +73,7 @@ def set_meta(partial):
     """Fusionne les clés fournies dans l'état méta existant (ne perd pas le reste)."""
     c = _conn(); r = c.execute("SELECT v FROM kv WHERE k='meta'").fetchone()
     cur = json.loads(r[0]) if r else {}
-    for k in ("employees", "settings", "documents", "conges", "absences", "signalements", "exclus"):
+    for k in ("employees", "settings", "documents", "conges", "absences", "signalements", "exclus", "users", "_secret"):
         if k in partial and partial[k] is not None:
             cur[k] = partial[k]
     if not cur.get("settings"):
@@ -193,27 +194,104 @@ if MDB_PATH:
 app = FastAPI(title="PilotRH")
 
 ADMIN_PW = os.environ.get("PILOTRH_ADMIN_PASSWORD", "")
-PUBLIC_PREFIXES = ("/moi", "/api/me", "/photos", "/favicon")
+
+# ---------------------------------------------------------------------------
+# Comptes utilisateurs + rôles + sessions
+# ---------------------------------------------------------------------------
+ROLES = {"admin": "Administrateur", "rh": "RH",
+         "atelier": "Chef d'atelier", "lecture": "Lecture seule"}
+
+def _hash_pw(pw, salt=None):
+    salt = salt or secrets.token_hex(8)
+    h = hashlib.pbkdf2_hmac("sha256", str(pw).encode(), salt.encode(), 100000).hex()
+    return salt + "$" + h
+
+def _check_pw(pw, stored):
+    try:
+        salt, _ = str(stored).split("$", 1)
+        return hmac.compare_digest(_hash_pw(pw, salt), stored)
+    except Exception:
+        return False
+
+def _secret():
+    s = get_meta().get("_secret")
+    if not s:
+        s = secrets.token_hex(24); set_meta({"_secret": s})
+    return s
+
+def ensure_users():
+    if not get_meta().get("users"):
+        set_meta({"users": [{"login": "admin", "nom": "Administrateur",
+                             "role": "admin", "pass": _hash_pw(ADMIN_PW or "admin")}]})
+
+def _find_user(login):
+    for u in get_meta().get("users", []):
+        if u.get("login", "").lower() == str(login).lower():
+            return u
+    return None
+
+def _sign_session(u, days=7):
+    exp = int(time.time()) + days * 86400
+    payload = base64.urlsafe_b64encode(json.dumps(
+        {"login": u["login"], "role": u["role"], "nom": u.get("nom", ""), "exp": exp}).encode()).decode()
+    sig = hmac.new(_secret().encode(), payload.encode(), hashlib.sha256).hexdigest()[:32]
+    return payload + "." + sig
+
+def _read_session(request):
+    tok = request.cookies.get("pilotrh_sess", "")
+    if "." not in tok:
+        return None
+    payload, sig = tok.rsplit(".", 1)
+    good = hmac.new(_secret().encode(), payload.encode(), hashlib.sha256).hexdigest()[:32]
+    if not hmac.compare_digest(sig, good):
+        return None
+    try:
+        d = json.loads(base64.urlsafe_b64decode(payload.encode()).decode())
+    except Exception:
+        return None
+    return d if d.get("exp", 0) >= time.time() else None
+
+def _basic_user(request):
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Basic "):
+        try:
+            login, pw = base64.b64decode(auth[6:]).decode().split(":", 1)
+            u = _find_user(login)
+            if u and _check_pw(pw, u["pass"]):
+                return {"login": u["login"], "role": u["role"], "nom": u.get("nom", "")}
+            if ADMIN_PW and pw == ADMIN_PW:      # compat : ancien mot de passe admin unique
+                return {"login": "admin", "role": "admin", "nom": "Administrateur"}
+        except Exception:
+            pass
+    return None
+
+def _current_user(request):
+    return _read_session(request) or _basic_user(request)
+
+PUBLIC_PREFIXES = ("/moi", "/api/me", "/photos", "/favicon", "/login", "/api/login", "/api/logout", "/static")
+ADMIN_ONLY = ("/api/users",)
+RH_PLUS = ("/api/employee/delete", "/api/import-mdb", "/api/punches", "/api/sync")
+WRITE_PREFIXES = ("/api/pointage", "/api/day", "/api/state", "/api/state-meta", "/api/employee")
 
 @app.middleware("http")
-async def admin_gate(request: Request, call_next):
-    """Si un mot de passe admin est défini (déploiement public/Railway), protège
-    toute l'app SAUF l'espace salarié (/moi, /api/me) qui reste accessible."""
+async def auth_gate(request: Request, call_next):
+    """Connexion obligatoire (sauf espace salarié). Applique les rôles."""
     p = request.url.path
-    if ADMIN_PW and not any(p == x or p.startswith(x) for x in PUBLIC_PREFIXES):
-        auth = request.headers.get("authorization", "")
-        ok = False
-        if auth.startswith("Basic "):
-            try:
-                _, pw = base64.b64decode(auth[6:]).decode().split(":", 1)
-                ok = (pw == ADMIN_PW)
-            except Exception:
-                ok = False
-        if not ok:
-            return Response("Authentification requise", status_code=401,
-                            headers={"WWW-Authenticate": 'Basic realm="PilotRH"'})
+    if not any(p == x or p.startswith(x) for x in PUBLIC_PREFIXES):
+        user = _current_user(request)
+        if not user:
+            if p.startswith("/api"):
+                return JSONResponse({"error": "non_connecte"}, status_code=401)
+            return RedirectResponse("/login", status_code=302)
+        role = user.get("role", "lecture")
+        if any(p.startswith(x) for x in ADMIN_ONLY) and role != "admin":
+            return JSONResponse({"error": "Réservé à l'administrateur"}, status_code=403)
+        if any(p.startswith(x) for x in RH_PLUS) and role not in ("admin", "rh"):
+            return JSONResponse({"error": "Action non autorisée pour votre rôle"}, status_code=403)
+        if role == "lecture" and request.method == "POST" and any(p.startswith(x) for x in WRITE_PREFIXES):
+            return JSONResponse({"error": "Compte en lecture seule"}, status_code=403)
     resp = await call_next(request)
-    if p in ("/", "/moi", "/index.html", "/moi.html") or p.endswith(".html"):
+    if p in ("/", "/moi", "/login", "/index.html", "/moi.html") or p.endswith(".html"):
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return resp
 
@@ -316,6 +394,25 @@ async def api_import_mdb(file: UploadFile = File(...),
         try: os.remove(tmp)
         except OSError: pass
 
+@app.post("/api/punches")
+async def api_punches(req: Request):
+    """Reçoit les pointages lus directement sur la pointeuse par l'agent d'usine.
+    Corps JSON : {"users":[{"badge","name","sexe"}], "punches":[{"badge","dt"}]}"""
+    b = await req.json()
+    users = b.get("users", []) or []
+    punches = b.get("punches", []) or []
+    if not punches:
+        return JSONResponse({"error": "aucun pointage reçu"}, status_code=400)
+    try:
+        s = mdb_import.merge_punches(get_state(), users, punches, au=(b.get("au") or None))
+        set_state(s)
+        ensure_tokens_persist()
+        audit("Pointeuse", "Import direct pointeuse · %d pointages, %d employées"
+              % (len(punches), len(s["employees"])))
+        return {"ok": True, "employees": len(s["employees"]), "jours": len(s["pointages"])}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
 @app.post("/api/sync")
 def api_sync():
     return do_sync(force=True)
@@ -401,27 +498,41 @@ async def report_pdf(req: Request):
     el = [Paragraph(b.get("title", "Rapport"), h1)]
     if b.get("subtitle"):
         el.append(Paragraph(b["subtitle"], sub))
+    avail = landscape(A4)[0] - 28 * mm
+    cellSt = ParagraphStyle("cell", parent=ss["Normal"], fontSize=8, leading=9.5)
+    hdrSt = ParagraphStyle("hdr", parent=ss["Normal"], fontSize=8, leading=9.5,
+                           textColor=colors.white, fontName="Helvetica-Bold")
     for sec in b.get("sections", []):
         el.append(Paragraph(sec.get("title", ""), h2))
-        data = [sec["columns"]] + (sec["rows"] or [["—"] * len(sec["columns"])])
-        t = Table(data, repeatRows=1)
+        cols = sec["columns"]
+        n = max(1, len(cols))
+        wts = []
+        for c in cols:
+            lc = str(c).lower()
+            wts.append(2.6 if lc.startswith("nom") else (1.1 if "mat" in lc else 1.0))
+        tot = sum(wts) or 1
+        cw = [avail * w / tot for w in wts]
+        header = [Paragraph(str(c), hdrSt) for c in cols]
+        rows = sec["rows"] or [["—"] * n]
+        body = [[Paragraph("" if x is None else str(x), cellSt) for x in r] for r in rows]
+        t = Table([header] + body, colWidths=cw, repeatRows=1)
         t.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), INK),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
             ("FONTSIZE", (0, 0), (-1, -1), 8.5),
             ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, SOFT]),
             ("LINEBELOW", (0, 0), (-1, -1), 0.4, LINE),
-            ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ("LEFTPADDING", (0, 0), (-1, -1), 7)]))
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6)]))
         el.append(t); el.append(Spacer(1, 6))
     el.append(Spacer(1, 8))
     el.append(Paragraph("Édité le " + datetime.datetime.now().strftime("%d/%m/%Y %H:%M") + " — PilotRH · DBS Fashion",
                         ParagraphStyle("foot", parent=ss["Normal"], textColor=colors.HexColor("#9aa0ad"), fontSize=8)))
     doc.build(el)
-    fn = b.get("title", "rapport").replace(" ", "_") + ".pdf"
+    raw = b.get("title", "rapport")
+    fn = re.sub(r"[^A-Za-z0-9_.-]+", "_", raw.replace(" ", "_")).strip("_") or "rapport"
     return Response(content=buf.getvalue(), media_type="application/pdf",
-                    headers={"Content-Disposition": f'attachment; filename="{fn}"'})
+                    headers={"Content-Disposition": 'attachment; filename="%s.pdf"' % fn})
 
 @app.get("/api/me")
 def api_me(t: str = "", pin: str = "", mois: str = ""):
@@ -535,5 +646,75 @@ def qr_codes_pdf(request: Request):
     doc.build(el)
     return Response(content=buf.getvalue(), media_type="application/pdf",
                     headers={"Content-Disposition": 'attachment; filename="qr_codes_personnel.pdf"'})
+
+@app.get("/login")
+def login_page():
+    return FileResponse(os.path.join(BASE, "static", "login.html"))
+
+@app.post("/api/login")
+async def api_login(req: Request):
+    b = await req.json()
+    u = _find_user(b.get("login", ""))
+    if not u or not _check_pw(b.get("password", ""), u["pass"]):
+        return JSONResponse({"error": "Identifiant ou mot de passe incorrect"}, status_code=401)
+    resp = JSONResponse({"ok": True, "user": {"login": u["login"], "nom": u.get("nom", ""), "role": u["role"]}})
+    resp.set_cookie("pilotrh_sess", _sign_session(u), max_age=7 * 86400, httponly=True, samesite="lax")
+    return resp
+
+@app.post("/api/logout")
+def api_logout():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie("pilotrh_sess")
+    return resp
+
+@app.get("/api/whoami")
+def api_whoami(request: Request):
+    u = _current_user(request)
+    if not u:
+        return JSONResponse({"error": "non_connecte"}, status_code=401)
+    return {"login": u["login"], "nom": u.get("nom", ""), "role": u["role"], "roles": ROLES}
+
+@app.get("/api/users")
+def api_users_list():
+    return [{"login": u["login"], "nom": u.get("nom", ""), "role": u["role"]}
+            for u in get_meta().get("users", [])]
+
+@app.post("/api/users")
+async def api_users_save(req: Request):
+    b = await req.json()
+    login = str(b.get("login", "")).strip()
+    if not login:
+        return JSONResponse({"error": "Identifiant requis"}, status_code=400)
+    if b.get("role") and b["role"] not in ROLES:
+        return JSONResponse({"error": "Rôle inconnu"}, status_code=400)
+    users = get_meta().get("users", [])
+    ex = next((u for u in users if u["login"].lower() == login.lower()), None)
+    if ex:
+        ex["nom"] = b.get("nom", ex.get("nom", ""))
+        ex["role"] = b.get("role", ex.get("role", "lecture"))
+        if b.get("password"):
+            ex["pass"] = _hash_pw(b["password"])
+    else:
+        if not b.get("password"):
+            return JSONResponse({"error": "Mot de passe requis pour un nouveau compte"}, status_code=400)
+        users.append({"login": login, "nom": b.get("nom", login),
+                      "role": b.get("role", "lecture"), "pass": _hash_pw(b["password"])})
+    set_meta({"users": users})
+    audit("Compte", "Utilisateur enregistré · %s (%s)" % (login, b.get("role", "")))
+    return {"ok": True}
+
+@app.post("/api/users/delete")
+async def api_users_delete(req: Request):
+    b = await req.json()
+    login = str(b.get("login", "")).strip()
+    users = get_meta().get("users", [])
+    admins = [u for u in users if u["role"] == "admin"]
+    if len(admins) <= 1 and any(a["login"].lower() == login.lower() for a in admins):
+        return JSONResponse({"error": "Impossible de supprimer le dernier administrateur"}, status_code=400)
+    set_meta({"users": [u for u in users if u["login"].lower() != login.lower()]})
+    audit("Compte", "Utilisateur supprimé · %s" % login)
+    return {"ok": True}
+
+ensure_users()   # crée le compte admin par défaut au besoin
 
 app.mount("/", StaticFiles(directory=os.path.join(BASE, "static"), html=True), name="static")

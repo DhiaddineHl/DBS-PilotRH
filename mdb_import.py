@@ -24,15 +24,49 @@ def _split_nom(name):
     return (p[0], " ".join(p[1:])) if len(p) >= 2 else (name or "", "")
 
 
-def parse(mdb_path, du=DEFAULT_DU, au=None):
+def _assemble(users, checkins, du=DEFAULT_DU, au=None):
+    """checkins : liste de (uid, 'YYYY-MM-DD HH:MM:SS'). Construit users/actifs/day_user."""
     today = datetime.date.today()
     if not au:
         au = (today + datetime.timedelta(days=1)).isoformat()   # inclut aujourd'hui, exclut le futur (horloge déréglée)
     actif_depuis = (today - datetime.timedelta(days=150)).isoformat()  # roster courant = pointé dans les ~5 derniers mois
+
+    punches = defaultdict(list)   # (uid, date) -> [HH:MM]
+    recent = set()
+    for uid, t in checkins:
+        if not t or uid not in users:
+            continue
+        t = str(t)
+        d = t[:10]
+        if du <= d <= au and t[11:16]:
+            punches[(uid, d)].append(t[11:16])
+            if d >= actif_depuis:
+                recent.add(uid)
+
+    days_per = defaultdict(set)
+    for (uid, d) in punches:
+        days_per[uid].add(d)
+    actifs = {uid for uid in recent if len(days_per[uid]) >= MIN_JOURS_ACTIF}
+
+    day_user = defaultdict(dict)
+    for (uid, d), ts in punches.items():
+        if uid not in actifs:
+            continue
+        ts = sorted(set(ts))
+        clean = []
+        for t in ts:
+            if clean and (int(t[:2]) * 60 + int(t[3:5])) - (int(clean[-1][:2]) * 60 + int(clean[-1][3:5])) < 5:
+                continue
+            clean.append(t)
+        day_user[d][uid] = clean
+    return users, actifs, day_user
+
+
+def parse(mdb_path, du=DEFAULT_DU, au=None):
+    """Lecture du fichier Access (.mdb) exporté par le logiciel ZKTeco."""
     db = AccessParser(mdb_path)
     U = db.parse_table("USERINFO")
     C = db.parse_table("CHECKINOUT")
-
     users = {}
     for i in range(len(U["USERID"])):
         uid, name = U["USERID"][i], U["Name"][i]
@@ -44,46 +78,43 @@ def parse(mdb_path, du=DEFAULT_DU, au=None):
             "nom": nom, "prenom": prenom,
             "sexe": "F" if (U["Gender"][i] or "").lower().startswith("f") else "H",
         }
+    checkins = [(C["USERID"][i], C["CHECKTIME"][i]) for i in range(len(C["USERID"]))]
+    return _assemble(users, checkins, du, au)
 
-    punches = defaultdict(list)   # (uid, date) -> [HH:MM]
-    recent = set()                # employées du roster courant
-    for i in range(len(C["USERID"])):
-        uid, t = C["USERID"][i], C["CHECKTIME"][i]
-        if not t or uid not in users:
+
+def parse_punches(users_rows, punch_rows, du=DEFAULT_DU, au=None):
+    """Lecture directe depuis la pointeuse (connexion réseau).
+    users_rows : [{'badge','name','sexe'?}]   punch_rows : [{'badge','dt':'YYYY-MM-DD HH:MM:SS'}]"""
+    users = {}
+    for u in users_rows or []:
+        badge = str(u.get("badge") or u.get("uid") or "").strip()
+        if not badge:
             continue
-        d = t[:10]
-        if du <= d <= au and t[11:16]:
-            punches[(uid, d)].append(t[11:16])
-            if d >= actif_depuis:
-                recent.add(uid)
-
-    days_per = defaultdict(set)
-    for (uid, d) in punches:
-        days_per[uid].add(d)
-    # roster courant : a pointé récemment ET au moins MIN_JOURS_ACTIF jours
-    actifs = {uid for uid in recent if len(days_per[uid]) >= MIN_JOURS_ACTIF}
-
-    # entrée/sortie par jour — tout l'historique des employées actives est conservé
-    day_user = defaultdict(dict)
-    for (uid, d), ts in punches.items():
-        if uid not in actifs:
-            continue
-        # dédoublonnage des badges trop rapprochés (< 5 min = même passage) puis tri
-        ts = sorted(set(ts))
-        clean = []
-        for t in ts:
-            if clean and (int(t[:2]) * 60 + int(t[3:5])) - (int(clean[-1][:2]) * 60 + int(clean[-1][3:5])) < 5:
-                continue
-            clean.append(t)
-        day_user[d][uid] = clean
-
-    return users, actifs, day_user
+        nom, prenom = _split_nom(u.get("name", "") or "")
+        users[badge] = {"badge": badge, "nom": nom, "prenom": prenom,
+                        "sexe": "F" if str(u.get("sexe", "")).lower().startswith("f") else "F"}
+    checkins = []
+    for p in punch_rows or []:
+        badge = str(p.get("badge") or p.get("uid") or "").strip()
+        dt = str(p.get("dt") or "").replace("T", " ")
+        if badge and dt:
+            users.setdefault(badge, {"badge": badge, "nom": "", "prenom": "", "sexe": "F"})
+            checkins.append((badge, dt))
+    return _assemble(users, checkins, du, au)
 
 
 def merge(state, mdb_path, du=DEFAULT_DU, au=None):
-    """Fusionne le contenu du .mdb dans l'état existant et le renvoie."""
-    users, actifs, day_user = parse(mdb_path, du, au)
+    """Fusionne un fichier .mdb dans l'état existant."""
+    return _merge_assembled(state, *parse(mdb_path, du, au))
 
+
+def merge_punches(state, users_rows, punch_rows, du=DEFAULT_DU, au=None):
+    """Fusionne des pointages lus directement sur la pointeuse (réseau)."""
+    return _merge_assembled(state, *parse_punches(users_rows, punch_rows, du, au))
+
+
+def _merge_assembled(state, users, actifs, day_user):
+    """Fusionne un jeu déjà assemblé (users/actifs/day_user) dans l'état."""
     exclus = set(str(b) for b in state.get("exclus", []))   # badges d'employées supprimées (démission) : jamais réimportées
     employees = state.get("employees", [])
     by_badge = {e.get("matricule") or e.get("cin"): e for e in employees}
