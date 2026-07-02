@@ -86,37 +86,44 @@ const MOIS=['janvier','février','mars','avril','mai','juin','juillet','août','
 function S(){return DATA?DATA.settings:{};}
 function regimeFor(ds){
   const s=S();const w=new Date(ds+'T12:00').getDay();
-  if(s.periodes)for(const p of s.periodes){if(p.du<=ds&&ds<=p.au){
-    if(w===0)return{actif:false};
-    if(w===6)return p.samedi&&p.samedi.actif?{actif:true,debut:p.samedi.debut,fin:p.samedi.fin,pause:+p.samedi.pause||0,tol:p.tol||15,grace:p.grace||15}:{actif:false};
-    return{actif:true,debut:p.lunven.debut,fin:p.lunven.fin,pause:+p.lunven.pause||0,tol:p.tol||15,grace:p.grace||15};
-  }}
+  if(s.periodes)for(const p of s.periodes){if(p.du<=ds&&ds<=p.au){const r=(p.jours||{})[w];return r||{actif:false};}}
   return (s.jours||{})[w]||{actif:true,debut:'07:30',fin:'16:30',pause:30,tol:15,grace:15};
 }
+function shiftYm(ym,delta){let a=ym.split('-'),Y=+a[0],M=+a[1]+delta;while(M<1){M+=12;Y--;}while(M>12){M-=12;Y++;}return Y+'-'+pad(M);}
+function roundMin(x,step,sens){if(!step||step<=0)return x;return sens==='inferieur'?Math.floor(x/step)*step:Math.round(x/step)*step;}
+function badges(rec){let P=(rec.punches&&rec.punches.length)?rec.punches.slice():[rec.entree,rec.sortie];return P.map(toMin).filter(x=>x!=null).sort((a,b)=>a-b);}
 function metrics(rec,date){
   const reg=regimeFor(date);
   if(!rec||rec.statut==='absent')return{statut:'absent',worked:false,heures:0,retard:0,hs:0,late:false};
   if(['leave','mission'].includes(rec.statut)&&!rec.entree)return{statut:rec.statut,worked:false,heures:0,retard:0,hs:0,late:false};
-  const e=toMin(rec.entree),o=toMin(rec.sortie);let heures=0,retard=0,hs=0,late=false;
-  if(e!=null){
-    if(reg.actif===false){if(o!=null)hs=Math.max(0,o-e-(+reg.pause||0));}
+  const P=badges(rec);let heures=0,retard=0,hs=0,late=false,coupures=false,revue=false;
+  if(P.length){const firstIn=P[0],lastOut=P[P.length-1];
+    if(reg.actif===false){hs=Math.max(0,lastOut-firstIn-(+reg.pause||0));}
     else{const debut=toMin(reg.debut),fin=toMin(reg.fin),grace=+reg.grace||0,tol=+reg.tol||0,pause=+reg.pause||0;
-      late=e>debut+tol;retard=late?(e-debut):0;
-      if(o!=null){const effIn=Math.max(e,debut),effOut=Math.min(o,fin);let norm=Math.max(0,effOut-effIn);if(norm>pause)norm-=pause;heures=norm;
-        if(o>=fin+grace){hs=(S().modeHS==='fin')?(o-fin):(o-(fin+grace));}hs=Math.max(0,hs);}}
-  }
+      late=firstIn>debut+tol;retard=late?(firstIn-debut):0;
+      if(P.length>=2){let segs=[];
+        if(P.length%2===0){for(let i=0;i+1<P.length;i+=2)segs.push([P[i],P[i+1]]);coupures=P.length>2;}
+        else{segs=[[firstIn,lastOut]];revue=true;}
+        let norm=0;for(const s of segs){const a=Math.max(s[0],debut),b=Math.min(s[1],fin);if(b>a)norm+=b-a;}
+        let gaps=0;for(let i=0;i+1<segs.length;i++){const g0=Math.max(segs[i][1],debut),g1=Math.min(segs[i+1][0],fin);if(g1>g0)gaps+=g1-g0;}
+        norm-=Math.max(0,pause-gaps);heures=Math.max(0,norm);
+        if(lastOut>=fin+grace){hs=(S().modeHS==='fin')?(lastOut-fin):(lastOut-(fin+grace));}hs=Math.max(0,hs);}}}
+  const ar=+S().arrondi||0;if(ar>0){heures=roundMin(heures,ar,S().arrondiSens);hs=roundMin(hs,ar,S().arrondiSens);}
+  if(rec.hM!=null&&rec.hM!=='')heures=+rec.hM;
   let statut=rec.statut==='present'?(late?'late':'present'):rec.statut;
-  return{statut,worked:true,heures,retard,hs,late};
+  return{statut,worked:true,heures,retard,hs,late,coupures,revue};
 }
 
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2200);}
 
-async function fetchMe(pin){
-  const r=await fetch('/api/me?t='+encodeURIComponent(TOKEN)+'&pin='+encodeURIComponent(pin||''));
+let PIN='';
+async function fetchMe(pin,mois){
+  const r=await fetch('/api/me?t='+encodeURIComponent(TOKEN)+'&pin='+encodeURIComponent(pin||'')+'&mois='+encodeURIComponent(mois||''));
   if(r.status===200)return{ok:true,data:await r.json()};
   const j=await r.json().catch(()=>({}));
   return{ok:false,status:r.status,need_pin:j.need_pin,error:j.error};
 }
+async function loadMonth(ym){const res=await fetchMe(PIN,ym);if(res.ok){DATA=res.data;render();}else toast('Impossible de charger ce mois');}
 
 function pinScreen(msg){
   app.innerHTML=`<div class="card">
@@ -131,7 +138,7 @@ function pinScreen(msg){
   const submit=async()=>{const v=inp.value.trim();if(v.length<4){toast('4 chiffres requis');return;}
     document.getElementById('go').textContent='…';
     const res=await fetchMe(v);
-    if(res.ok){DATA=res.data;render();}
+    if(res.ok){PIN=v;DATA=res.data;render();}
     else pinScreen('Code incorrect. Réessayez.');};
   document.getElementById('go').onclick=submit;
   inp.onkeydown=e=>{if(e.key==='Enter')submit()};
@@ -139,10 +146,11 @@ function pinScreen(msg){
 }
 
 function summary(){
-  const j=DATA.jours, ym=DATA.mois, last=parseInt(DATA.today.slice(8,10),10);
+  const j=DATA.jours, ym=DATA.mois, today=DATA.today;
+  const a=ym.split('-'),Y=+a[0],M=+a[1];const dim=new Date(Y,M,0).getDate();
   let trav=0,abs=0,conge=0,retN=0,retMin=0,hN=0,hS=0;const lines=[];
-  for(let d=1;d<=last;d++){
-    const ds=ym+'-'+pad(d);const reg=regimeFor(ds);const rec=j[ds];const m=metrics(rec,ds);
+  for(let d=1;d<=dim;d++){
+    const ds=ym+'-'+pad(d);if(ds>today)break;const reg=regimeFor(ds);const rec=j[ds];const m=metrics(rec,ds);
     let label;
     if(rec){
       if(m.statut==='absent'){if(reg.actif===false)continue;abs++;label='absent';}
@@ -169,12 +177,17 @@ function render(){
       <td class="mono">${pad(l.d)}/${ym[1]} <span class="muted">${JJ[w]}</span></td>
       <td><span class="tag ${tg[1]}">${tg[0]}</span></td>
       <td class="mono">${showT?(l.rec.entree||'—'):'—'}</td>
-      <td class="mono">${showT?(l.rec.sortie||'—'):'—'}</td>
+      <td class="mono">${showT?(l.rec.sortie||'—'):'—'}${(l.rec.punches&&l.rec.punches.length>2)?` <span title="Badges : ${l.rec.punches.join(' · ')}" style="cursor:help;color:var(--gold)">⇄</span>`:''}</td>
       <td class="mono">${l.m.heures?hLabel(l.m.heures):'—'}</td>
       <td class="mono">${l.m.retard?'+'+l.m.retard:'—'}</td>
       <td class="mono">${l.m.hs?hLabel(l.m.hs):'—'}</td>
     </tr>`;}).join('');
+  const curYm=DATA.today.slice(0,7),prevYm=shiftYm(curYm,-1);
   app.innerHTML=`
+  <div style="display:flex;gap:8px;margin-top:16px">
+    <button onclick="loadMonth('${curYm}')" style="flex:1;padding:11px;border-radius:11px;border:1px solid var(--line);font-weight:700;font-size:13.5px;cursor:pointer;${DATA.mois===curYm?'background:var(--ink);color:#fff;border-color:var(--ink)':'background:var(--surface);color:var(--ink)'}">Ce mois</button>
+    <button onclick="loadMonth('${prevYm}')" style="flex:1;padding:11px;border-radius:11px;border:1px solid var(--line);font-weight:700;font-size:13.5px;cursor:pointer;${DATA.mois===prevYm?'background:var(--ink);color:#fff;border-color:var(--ink)':'background:var(--surface);color:var(--ink)'}">Mois précédent</button>
+  </div>
   <div class="card">
     <div class="who"><div class="av">${ini.toUpperCase()}</div>
       <div><div class="nm">${DATA.prenom} ${DATA.nom}</div>

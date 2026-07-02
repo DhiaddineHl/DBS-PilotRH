@@ -7,13 +7,14 @@ Règle de pointage :  entrée = premier badge du jour, sortie = dernier badge du
 Fusion : les employées existantes sont mises à jour sans écraser les champs
          saisis manuellement (poste, catégorie, salaire, photo...).
 """
+import datetime
 from collections import defaultdict
 from access_parser import AccessParser
 
 # Fenêtre importée par défaut : tout l'historique réel utile.
 # La pointeuse a des dates erronées (horloge déréglée) hors de cette plage : on les ignore.
 DEFAULT_DU = "2023-01-01"
-DEFAULT_AU = "2026-06-30"
+DEFAULT_AU = None  # None => calculé dynamiquement (aujourd'hui + 1 jour)
 MIN_JOURS_ACTIF = 3   # une employée est "active" si elle a pointé >= 3 jours
 ACTIF_DEPUIS = "2026-03-01"  # roster courant = a pointé après cette date
 
@@ -23,7 +24,11 @@ def _split_nom(name):
     return (p[0], " ".join(p[1:])) if len(p) >= 2 else (name or "", "")
 
 
-def parse(mdb_path, du=DEFAULT_DU, au=DEFAULT_AU):
+def parse(mdb_path, du=DEFAULT_DU, au=None):
+    today = datetime.date.today()
+    if not au:
+        au = (today + datetime.timedelta(days=1)).isoformat()   # inclut aujourd'hui, exclut le futur (horloge déréglée)
+    actif_depuis = (today - datetime.timedelta(days=150)).isoformat()  # roster courant = pointé dans les ~5 derniers mois
     db = AccessParser(mdb_path)
     U = db.parse_table("USERINFO")
     C = db.parse_table("CHECKINOUT")
@@ -49,7 +54,7 @@ def parse(mdb_path, du=DEFAULT_DU, au=DEFAULT_AU):
         d = t[:10]
         if du <= d <= au and t[11:16]:
             punches[(uid, d)].append(t[11:16])
-            if d >= ACTIF_DEPUIS:
+            if d >= actif_depuis:
                 recent.add(uid)
 
     days_per = defaultdict(set)
@@ -63,16 +68,23 @@ def parse(mdb_path, du=DEFAULT_DU, au=DEFAULT_AU):
     for (uid, d), ts in punches.items():
         if uid not in actifs:
             continue
-        ts.sort()
-        day_user[d][uid] = (ts[0], ts[-1] if len(ts) > 1 else ts[0])
+        # dédoublonnage des badges trop rapprochés (< 5 min = même passage) puis tri
+        ts = sorted(set(ts))
+        clean = []
+        for t in ts:
+            if clean and (int(t[:2]) * 60 + int(t[3:5])) - (int(clean[-1][:2]) * 60 + int(clean[-1][3:5])) < 5:
+                continue
+            clean.append(t)
+        day_user[d][uid] = clean
 
     return users, actifs, day_user
 
 
-def merge(state, mdb_path, du=DEFAULT_DU, au=DEFAULT_AU):
+def merge(state, mdb_path, du=DEFAULT_DU, au=None):
     """Fusionne le contenu du .mdb dans l'état existant et le renvoie."""
     users, actifs, day_user = parse(mdb_path, du, au)
 
+    exclus = set(str(b) for b in state.get("exclus", []))   # badges d'employées supprimées (démission) : jamais réimportées
     employees = state.get("employees", [])
     by_badge = {e.get("matricule") or e.get("cin"): e for e in employees}
     next_n = len(employees) + 1
@@ -83,6 +95,8 @@ def merge(state, mdb_path, du=DEFAULT_DU, au=DEFAULT_AU):
         badge = u["badge"]
         if badge in ("", "0") or not any(c.isalpha() for c in (u.get("nom", "") + u.get("prenom", ""))):
             continue                                # badge de test / sans nom : ignoré
+        if badge in exclus:
+            continue                                # démissionnaire supprimée : on ne la réimporte pas
         if badge in by_badge:                      # déjà connue : MAJ douce
             e = by_badge[badge]
             e["prenom"] = e.get("prenom") or u["prenom"]
@@ -113,12 +127,15 @@ def merge(state, mdb_path, du=DEFAULT_DU, au=DEFAULT_AU):
     for d in sorted(day_user):
         rec = {}
         present = set()
-        for uid, (entree, sortie) in day_user[d].items():
+        for uid, plist in day_user[d].items():
             eid = badge_to_id.get(uid)
             if not eid:
                 continue                            # badge filtré : pas de pointage
             present.add(eid)
-            rec[eid] = {"statut": "present", "entree": entree, "sortie": sortie}
+            r = {"statut": "present", "entree": plist[0], "sortie": plist[-1] if len(plist) > 1 else ""}
+            if len(plist) > 2:
+                r["punches"] = plist                # sorties/retours intermédiaires conservés
+            rec[eid] = r
         for eid in emp_ids:
             if eid not in present:
                 rec[eid] = {"statut": "absent", "entree": "", "sortie": ""}

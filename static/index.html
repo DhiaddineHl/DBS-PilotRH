@@ -321,7 +321,7 @@ const AV_COLORS = ['#b1432d','#c19a3e','#2f8f5b','#4f66c2','#7d5fa8','#0d8a8a','
 
 /* ---------- Utils ---------- */
 const $ = s => document.querySelector(s);
-const today = new Date('2026-06-19T08:30:00');
+const today = new Date();
 const pad = n => String(n).padStart(2,'0');
 function isoOf(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
 const TODAY = isoOf(today);
@@ -379,6 +379,8 @@ const DAYS_FR=['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'
 function normalizeSettings(s){
   s=s||{};
   if(s.modeHS===undefined)s.modeHS='fin';
+  if(s.arrondi===undefined)s.arrondi=0;
+  if(s.arrondiSens===undefined)s.arrondiSens='proche';
   if(!s.jours){
     const deb=s.heureDebut||'07:30',fin=s.heureFin||'16:30',pa=(s.pause!==undefined?s.pause:30),tol=(s.toleranceRetard!==undefined?s.toleranceRetard:15),gr=(s.graceHS!==undefined?s.graceHS:15);
     s.jours={};[1,2,3,4,5].forEach(d=>s.jours[d]={actif:true,debut:deb,fin:fin,pause:pa,tol:tol,grace:gr});
@@ -387,16 +389,18 @@ function normalizeSettings(s){
   }
   for(let d=0;d<7;d++){const r=s.jours[d]||{};s.jours[d]={actif:(r.actif===undefined?(d!==0):r.actif),debut:r.debut||'07:30',fin:r.fin||(d===6?'13:00':'16:30'),pause:(r.pause!==undefined?r.pause:(d===6?0:30)),tol:(r.tol!==undefined?r.tol:15),grace:(r.grace!==undefined?r.grace:15)};}
   if(!s.periodes)s.periodes=[];
-  s.periodes.forEach(p=>{p.lunven=p.lunven||{debut:'07:00',fin:'14:00',pause:0};p.samedi=p.samedi||{actif:false,debut:'07:00',fin:'13:00',pause:0};if(p.tol===undefined)p.tol=15;if(p.grace===undefined)p.grace=15;});
+  s.periodes.forEach(p=>{
+    if(!p.jours){p.jours={};const lv=p.lunven||{debut:'07:00',fin:'14:00',pause:0},sa=p.samedi||{actif:false,debut:'07:00',fin:'13:00',pause:0};
+      [1,2,3,4,5].forEach(d=>p.jours[d]={actif:true,debut:lv.debut,fin:lv.fin,pause:+lv.pause||0,tol:p.tol||15,grace:p.grace||15});
+      p.jours[6]=sa.actif?{actif:true,debut:sa.debut,fin:sa.fin,pause:+sa.pause||0,tol:p.tol||15,grace:p.grace||15}:{actif:false,debut:'07:00',fin:'13:00',pause:0,tol:15,grace:15};
+      p.jours[0]={actif:false,debut:'07:00',fin:'14:00',pause:0,tol:15,grace:15};}
+    for(let d=0;d<7;d++){const r=p.jours[d]||{};p.jours[d]={actif:(r.actif===undefined?(d>=1&&d<=6):r.actif),debut:r.debut||'07:00',fin:r.fin||'14:00',pause:(r.pause!==undefined?r.pause:0),tol:(r.tol!==undefined?r.tol:15),grace:(r.grace!==undefined?r.grace:15)};}
+  });
   return s;
 }
 function regimeFor(ds){
   const s=S();const w=new Date(ds+'T12:00').getDay();
-  if(s.periodes)for(const p of s.periodes){if(p.du<=ds&&ds<=p.au){
-    if(w===0)return{actif:false};
-    if(w===6)return p.samedi&&p.samedi.actif?{actif:true,debut:p.samedi.debut,fin:p.samedi.fin,pause:+p.samedi.pause||0,tol:p.tol||15,grace:p.grace||15}:{actif:false};
-    return{actif:true,debut:p.lunven.debut,fin:p.lunven.fin,pause:+p.lunven.pause||0,tol:p.tol||15,grace:p.grace||15};
-  }}
+  if(s.periodes)for(const p of s.periodes){if(p.du<=ds&&ds<=p.au){const r=(p.jours||{})[w];return r||{actif:false};}}
   return (s.jours||{})[w]||{actif:true,debut:'07:30',fin:'16:30',pause:30,tol:15,grace:15};
 }
 
@@ -456,7 +460,7 @@ async function load(){
   DB.settings=normalizeSettings(DB.settings);
 }
 let _saveT;function save(){clearTimeout(_saveT);_saveT=setTimeout(()=>{fetch('/api/state-meta',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({employees:DB.employees,settings:DB.settings,documents:DB.documents,conges:DB.conges,absences:DB.absences})}).catch(()=>{})},400)}
-function persistPointage(date,id){const r=(DB.pointages[date]||{})[id]||{statut:'absent',entree:'',sortie:''};fetch('/api/pointage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:date,id:id,statut:r.statut,entree:r.entree,sortie:r.sortie,qui:ROLE})}).catch(()=>{});}
+function persistPointage(date,id){const r=(DB.pointages[date]||{})[id]||{statut:'absent',entree:'',sortie:''};fetch('/api/pointage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:date,id:id,statut:r.statut,entree:r.entree,sortie:r.sortie,punches:r.punches||null,hM:(r.hM!=null?r.hM:null),qui:ROLE})}).catch(()=>{});}
 function persistDay(date){const recs=DB.pointages[date]||{};fetch('/api/day',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:date,recs:recs})}).catch(()=>{});}
 function persistAll(){fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(DB)}).catch(()=>{});}
 async function loadAudit(){try{const r=await fetch('/api/audit?limit=40');const rows=await r.json();const tb=document.getElementById('auditBody');if(tb)tb.innerHTML=rows.map(a=>`<tr><td><b>${a.qui}</b></td><td style="color:var(--muted)">${a.action}</td><td class="mono" style="font-size:12px">${(a.ts||'').replace('T',' ')}</td></tr>`).join('')||'<tr><td colspan="3"><div class="empty">Aucune entrée</div></td></tr>';}catch(e){}}
@@ -472,27 +476,41 @@ function dayRec(date){return DB.pointages[date]||null}
 function empRec(date,id){const r=dayRec(date);return (r&&r[id])||{statut:'absent',entree:'',sortie:''}}
 
 /* métriques dérivées selon paramètres horaires */
+function roundMin(x,step,sens){if(!step||step<=0)return x;return sens==='inferieur'?Math.floor(x/step)*step:Math.round(x/step)*step;}
+function badges(rec){
+  let P=(rec.punches&&rec.punches.length)?rec.punches.slice():[rec.entree,rec.sortie];
+  return P.map(toMin).filter(x=>x!=null).sort((a,b)=>a-b);
+}
 function metrics(rec,date){
   const reg=regimeFor(date||TODAY);
   if(!rec||rec.statut==='absent')return{statut:'absent',worked:false,heures:0,retard:0,hs:0,late:false};
   if(['leave','mission'].includes(rec.statut)&&!rec.entree)return{statut:rec.statut,worked:false,heures:0,retard:0,hs:0,late:false};
-  const e=toMin(rec.entree),o=toMin(rec.sortie);
-  let heures=0,retard=0,hs=0,late=false;
-  if(e!=null){
-    if(reg.actif===false){                   // jour normalement chômé, travaillé exceptionnellement
-      if(o!=null){hs=Math.max(0,o-e-(+reg.pause||0));}
+  const P=badges(rec);
+  let heures=0,retard=0,hs=0,late=false,coupures=false,revue=false;
+  if(P.length){
+    const firstIn=P[0],lastOut=P[P.length-1];
+    if(reg.actif===false){
+      hs=Math.max(0,lastOut-firstIn-(+reg.pause||0));
     } else {
       const debut=toMin(reg.debut),fin=toMin(reg.fin),grace=+reg.grace||0,tol=+reg.tol||0,pause=+reg.pause||0;
-      late=e>debut+tol; retard=late?(e-debut):0;
-      if(o!=null){
-        const effIn=Math.max(e,debut),effOut=Math.min(o,fin);
-        let norm=Math.max(0,effOut-effIn); if(norm>pause)norm-=pause; heures=norm;
-        if(o>=fin+grace){hs=(S().modeHS==='fin')?(o-fin):(o-(fin+grace));} hs=Math.max(0,hs);
+      late=firstIn>debut+tol; retard=late?(firstIn-debut):0;
+      if(P.length>=2){
+        let segs=[];
+        if(P.length%2===0){for(let i=0;i+1<P.length;i+=2)segs.push([P[i],P[i+1]]);coupures=P.length>2;}
+        else{segs=[[firstIn,lastOut]];revue=true;}              // badges impairs (oubli) : entrée/sortie simple, à vérifier
+        let norm=0;for(const s of segs){const a=Math.max(s[0],debut),b=Math.min(s[1],fin);if(b>a)norm+=b-a;}
+        let gaps=0;for(let i=0;i+1<segs.length;i++){const g0=Math.max(segs[i][1],debut),g1=Math.min(segs[i+1][0],fin);if(g1>g0)gaps+=g1-g0;}
+        norm-=Math.max(0,pause-gaps);
+        heures=Math.max(0,norm);
+        if(lastOut>=fin+grace){hs=(S().modeHS==='fin')?(lastOut-fin):(lastOut-(fin+grace));} hs=Math.max(0,hs);
       }
     }
   }
+  const ar=+S().arrondi||0; if(ar>0){heures=roundMin(heures,ar,S().arrondiSens);hs=roundMin(hs,ar,S().arrondiSens);}
+  let manuel=false;
+  if(rec.hM!=null&&rec.hM!==''){heures=+rec.hM;manuel=true;}
   let statut=rec.statut==='present'?(late?'late':'present'):rec.statut;
-  return{statut,worked:true,heures,retard,hs,late};
+  return{statut,worked:true,heures,retard,hs,late,manuel,coupures,revue};
 }
 
 /* ---------- composants ---------- */
@@ -627,8 +645,8 @@ function fillPres(){
       <td>${empCell(e.id)}</td><td>${catTag(e.categorie)}</td>
       <td><select class="ssel" onchange="editPres('${e.id}','statut',this.value)">${opts}</select> ${m.late?'<span class="tag t-late" style="margin-left:4px">Retard</span>':''}</td>
       <td>${showTimes?`<input class="tinput" type="time" value="${rec.entree||''}" onchange="editPres('${e.id}','entree',this.value)">`:'<span style="color:var(--faint)">—</span>'}</td>
-      <td>${showTimes?`<input class="tinput" type="time" value="${rec.sortie||''}" onchange="editPres('${e.id}','sortie',this.value)">`:'<span style="color:var(--faint)">—</span>'}</td>
-      <td>${m.worked&&m.heures?'<b>'+hLabel(m.heures)+'</b>':'—'}</td>
+      <td>${showTimes?`<input class="tinput" type="time" value="${rec.sortie||''}" onchange="editPres('${e.id}','sortie',this.value)">${(rec.punches&&rec.punches.length>2)?(rec.punches.length%2===0?` <span class="tag" style="background:var(--gold-soft);color:var(--gold);cursor:help" title="Badges : ${rec.punches.join(' · ')} — coupure(s) déduite(s)">\u21c4 ${rec.punches.length}</span>`:` <span class="tag t-late" style="cursor:help" title="Badges impairs (oubli de pointage) : ${rec.punches.join(' · ')} — calculé en entrée/sortie simple, à vérifier">\u26a0 ${rec.punches.length}</span>`):''}`:'<span style="color:var(--faint)">—</span>'}</td>
+      <td>${(rec.statut==='present'||rec.statut==='autorisation'||(rec.hM!=null&&rec.hM!==''))?`<input class="tinput" style="width:60px;text-align:center" value="${m.heures?fr2(hDec(m.heures)):''}" title="Heures travaillées — modifiable (laisser vide = calcul auto)" onchange="editHeures('${e.id}',this.value)">${m.manuel?` <span title="Saisie manuelle" style="color:var(--gold)">✎</span>`:''}`:(m.worked&&m.heures?'<b>'+hLabel(m.heures)+'</b>':'—')}</td>
       <td>${m.retard?'<b style="color:var(--late)">+'+m.retard+' min</b>':'—'}</td>
       <td>${m.hs?'<b style="color:var(--mission)">'+hLabel(m.hs)+'</b>':'—'}</td>
     </tr>`;
@@ -639,12 +657,21 @@ function editPres(id,field,val){
   if(!DB.pointages[PRES_DATE][id])DB.pointages[PRES_DATE][id]={statut:'absent',entree:'',sortie:''};
   const rec=DB.pointages[PRES_DATE][id];
   rec[field]=val;
-  if(field==='statut'&&val==='absent'){rec.entree='';rec.sortie=''}
-  if(field==='statut'&&(val==='present')&&!rec.entree){rec.entree=S().heureEntree;rec.sortie=S().heureSortie}
+  if((field==='entree'||field==='sortie')&&rec.punches)delete rec.punches;   // saisie manuelle : on abandonne les badges intermédiaires
+  if(field==='statut'&&val==='absent'){rec.entree='';rec.sortie='';delete rec.punches;delete rec.hM}
+  if(field==='statut'&&(val==='present')&&!rec.entree){const rg=regimeFor(PRES_DATE);rec.entree=rg.debut||'07:30';rec.sortie=rg.fin||'16:30'}
   persistPointage(PRES_DATE,id);fillPres();
 }
+function editHeures(id,val){
+  if(!DB.pointages[PRES_DATE])DB.pointages[PRES_DATE]={};
+  if(!DB.pointages[PRES_DATE][id])DB.pointages[PRES_DATE][id]={statut:'present',entree:'',sortie:''};
+  const rec=DB.pointages[PRES_DATE][id];const v=String(val).trim().replace(',','.');
+  if(v===''){delete rec.hM;}
+  else{let mins;if(v.indexOf('h')>=0){const p=v.split('h');mins=(parseInt(p[0])||0)*60+(parseInt(p[1])||0);}else{mins=Math.round(parseFloat(v)*60);}if(isNaN(mins)||mins<0)mins=0;rec.hM=mins;}
+  persistPointage(PRES_DATE,id);fillPres();toast(v===''?'Heures remises en calcul automatique':'Heures saisies manuellement');
+}
 function createDay(){
-  const rec={};DB.employees.forEach(e=>{if(e.actif)rec[e.id]={statut:'present',entree:S().heureEntree,sortie:S().heureSortie}});
+  const rg=regimeFor(PRES_DATE);const rec={};DB.employees.forEach(e=>{if(e.actif)rec[e.id]={statut:'present',entree:rg.debut||'07:30',sortie:rg.fin||'16:30'}});
   DB.pointages[PRES_DATE]=rec;persistDay(PRES_DATE);renderPresences($('#main'));toast('Journée du '+fmtDate(PRES_DATE)+' créée');
 }
 
@@ -654,44 +681,51 @@ function openSettings(){
   openModal(`<div class="modal-head">${I.gear}<h3>Paramètres horaires</h3><button class="x" onclick="closeModal()">${I.x}</button></div><div class="modal-body" id="setBody"></div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button><button class="btn btn-gold" onclick="saveSettings()">${I.check} Enregistrer & recalculer</button></div>`,'wide');
   renderSettings();
 }
-function renderSettings(){
-  const c=window._cfg;const order=[1,2,3,4,5,6,0];
-  const dayRow=d=>{const r=c.jours[d];const dis=r.actif?'':'disabled';return `<tr>
+function regRow(r,d,scope){const dis=r.actif?'':'disabled';const c=(scope==null)?`cfgDay(${d},`:`cfgPerDay(${scope},${d},`;return `<tr>
     <td style="font-weight:600">${DAYS_FR[d]}</td>
-    <td><input type="checkbox" ${r.actif?'checked':''} onchange="cfgDay(${d},'actif',this.checked)"></td>
-    <td><input class="tinput" type="time" value="${r.debut}" ${dis} onchange="cfgDay(${d},'debut',this.value)"></td>
-    <td><input class="tinput" type="time" value="${r.fin}" ${dis} onchange="cfgDay(${d},'fin',this.value)"></td>
-    <td><input class="tinput" style="width:58px" type="number" value="${r.pause}" ${dis} onchange="cfgDay(${d},'pause',+this.value)"></td>
-    <td><input class="tinput" style="width:58px" type="number" value="${r.tol}" ${dis} onchange="cfgDay(${d},'tol',+this.value)"></td>
-    <td><input class="tinput" style="width:58px" type="number" value="${r.grace}" ${dis} onchange="cfgDay(${d},'grace',+this.value)"></td></tr>`;};
-  const per=c.periodes.map((p,i)=>`<div class="card" style="padding:12px 14px;margin-bottom:10px;background:var(--surface-2)">
+    <td><input type="checkbox" ${r.actif?'checked':''} onchange="${c}'actif',this.checked)"></td>
+    <td><input class="tinput" type="time" value="${r.debut}" ${dis} onchange="${c}'debut',this.value)"></td>
+    <td><input class="tinput" type="time" value="${r.fin}" ${dis} onchange="${c}'fin',this.value)"></td>
+    <td><input class="tinput" style="width:54px" type="number" value="${r.pause}" ${dis} onchange="${c}'pause',+this.value)"></td>
+    <td><input class="tinput" style="width:54px" type="number" value="${r.tol}" ${dis} onchange="${c}'tol',+this.value)"></td>
+    <td><input class="tinput" style="width:54px" type="number" value="${r.grace}" ${dis} onchange="${c}'grace',+this.value)"></td></tr>`;}
+function renderSettings(){
+  const c=window._cfg;
+  const baseRows=[1,2,3,4,5,6,0].map(d=>regRow(c.jours[d],d,null)).join('');
+  const per=c.periodes.map((p,i)=>`<div class="card" style="padding:12px 14px;margin-bottom:12px;background:var(--surface-2)">
     <div style="display:flex;gap:9px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
-      <input class="tinput" style="width:190px;font-family:var(--sans)" value="${p.nom}" onchange="cfgPer(${i},'nom',this.value)">
+      <input class="tinput" style="width:200px;font-family:var(--sans);font-weight:600" value="${p.nom}" onchange="cfgPer(${i},'nom',this.value)">
       <span style="font-size:12px;color:var(--muted)">du</span><input class="tinput" type="date" value="${p.du}" onchange="cfgPer(${i},'du',this.value)">
       <span style="font-size:12px;color:var(--muted)">au</span><input class="tinput" type="date" value="${p.au}" onchange="cfgPer(${i},'au',this.value)">
       <button class="linkish" style="margin-left:auto;color:var(--thread)" onclick="delPeriode(${i})">Supprimer</button>
     </div>
-    <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:12.5px;align-items:center">
-      <div><b>Lun→Ven</b>&nbsp; <input class="tinput" type="time" value="${p.lunven.debut}" onchange="cfgPerReg(${i},'lunven','debut',this.value)"> → <input class="tinput" type="time" value="${p.lunven.fin}" onchange="cfgPerReg(${i},'lunven','fin',this.value)"> &nbsp;pause <input class="tinput" style="width:55px" type="number" value="${p.lunven.pause}" onchange="cfgPerReg(${i},'lunven','pause',+this.value)"></div>
-      <div><label style="font-weight:600"><input type="checkbox" ${p.samedi.actif?'checked':''} onchange="cfgPerReg(${i},'samedi','actif',this.checked)"> Samedi</label>&nbsp; <input class="tinput" type="time" value="${p.samedi.debut}" ${p.samedi.actif?'':'disabled'} onchange="cfgPerReg(${i},'samedi','debut',this.value)"> → <input class="tinput" type="time" value="${p.samedi.fin}" ${p.samedi.actif?'':'disabled'} onchange="cfgPerReg(${i},'samedi','fin',this.value)"></div>
-    </div></div>`).join('');
+    <table class="tbl" style="font-size:12px"><thead><tr><th>Jour</th><th>Ouvré</th><th>Début</th><th>Fin</th><th>Pause (min)</th><th>Tol.</th><th>Délai HS</th></tr></thead><tbody>${[1,2,3,4,5,6,0].map(d=>regRow(p.jours[d],d,i)).join('')}</tbody></table></div>`).join('');
   $('#setBody').innerHTML=`
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><label style="font-size:11px;color:var(--muted);font-weight:600">Mode heures sup.</label>
-      <select class="ssel" onchange="cfgMode(this.value)"><option value="seuil" ${c.modeHS==='seuil'?'selected':''}>Mode A — à partir de fin + délai (ex. 16h45)</option><option value="fin" ${c.modeHS==='fin'?'selected':''}>Mode B — bloc depuis l’heure de fin (16h30)</option></select></div>
-    <h4 style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin:16px 0 8px;border-bottom:1px dashed var(--gold-line);padding-bottom:6px">Semaine de référence</h4>
-    <table class="tbl" style="font-size:12.5px"><thead><tr><th>Jour</th><th>Ouvré</th><th>Début</th><th>Fin</th><th>Pause</th><th>Tol.</th><th>Délai HS</th></tr></thead><tbody>${order.map(dayRow).join('')}</tbody></table>
-    <div style="display:flex;align-items:center;margin:18px 0 8px;border-bottom:1px dashed var(--gold-line);padding-bottom:6px"><h4 style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin:0">Périodes spéciales (Ramadan, été…)</h4><button class="btn btn-ghost" style="margin-left:auto;padding:4px 11px;font-size:12px" onclick="addPeriode()">${I.plus} Ajouter</button></div>
-    ${per||'<div style="color:var(--muted);font-size:12.5px;padding:4px 0">Aucune période spéciale — la semaine de référence s’applique toute l’année.</div>'}
-    <div style="margin-top:10px;font-size:11.5px;color:var(--faint)">Une période spéciale remplace la semaine de référence sur sa plage de dates (séance unique en juillet–août, Ramadan…). Tout le calcul (heures, retards, heures sup.) suit la période active à la date du pointage.</div>`;
+    <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin-bottom:4px">
+      <div><label style="font-size:11px;color:var(--muted);font-weight:600">Mode heures sup.</label><br>
+        <select class="ssel" onchange="cfgMode(this.value)"><option value="seuil" ${c.modeHS==='seuil'?'selected':''}>Mode A — à partir de fin + délai</option><option value="fin" ${c.modeHS==='fin'?'selected':''}>Mode B — bloc depuis l\u2019heure de fin</option></select></div>
+      <div><label style="font-size:11px;color:var(--muted);font-weight:600">Arrondi des heures</label><br>
+        <select class="ssel" onchange="cfgSet('arrondi',+this.value)"><option value="0" ${c.arrondi==0?'selected':''}>Aucun</option><option value="15" ${c.arrondi==15?'selected':''}>15 minutes</option><option value="30" ${c.arrondi==30?'selected':''}>30 minutes</option></select>
+        <select class="ssel" ${c.arrondi==0?'disabled':''} onchange="cfgSet('arrondiSens',this.value)"><option value="proche" ${c.arrondiSens==='proche'?'selected':''}>au plus proche</option><option value="inferieur" ${c.arrondiSens==='inferieur'?'selected':''}>à l\u2019inférieur</option></select></div>
+    </div>
+    <div style="font-size:11px;color:var(--faint);margin-bottom:6px">L\u2019arrondi s\u2019applique aux heures travaillées et aux heures supplémentaires.</div>
+    <h4 style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin:16px 0 8px;border-bottom:1px dashed var(--gold-line);padding-bottom:6px">Semaine de référence (mode par défaut)</h4>
+    <table class="tbl" style="font-size:12.5px"><thead><tr><th>Jour</th><th>Ouvré</th><th>Début</th><th>Fin</th><th>Pause (min)</th><th>Tol.</th><th>Délai HS</th></tr></thead><tbody>${baseRows}</tbody></table>
+    <div style="display:flex;align-items:center;margin:18px 0 10px;border-bottom:1px dashed var(--gold-line);padding-bottom:6px"><h4 style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin:0">Modes personnalisés (Ramadan, été, samedi spécial…)</h4><button class="btn btn-ghost" style="margin-left:auto;padding:4px 11px;font-size:12px" onclick="addRamadan()">${I.plus} Ramadan</button><button class="btn btn-ghost" style="margin-left:8px;padding:4px 11px;font-size:12px" onclick="addPeriode()">${I.plus} Créer un mode</button></div>
+    ${per||'<div style="color:var(--muted);font-size:12.5px;padding:4px 0">Aucun mode personnalisé — la semaine de référence s\u2019applique toute l\u2019année. Cliquez « Créer un mode » pour définir des horaires spécifiques sur une plage de dates.</div>'}
+    <div style="margin-top:10px;font-size:11.5px;color:var(--faint)">Chaque mode personnalisé remplace la semaine de référence sur sa plage de dates, jour par jour. Le calcul (heures, retards, heures sup., arrondi) suit le mode actif à la date du pointage.</div>`;
 }
 function cfgDay(d,f,v){window._cfg.jours[d][f]=v;if(f==='actif')renderSettings();}
 function cfgMode(v){window._cfg.modeHS=v;}
+function cfgSet(f,v){window._cfg[f]=v;if(f==='arrondi')renderSettings();}
 function cfgPer(i,f,v){window._cfg.periodes[i][f]=v;}
-function cfgPerReg(i,which,f,v){window._cfg.periodes[i][which][f]=v;if(f==='actif')renderSettings();}
-function addPeriode(){window._cfg.periodes.push({nom:'Nouvelle période',du:TODAY,au:TODAY,lunven:{debut:'07:00',fin:'14:00',pause:0},samedi:{actif:false,debut:'07:00',fin:'13:00',pause:0},tol:15,grace:15});renderSettings();}
+function cfgPerDay(i,d,f,v){window._cfg.periodes[i].jours[d][f]=v;if(f==='actif')renderSettings();}
+function addPeriode(){const j={};[1,2,3,4,5,6].forEach(d=>j[d]={actif:true,debut:'07:00',fin:'14:00',pause:0,tol:15,grace:15});j[0]={actif:false,debut:'07:00',fin:'14:00',pause:0,tol:15,grace:15};window._cfg.periodes.push({nom:'Nouveau mode',du:TODAY,au:TODAY,jours:j});renderSettings();}
 function delPeriode(i){window._cfg.periodes.splice(i,1);renderSettings();}
 function setFld(l,id,t,v,h){return `<div class="info-block" style="margin-bottom:0"><label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:5px">${l}</label><input id="${id}" type="${t}" value="${v}" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;outline:none"><div style="font-size:11px;color:var(--faint);margin-top:5px">${h}</div></div>`}
 function saveSettings(){DB.settings=window._cfg;save();closeModal();render();toast('Paramètres enregistrés · valeurs recalculées');}
+function deleteEmp(id){const e=emp(id);if(!confirm('Supprimer '+e.prenom+' '+e.nom+' ?\n\nElle sera retirée de la liste et ne réapparaîtra plus lors des imports du pointage (démission).'))return;DB.employees=DB.employees.filter(x=>x.id!==id);for(const ds in DB.pointages){if(DB.pointages[ds])delete DB.pointages[ds][id];}save();fetch('/api/employee/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,qui:ROLE})}).catch(()=>{});closeModal();go('personnel');toast(e.prenom+' '+e.nom+' supprimée');}
+function addRamadan(){const j={};[1,2,3,4,5].forEach(d=>j[d]={actif:true,debut:'07:00',fin:'15:00',pause:30,tol:15,grace:15});j[6]={actif:true,debut:'07:00',fin:'13:00',pause:0,tol:15,grace:15};j[0]={actif:false,debut:'07:00',fin:'15:00',pause:0,tol:15,grace:15};window._cfg.periodes.push({nom:'Ramadan',du:TODAY,au:TODAY,jours:j});renderSettings();toast('Mode Ramadan ajouté — ajustez les dates et les horaires');}
 
 /* import */
 function openImport(){
@@ -915,7 +949,7 @@ function openProfile(id){
     </div>
     <div class="info-block"><h4>Dossier numérique</h4>${docs.map(d=>`<span class="doc-chip">${I.doc} ${d.type} <small style="color:var(--faint)">${fmtDate(d.date)}</small></span>`).join('')||'<span style="color:var(--muted);font-size:13px">Aucun document</span>'}</div>
   </div>
-  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Fermer</button><button class="btn btn-primary" onclick="closeModal();go('documents')">${I.doc} Documents</button></div>`,'wide');
+  <div class="modal-foot"><button class="btn btn-ghost" style="color:var(--thread);margin-right:auto" onclick="deleteEmp('${id}')">Supprimer (démission)</button><button class="btn btn-ghost" onclick="closeModal()">Fermer</button><button class="btn btn-gold" onclick="openEditEmp('${id}')">${I.gear} Modifier la fiche</button><button class="btn btn-primary" onclick="closeModal();go('documents')">${I.doc} Documents</button></div>`,'wide');
   fillHist(id);
 }
 function fillHist(id){
@@ -929,6 +963,33 @@ function fillHist(id){
     lines.push(`<div class="hist-line"><span class="hd">${fmtDate(ds)}</span><span>${detail}</span><span>${statutTag(m.statut)}</span></div>`);
   });
   $('#histBox').innerHTML=lines.reverse().slice(0,40).join('')||'<div style="color:var(--muted);font-size:13px;padding:8px 0">Aucun pointage sur la période.</div>';
+}
+function openEditEmp(id){
+  const e=emp(id);
+  const inp=(lbl,k,val,type='text')=>`<div class="info-block" style="margin-bottom:0"><label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:5px">${lbl}</label><input id="ed_${k}" type="${type}" value="${val==null?'':String(val).replace(/"/g,'&quot;')}" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;outline:none"></div>`;
+  const sel=(lbl,k,val,opts)=>{const o2=opts.includes(val)?opts:[val,...opts];return `<div class="info-block" style="margin-bottom:0"><label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:5px">${lbl}</label><select id="ed_${k}" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;outline:none">${o2.map(o=>`<option ${o===val?'selected':''}>${o}</option>`).join('')}</select></div>`;};
+  openModal(`<div class="modal-head">${I.gear}<h3>Modifier la fiche — ${e.prenom} ${e.nom}</h3><button class="x" onclick="closeModal()">${I.x}</button></div>
+  <div class="modal-body"><div class="info-grid" style="gap:14px 16px">
+    ${inp('Prénom','prenom',e.prenom)}${inp('Nom','nom',e.nom)}
+    ${inp('CIN','cin',e.cin)}${inp('Matricule','matricule',e.matricule||e.id)}
+    ${inp('Téléphone','tel',e.tel)}${inp('Email','email',e.email)}
+    ${sel('Poste','poste',e.poste,POSTES)}${sel('Catégorie','categorie',e.categorie,['Ouvrier','Cadre'])}
+    ${sel('Service','service',e.service,SERVICES)}${sel('Atelier','atelier',e.atelier,ATELIERS)}
+    ${sel('Contrat','contrat',e.contrat,CONTRATS)}${inp('Salaire (TND)','salaire',e.salaire,'number')}
+    ${inp('Date de naissance','naissance',e.naissance,'date')}${inp('Date d\u2019embauche','embauche',e.embauche,'date')}
+    ${sel('Situation','famille',e.famille,['Célibataire','Mariée','Divorcée','Veuve'])}${inp('Enfants','enfants',e.enfants,'number')}
+    ${inp('Responsable','responsable',e.responsable)}${inp('Adresse','adresse',e.adresse)}
+    ${sel('Sexe','sexe',(e.sexe==='F'?'Femme':'Homme'),['Femme','Homme'])}${sel('Niveau scolaire','niveau',e.niveau,['Base','Primaire','Secondaire','Bac','Licence','Maîtrise'])}
+  </div><div style="font-size:12px;color:var(--muted);margin-top:8px">La catégorie détermine la paie : <b>Ouvrier</b> = heures · <b>Cadre</b> = jours travaillés.</div></div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="openProfile('${id}')">Annuler</button><button class="btn btn-gold" onclick="saveEditEmp('${id}')">${I.check} Enregistrer</button></div>`,'wide');
+}
+function saveEditEmp(id){
+  const e=emp(id),g=k=>($('#ed_'+k)||{}).value;
+  ['prenom','nom','cin','matricule','tel','email','poste','categorie','service','atelier','contrat','famille','responsable','adresse','niveau'].forEach(k=>{const v=g(k);if(v!==undefined&&v!=='')e[k]=v;});
+  e.salaire=+g('salaire')||e.salaire;e.enfants=+g('enfants')||0;
+  if(g('naissance'))e.naissance=g('naissance');if(g('embauche'))e.embauche=g('embauche');
+  e.sexe=(g('sexe')==='Homme')?'H':'F';
+  save();toast('Fiche mise à jour');openProfile(id);
 }
 function row(l,v){return `<div class="info-row"><span>${l}</span><b>${v}</b></div>`}
 function openAddEmp(){
@@ -951,7 +1012,7 @@ function saveNewEmp(){
   if(!g('np')||!g('nn')){toast('Prénom et nom requis','warn');return}
   const id='E'+pad(DB.employees.length+1);
   DB.employees.push({id,prenom:g('np'),nom:g('nn'),poste:g('npos'),categorie:g('ncat'),service:g('nserv'),atelier:g('natel'),contrat:g('nctr'),embauche:g('nemb')||TODAY,naissance:g('nnais')||'1995-01-01',famille:g('nfam'),enfants:+g('nenf')||0,niveau:'Bac',email:g('nmail'),tel:g('ntel'),adresse:'Nabeul',salaire:+g('nsal')||800,cin:g('ncin')||'00000000',sexe:'F',responsable:'Olfa Hamdi',actif:true});
-  if(DB.pointages[TODAY])DB.pointages[TODAY][id]={statut:'present',entree:S().heureDebut,sortie:S().heureFin};
+  if(DB.pointages[TODAY]){const rg=regimeFor(TODAY);DB.pointages[TODAY][id]={statut:'present',entree:rg.debut||'07:30',sortie:rg.fin||'16:30'};}
   save();if(DB.pointages[TODAY]&&DB.pointages[TODAY][id])persistPointage(TODAY,id);closeModal();go('personnel');toast('Fiche créée pour '+g('np')+' '+g('nn'));
 }
 
@@ -1010,16 +1071,42 @@ function confirmOCR(){
 }
 
 /* ============================================================ ABSENCES ======= */
+let ABS_FROM, ABS_TO;
+function setAbsRange(){ABS_FROM=$('#abFrom').value;ABS_TO=$('#abTo').value;go('absences');}
+function lastPresence(id){let best='';for(const ds in DB.pointages){if(ds>TODAY)continue;const r=DB.pointages[ds][id];if(r&&(r.statut==='present'||r.statut==='late')){if(ds>best)best=ds;}}return best;}
+function absStreak(id){let days=0,start='';const d=new Date(TODAY+'T12:00');for(let k=0;k<200;k++){const ds=isoOf(d);const reg=regimeFor(ds);if(reg.actif!==false){const r=(DB.pointages[ds]||{})[id];const m=metrics(r,ds);if(m.statut==='present'||m.statut==='late'||m.statut==='leave'||m.statut==='mission')break;days++;start=ds;}d.setDate(d.getDate()-1);}return {days,start};}
+function absInRange(id,a,b){let n=0;eachDay(a,b,ds=>{if(ds>TODAY)return;const reg=regimeFor(ds);if(reg.actif===false)return;const r=(DB.pointages[ds]||{})[id];const m=metrics(r,ds);if(m.statut==='absent')n++;});return n;}
 function renderAbsences(m){
-  const tot=DB.absences.reduce((s,a)=>s+a.jours,0),inj=DB.absences.filter(a=>a.statut==='injustifiée').reduce((s,a)=>s+a.jours,0);
+  if(!ABS_FROM){ABS_FROM=TODAY.slice(0,7)+'-01';ABS_TO=TODAY;}
+  const nowAll=DB.employees.map(e=>({e,st:absStreak(e.id)})).filter(x=>x.st.days>0);
+  const rangeAll=DB.employees.map(e=>({e,n:absInRange(e.id,ABS_FROM,ABS_TO)})).filter(x=>x.n>0);
+  const totRange=rangeAll.reduce((s,x)=>s+x.n,0);
   m.innerHTML=topbar('Suivi des absences','Absences')+`<div class="page view active">
-    <div class="kpis" style="grid-template-columns:repeat(4,1fr)">${kpi('Jours d\u2019absence',tot,'cumul',I.calx,'var(--absent)','var(--absent-bg)')}${kpi('Injustifiées',inj,'sans justificatif',I.warn,'var(--late)','var(--late-bg)')}${kpi('Taux',(tot/(DB.employees.length*125)*100).toFixed(1)+'%','absentéisme',I.calx,'var(--ink)','#eee9dd')}${kpi('Dossiers',DB.absences.length,'enregistrements',I.doc,'var(--leave)','var(--leave-bg)')}</div>
-    <div class="card tablecard"><div class="table-head">${I.calx}<h3>Historique</h3><div class="spacer"></div><div class="field">${I.filter}<select id="aFilt" onchange="fillAbs()"><option value="">Toutes</option><option value="justifiée">Justifiées</option><option value="injustifiée">Injustifiées</option></select></div></div>
-    <table class="tbl"><thead><tr><th>Employée</th><th>Type</th><th>Période</th><th>Jours</th><th>Statut</th><th>Note</th></tr></thead><tbody id="absBody"></tbody></table></div></div>`;
-  fillAbs();
+    <div class="kpis" style="grid-template-columns:repeat(4,1fr)">${kpi('Absentes aujourd\u2019hui',nowAll.length,'au '+fmtDate(TODAY),I.calx,'var(--absent)','var(--absent-bg)')}${kpi('Jours d\u2019absence',totRange,'sur la période',I.calx,'var(--late)','var(--late-bg)')}${kpi('Employées concernées',rangeAll.length,'sur la période',I.users,'var(--ink)','#eee9dd')}${kpi('Justificatifs',DB.absences.length,'enregistrés',I.doc,'var(--leave)','var(--leave-bg)')}</div>
+    <div class="card" style="padding:14px 16px;margin-bottom:16px;display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+      <div class="field"><label>Du</label><input type="date" id="abFrom" value="${ABS_FROM}" onchange="setAbsRange()"></div>
+      <div class="field"><label>Au</label><input type="date" id="abTo" value="${ABS_TO}" onchange="setAbsRange()"></div>
+      <div class="field" style="flex:1;min-width:180px">${I.search}<input value="${window._absQ||''}" placeholder="Rechercher une employée…" oninput="window._absQ=this.value;fillAbsLists()"></div>
+    </div>
+    <div class="card tablecard" style="margin-bottom:16px"><div class="table-head">${I.warn}<h3>Actuellement absentes — depuis quand</h3><div class="spacer"></div><span style="font-size:12px;color:var(--muted)" id="nowCount"></span></div>
+      <table class="tbl"><thead><tr><th>Employée</th><th>Absente depuis</th><th>Jours ouvrés</th><th>Dernière présence</th><th></th></tr></thead><tbody id="nowBody"></tbody></table></div>
+    <div class="card tablecard" style="margin-bottom:16px"><div class="table-head">${I.calx}<h3>Absences sur la période — ${fmtDate(ABS_FROM)} → ${fmtDate(ABS_TO)}</h3><div class="spacer"></div><span style="font-size:12px;color:var(--muted)" id="rangeCount"></span></div>
+      <table class="tbl"><thead><tr><th>Employée</th><th>Service</th><th>Jours absents</th><th></th></tr></thead><tbody id="rangeBody"></tbody></table></div>
+    <div class="card tablecard"><div class="table-head">${I.doc}<h3>Justificatifs enregistrés</h3><div class="spacer"></div><div class="field">${I.filter}<select id="aFilt" onchange="fillAbs()"><option value="">Tous</option><option value="justifiée">Justifiés</option><option value="injustifiée">Injustifiés</option></select></div></div>
+      <table class="tbl"><thead><tr><th>Employée</th><th>Type</th><th>Période</th><th>Jours</th><th>Statut</th><th>Note</th></tr></thead><tbody id="absBody"></tbody></table></div></div>`;
+  fillAbsLists();fillAbs();
+}
+function fillAbsLists(){
+  const q=(window._absQ||'').toLowerCase(),match=e=>!q||(e.prenom+' '+e.nom).toLowerCase().includes(q);
+  const now=DB.employees.map(e=>({e,st:absStreak(e.id)})).filter(x=>x.st.days>0&&match(x.e)).sort((a,b)=>b.st.days-a.st.days);
+  const range=DB.employees.map(e=>({e,n:absInRange(e.id,ABS_FROM,ABS_TO)})).filter(x=>x.n>0&&match(x.e)).sort((a,b)=>b.n-a.n);
+  const nc=$('#nowCount');if(nc)nc.textContent=now.length+' employée(s)';
+  const rc=$('#rangeCount');if(rc)rc.textContent=range.reduce((s,x)=>s+x.n,0)+' jour(s)';
+  const nb=$('#nowBody');if(nb)nb.innerHTML=now.map(x=>{const lp=lastPresence(x.e.id);return `<tr><td>${empCell(x.e.id)}</td><td class="mono"><b>${fmtDate(x.st.start)}</b></td><td><b style="color:var(--absent)">${x.st.days} j</b></td><td class="mono" style="color:var(--muted)">${lp?fmtDate(lp):'—'}</td><td><span class="linkish" onclick="openProfile('${x.e.id}')">Fiche →</span></td></tr>`;}).join('')||'<tr><td colspan="5"><div class="empty">'+I.check+'<div>Aucune absente en cours ✓</div></div></td></tr>';
+  const rb=$('#rangeBody');if(rb)rb.innerHTML=range.map(x=>`<tr><td>${empCell(x.e.id)}</td><td style="color:var(--muted)">${x.e.service||'—'}</td><td><b>${x.n}</b> j</td><td><span class="linkish" onclick="openProfile('${x.e.id}')">Fiche →</span></td></tr>`).join('')||'<tr><td colspan="4"><div class="empty">Aucune absence sur la période</div></td></tr>';
 }
 function fillAbs(){const f=($('#aFilt')||{}).value||'';const rows=DB.absences.filter(a=>!f||a.statut===f);
-  $('#absBody').innerHTML=rows.map(a=>`<tr><td>${empCell(a.id)}</td><td>${a.type}</td><td class="mono">${fmtDate(a.debut)}${a.fin!==a.debut?' → '+fmtDate(a.fin):''}</td><td><b>${a.jours}</b> j</td><td><span class="tag ${a.statut==='justifiée'?'t-present':'t-absent'}">${a.statut}</span></td><td style="color:var(--muted);font-size:12px">${a.note}</td></tr>`).join('');
+  $('#absBody').innerHTML=rows.map(a=>`<tr><td>${empCell(a.id)}</td><td>${a.type}</td><td class="mono">${fmtDate(a.debut)}${a.fin!==a.debut?' → '+fmtDate(a.fin):''}</td><td><b>${a.jours}</b> j</td><td><span class="tag ${a.statut==='justifiée'?'t-present':'t-absent'}">${a.statut}</span></td><td style="color:var(--muted);font-size:12px">${a.note||''}</td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Aucun justificatif enregistré</div></td></tr>';
 }
 
 /* ============================================================ RETARDS ======== */

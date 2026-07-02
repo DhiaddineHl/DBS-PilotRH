@@ -46,8 +46,13 @@ def _conn():
     c = sqlite3.connect(DB_PATH)
     c.execute("CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT)")
     c.execute("""CREATE TABLE IF NOT EXISTS pointage(
-                 d TEXT, emp TEXT, statut TEXT, entree TEXT, sortie TEXT,
+                 d TEXT, emp TEXT, statut TEXT, entree TEXT, sortie TEXT, punches TEXT, hM TEXT,
                  PRIMARY KEY(d, emp))""")
+    for col in ("punches", "hM"):
+        try:
+            c.execute("ALTER TABLE pointage ADD COLUMN %s TEXT" % col)
+        except Exception:
+            pass
     c.execute("""CREATE TABLE IF NOT EXISTS audit(
                  ts TEXT, qui TEXT, action TEXT)""")
     return c
@@ -60,13 +65,14 @@ def get_meta():
         m = {"employees": [], "settings": default_settings(),
              "documents": [], "conges": [], "absences": []}
     m.setdefault("signalements", [])
+    m.setdefault("exclus", [])
     return m
 
 def set_meta(partial):
     """Fusionne les clés fournies dans l'état méta existant (ne perd pas le reste)."""
     c = _conn(); r = c.execute("SELECT v FROM kv WHERE k='meta'").fetchone()
     cur = json.loads(r[0]) if r else {}
-    for k in ("employees", "settings", "documents", "conges", "absences", "signalements"):
+    for k in ("employees", "settings", "documents", "conges", "absences", "signalements", "exclus"):
         if k in partial and partial[k] is not None:
             cur[k] = partial[k]
     if not cur.get("settings"):
@@ -96,11 +102,18 @@ def _find_by_token(t):
 
 def get_pointages():
     c = _conn()
-    rows = c.execute("SELECT d, emp, statut, entree, sortie FROM pointage").fetchall()
+    rows = c.execute("SELECT d, emp, statut, entree, sortie, punches, hM FROM pointage").fetchall()
     c.close()
     out = {}
-    for d, emp, st, e, s in rows:
-        out.setdefault(d, {})[emp] = {"statut": st, "entree": e or "", "sortie": s or ""}
+    for d, emp, st, e, s, p, hm in rows:
+        rec = {"statut": st, "entree": e or "", "sortie": s or ""}
+        if p:
+            try: rec["punches"] = json.loads(p)
+            except Exception: pass
+        if hm not in (None, ""):
+            try: rec["hM"] = int(hm)
+            except Exception: pass
+        out.setdefault(d, {})[emp] = rec
     return out
 
 def get_state():
@@ -110,9 +123,11 @@ def get_state():
 
 def replace_pointages(pts):
     c = _conn()
-    rows = [(d, emp, r.get("statut", "absent"), r.get("entree", ""), r.get("sortie", ""))
+    rows = [(d, emp, r.get("statut", "absent"), r.get("entree", ""), r.get("sortie", ""),
+             json.dumps(r["punches"]) if r.get("punches") else None,
+             str(r["hM"]) if r.get("hM") not in (None, "") else None)
             for d, day in pts.items() for emp, r in day.items()]
-    c.executemany("INSERT OR REPLACE INTO pointage(d,emp,statut,entree,sortie) VALUES(?,?,?,?,?)", rows)
+    c.executemany("INSERT OR REPLACE INTO pointage(d,emp,statut,entree,sortie,punches,hM) VALUES(?,?,?,?,?,?,?)", rows)
     c.commit(); c.close()
 
 def set_state(s):
@@ -197,7 +212,10 @@ async def admin_gate(request: Request, call_next):
         if not ok:
             return Response("Authentification requise", status_code=401,
                             headers={"WWW-Authenticate": 'Basic realm="PilotRH"'})
-    return await call_next(request)
+    resp = await call_next(request)
+    if p in ("/", "/moi", "/index.html", "/moi.html") or p.endswith(".html"):
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return resp
 
 @app.get("/api/state")
 def api_state():
@@ -214,13 +232,36 @@ async def api_set_meta(req: Request):
     set_meta(await req.json())
     return {"ok": True}
 
+@app.post("/api/employee/delete")
+async def api_employee_delete(req: Request):
+    b = await req.json()
+    eid = b.get("id")
+    m = get_meta()
+    emps = m.get("employees", [])
+    target = next((e for e in emps if e.get("id") == eid), None)
+    if not target:
+        return {"ok": False, "error": "introuvable"}
+    badge = str(target.get("matricule") or target.get("cin") or "").strip()
+    exclus = set(str(x) for x in m.get("exclus", []))
+    if badge:
+        exclus.add(badge)                      # ne réapparaîtra plus lors des imports .mdb
+    new_emps = [e for e in emps if e.get("id") != eid]
+    set_meta({"employees": new_emps, "exclus": sorted(exclus)})
+    c = _conn(); c.execute("DELETE FROM pointage WHERE emp=?", (eid,)); c.commit(); c.close()
+    audit(b.get("qui", "RH"),
+          "Ouvrière supprimée (démission) · %s %s [badge %s]" %
+          (target.get("prenom", ""), target.get("nom", ""), badge or "?"))
+    return {"ok": True, "exclus": sorted(exclus)}
+
 @app.post("/api/pointage")
 async def api_pointage(req: Request):
     b = await req.json()
     d, emp = b["date"], b["id"]
     c = _conn()
-    c.execute("INSERT OR REPLACE INTO pointage(d,emp,statut,entree,sortie) VALUES(?,?,?,?,?)",
-              (d, emp, b.get("statut", "absent"), b.get("entree", ""), b.get("sortie", "")))
+    c.execute("INSERT OR REPLACE INTO pointage(d,emp,statut,entree,sortie,punches,hM) VALUES(?,?,?,?,?,?,?)",
+              (d, emp, b.get("statut", "absent"), b.get("entree", ""), b.get("sortie", ""),
+               json.dumps(b["punches"]) if b.get("punches") else None,
+               str(b["hM"]) if b.get("hM") not in (None, "") else None))
     c.commit(); c.close()
     audit(b.get("qui", "RH"), f"Pointage modifié · {emp} · {d} ({b.get('statut')} {b.get('entree','')}-{b.get('sortie','')})")
     return {"ok": True}
@@ -230,8 +271,10 @@ async def api_day(req: Request):
     b = await req.json()
     d = b["date"]; recs = b["recs"]
     c = _conn()
-    c.executemany("INSERT OR REPLACE INTO pointage(d,emp,statut,entree,sortie) VALUES(?,?,?,?,?)",
-                  [(d, emp, r.get("statut", "absent"), r.get("entree", ""), r.get("sortie", "")) for emp, r in recs.items()])
+    c.executemany("INSERT OR REPLACE INTO pointage(d,emp,statut,entree,sortie,punches,hM) VALUES(?,?,?,?,?,?,?)",
+                  [(d, emp, r.get("statut", "absent"), r.get("entree", ""), r.get("sortie", ""),
+                    json.dumps(r["punches"]) if r.get("punches") else None,
+                    str(r["hM"]) if r.get("hM") not in (None, "") else None) for emp, r in recs.items()])
     c.commit(); c.close()
     audit("RH", f"Journée créée/mise à jour · {d} ({len(recs)} employées)")
     return {"ok": True}
@@ -257,12 +300,12 @@ def api_audit(limit: int = 50):
 @app.post("/api/import-mdb")
 async def api_import_mdb(file: UploadFile = File(...),
                          du: str = Form(mdb_import.DEFAULT_DU),
-                         au: str = Form(mdb_import.DEFAULT_AU)):
+                         au: str = Form("")):
     tmp = os.path.join(DATA_DIR, "_upload.mdb")
     with open(tmp, "wb") as f:
         f.write(await file.read())
     try:
-        s = mdb_import.merge(get_state(), tmp, du, au)
+        s = mdb_import.merge(get_state(), tmp, du, au or None)
         set_state(s)
         ensure_tokens_persist()
         audit("RH", f"Import .mdb ({len(s['employees'])} employées, {len(s['pointages'])} jours)")
@@ -381,25 +424,46 @@ async def report_pdf(req: Request):
                     headers={"Content-Disposition": f'attachment; filename="{fn}"'})
 
 @app.get("/api/me")
-def api_me(t: str = "", pin: str = ""):
+def api_me(t: str = "", pin: str = "", mois: str = ""):
     e = _find_by_token(t)
     if not e:
         return JSONResponse({"error": "Lien invalide"}, status_code=401)
     if e.get("pin") and str(pin) != str(e["pin"]):
         return JSONResponse({"need_pin": True}, status_code=401)
     today = datetime.date.today()
-    ym = today.strftime("%Y-%m")
-    frm = ym + "-01"
-    to = today.isoformat()
+    first = today.replace(day=1)
+    if mois and len(mois) == 7:
+        try:
+            y, mo = int(mois[:4]), int(mois[5:7])
+            cand = datetime.date(y, mo, 1)
+            if cand <= first:            # pas de mois futur au-delà du mois courant
+                first = cand
+        except Exception:
+            pass
+    y, mo = first.year, first.month
+    nextm = datetime.date(y + 1, 1, 1) if mo == 12 else datetime.date(y, mo + 1, 1)
+    last = nextm - datetime.timedelta(days=1)
+    to = min(last, today)
+    frm, to_s = first.isoformat(), to.isoformat()
     c = _conn()
-    rows = c.execute("SELECT d,statut,entree,sortie FROM pointage WHERE emp=? AND d>=? AND d<=?",
-                     (e["id"], frm, to)).fetchall()
+    rows = c.execute("SELECT d,statut,entree,sortie,punches,hM FROM pointage WHERE emp=? AND d>=? AND d<=?",
+                     (e["id"], frm, to_s)).fetchall()
     c.close()
-    jours = {d: {"statut": st, "entree": en or "", "sortie": so or ""} for d, st, en, so in rows}
+    m = get_meta()
+    jours = {}
+    for d, st, en, so, p, hm in rows:
+        rec = {"statut": st, "entree": en or "", "sortie": so or ""}
+        if p:
+            try: rec["punches"] = json.loads(p)
+            except Exception: pass
+        if hm not in (None, ""):
+            try: rec["hM"] = int(hm)
+            except Exception: pass
+        jours[d] = rec
     return {"nom": e.get("nom", ""), "prenom": e.get("prenom", ""),
             "matricule": e.get("matricule") or e.get("cin") or e["id"],
-            "categorie": e.get("categorie", ""), "mois": ym, "today": to,
-            "settings": get_meta()["settings"], "jours": jours}
+            "categorie": e.get("categorie", ""), "mois": first.strftime("%Y-%m"),
+            "today": today.isoformat(), "settings": m["settings"], "jours": jours}
 
 @app.post("/api/me/flag")
 async def api_me_flag(req: Request, t: str = ""):
