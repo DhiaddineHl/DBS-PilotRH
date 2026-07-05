@@ -528,7 +528,7 @@ function catTag(c){return `<span class="cat-tag ${c==='Cadre'?'cat-cad':'cat-ouv
 
 /* ============================================================ NAV ============= */
 const NAV=[
-  {grp:'Pilotage'},{v:'dashboard',ic:I.grid,t:'Tableau de bord'},{v:'presences',ic:I.clock,t:'Présences'},{v:'rapports',ic:I.report,t:'Rapports & paie'},
+  {grp:'Pilotage'},{v:'dashboard',ic:I.grid,t:'Tableau de bord'},{v:'presences',ic:I.clock,t:'Présences'},{v:'rapports',ic:I.report,t:'Rapports & paie'},{v:'primes',ic:I.check,t:"Primes d'assiduité"},
   {grp:'Personnel'},{v:'personnel',ic:I.users,t:'Personnel'},{v:'documents',ic:I.doc,t:'Documents'},{v:'absences',ic:I.calx,t:'Absences'},{v:'retards',ic:I.late,t:'Retards'},{v:'conges',ic:I.cal,t:'Congés & sorties'},
   {grp:'Intelligence'},{v:'alertes',ic:I.bell,t:'Alertes'},{v:'rse',ic:I.leaf,t:'RSE & bien-être'},{v:'assistant',ic:I.spark,t:'Assistant IA'},
   {grp:'Système'},{v:'parametres',ic:I.shield,t:'Sécurité & accès'},
@@ -544,6 +544,7 @@ function shell(){
   }).join('');
   return `<aside class="side"><div class="brand"><div class="mark"><div class="glyph">${I.scissors}</div><div><div class="name">PilotRH</div><div class="sub">DBS Fashion</div></div></div></div>
     <nav class="nav">${nav}</nav>
+    ${reviewPill()}
     <div class="side-foot"><div class="role-box"><div class="av">${initials(ME.nom)}</div><div class="who">${ME.nom}<small>${ROLE_LABELS[ME.role]||ME.role}</small></div></div><button class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:9px;font-size:12px" onclick="logout()">Se déconnecter</button></div></aside>
     <main class="main" id="main"></main>`;
 }
@@ -556,7 +557,7 @@ function topbar(crumb,title,actions=''){
 function go(v){VIEW=v;render()}
 function render(){
   $('#app').innerHTML=shell();
-  ({dashboard:renderDashboard,presences:renderPresences,rapports:renderRapports,personnel:renderPersonnel,documents:renderDocuments,absences:renderAbsences,retards:renderRetards,conges:renderConges,alertes:renderAlertes,rse:renderRSE,assistant:renderAssistant,parametres:renderParametres}[VIEW]||renderDashboard)($('#main'));
+  ({dashboard:renderDashboard,presences:renderPresences,rapports:renderRapports,primes:renderPrimes,personnel:renderPersonnel,documents:renderDocuments,absences:renderAbsences,retards:renderRetards,conges:renderConges,alertes:renderAlertes,rse:renderRSE,assistant:renderAssistant,parametres:renderParametres}[VIEW]||renderDashboard)($('#main'));
 }
 
 /* ============================================================ DASHBOARD ====== */
@@ -596,6 +597,36 @@ function miniMoves(){
 /* ============================================================ PRÉSENCES ====== */
 function shiftDay(n){const d=new Date(PRES_DATE+'T12:00');d.setDate(d.getDate()+n);PRES_DATE=isoOf(d);renderPresences($('#main'))}
 function setDay(v){if(v)PRES_DATE=v;renderPresences($('#main'))}
+function reviewList(){
+  const out=[],today=TODAY;
+  const cut=isoOf(new Date(new Date(today+'T12:00').getTime()-35*864e5));   // 35 derniers jours (période de paie en cours)
+  for(const ds of Object.keys(DB.pointages).sort().reverse()){
+    if(ds>today||ds<cut)continue;const reg=regimeFor(ds);if(reg.actif===false)continue;
+    const day=DB.pointages[ds];if(!day)continue;
+    for(const id in day){const rec=day[id];if(!rec||rec.statut!=='present')continue;
+      const P=badges(rec),n=P.length;
+      if(n%2===1&&n>=3){
+        out.push({ds,id,txt:P.map(m=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')).join(' · '),n});
+      }
+    }
+  }
+  return out;
+}
+function reviewPill(){const n=reviewList().length;if(!n)return '';
+  return `<div style="padding:0 14px 12px"><button onclick="showReview()" style="width:100%;background:rgba(193,64,41,.16);border:1px solid rgba(193,64,41,.45);color:#f0b8ac;border-radius:11px;padding:11px 10px;font-size:12.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px">\u26a0 ${n} pointage${n>1?'s':''} à vérifier</button></div>`;}
+function showReview(){
+  const list=reviewList();
+  if(!list.length){toast('Aucun pointage à vérifier');return;}
+  const fd=ds=>ds.slice(8,10)+'/'+ds.slice(5,7)+'/'+ds.slice(0,4);
+  const rows=list.slice(0,150).map(r=>{const e=emp(r.id);const nom=e?(e.prenom+' '+e.nom):r.id;
+    return `<tr><td class="mono">${fd(r.ds)}</td><td>${nom}</td><td class="mono" style="color:var(--thread)">${r.txt} <span style="color:var(--faint)">(${r.n} badges)</span></td><td style="text-align:right"><button class="btn btn-ghost" style="padding:4px 11px;font-size:12px" onclick="corrigerJour('${r.ds}','${r.id}')">Corriger</button></td></tr>`;}).join('');
+  openModal(`<div class="modal-head"><h2>\u26a0 Pointages à vérifier (${list.length})</h2><button class="x" onclick="closeModal()">\u2715</button></div>
+    <div class="modal-body"><div class="csub" style="margin-bottom:14px">Nombre de badges <b>impair</b> : impossible d'apparier automatiquement l'entrée et la sortie (un badge a probablement été oublié). Ces heures sont calculées en entrée/sortie simple — vérifiez et corrigez la journée à la main.</div>
+    <table class="tbl"><thead><tr><th>Date</th><th>Ouvrière</th><th>Badges pointés</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+    ${list.length>150?`<div class="csub" style="margin-top:10px">… et ${list.length-150} autres journées.</div>`:''}</div>`);
+}
+function corrigerJour(ds,id){closeModal();PRES_DATE=ds;go('presences');}
+function afterImportReview(){const n=reviewList().length;if(n){toast(n+' pointage'+(n>1?'s':'')+' impair'+(n>1?'s':'')+' à vérifier','warn');showReview();}}
 function renderPresences(m){
   const exists=!!dayRec(PRES_DATE);
   const c=exists?counts(PRES_DATE):null;
@@ -798,7 +829,7 @@ function handleFile(f){
 async function importMdb(f){
   toast('Lecture de la base Access (.mdb) sur le serveur…');
   const fd=new FormData();fd.append('file',f);
-  try{const r=await fetch('/api/import-mdb',{method:'POST',body:fd});if(!r.ok)throw new Error(r.status);DB=await r.json();closeModal();renderPresences($('#main'));toast('Base .mdb importée — '+DB.employees.length+' employées');}
+  try{const r=await fetch('/api/import-mdb',{method:'POST',body:fd});if(!r.ok)throw new Error(r.status);DB=await r.json();closeModal();render();toast('Base .mdb importée — '+DB.employees.length+' employées');afterImportReview();}
   catch(e){toast('Échec import .mdb ('+e.message+')','warn')}
 }
 async function uploadPhoto(id,f){
@@ -828,6 +859,54 @@ function summarize(a,b){
     return{e,jT,jA,jC,hN,hS,ret,rt};
   });
 }
+let PRIME={du:TODAY.slice(0,7)+'-01',au:TODAY,absMax:0,retMax:0,res:null,sel:new Set()};
+function renderPrimes(m){
+  const P=PRIME;
+  const presets=[["0 absence · 0 retard",0,0],["\u22641 absence · 0 retard",1,0],["\u22642 absences · 0 retard",2,0],["\u22642 absences · \u22641 retard",2,1]];
+  m.innerHTML=topbar('Primes',"Primes d'assiduit\u00e9")+`<div class="page view active">
+    <div class="card" style="padding:16px 18px;margin-bottom:16px">
+      <div class="range-bar" style="margin:0;flex-wrap:wrap;gap:10px">
+        <div class="field"><label>Du</label><input type="date" id="pr_du" value="${P.du}"></div>
+        <div class="field"><label>Au</label><input type="date" id="pr_au" value="${P.au}"></div>
+        <div class="field"><label>Absences max</label><input class="tinput" type="number" min="0" id="pr_abs" value="${P.absMax}" style="width:78px"></div>
+        <div class="field"><label>Retards max</label><input class="tinput" type="number" min="0" id="pr_ret" value="${P.retMax}" style="width:78px"></div>
+        <div style="flex:1"></div>
+        <button class="btn btn-primary" onclick="primeRun()">${I.check} Afficher les \u00e9ligibles</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${presets.map(p=>`<button class="btn btn-ghost" style="font-size:12px;padding:5px 11px" onclick="primePreset(${p[1]},${p[2]})">${p[0]}</button>`).join('')}</div>
+      <div style="font-size:11.5px;color:var(--faint);margin-top:9px">Sélectionnez la période et les seuils : la liste des ouvrières qui respectent le barème (absences et retards) s'affiche, prête à imprimer.</div>
+    </div>
+    <div id="primeRes"></div></div>`;
+  fillPrime();
+}
+function primePreset(a,r){$('#pr_abs').value=a;$('#pr_ret').value=r;primeRun();}
+function primeRun(){const P=PRIME;P.du=$('#pr_du').value;P.au=$('#pr_au').value;P.absMax=+$('#pr_abs').value||0;P.retMax=+$('#pr_ret').value||0;
+  P.res=summarize(P.du,P.au).filter(r=>r.jA<=P.absMax&&r.rt<=P.retMax).sort((a,b)=>(a.e.nom||'').localeCompare(b.e.nom||''));
+  P.sel=new Set(P.res.map(r=>r.e.id));fillPrime();}
+function fillPrime(){const P=PRIME;const box=$('#primeRes');if(!box)return;
+  if(!P.res){box.innerHTML='<div class="card" style="padding:22px;text-align:center;color:var(--muted)">Choisissez la période et les seuils, puis « Afficher les éligibles ».</div>';return;}
+  if(!P.res.length){box.innerHTML='<div class="card" style="padding:22px;text-align:center;color:var(--muted)">Aucune ouvrière ne respecte ce barème sur la période.</div>';return;}
+  const rows=P.res.map(r=>`<tr><td style="width:34px"><input type="checkbox" ${P.sel.has(r.e.id)?'checked':''} onclick="primeToggle('${r.e.id}')"></td><td>${r.e.prenom} ${r.e.nom}</td><td class="mono">${r.e.matricule||r.e.cin||''}</td><td class="mono">${r.jA}</td><td class="mono">${r.rt}${r.ret?' ('+r.ret+' min)':''}</td><td class="mono">${fr2(hDec(r.hN+r.hS))} h</td></tr>`).join('');
+  box.innerHTML=`<div class="card tablecard"><div class="table-head">${I.check}<h3>${P.res.length} ouvri\u00e8re(s) \u00e9ligible(s)</h3><div class="spacer"></div><span style="font-size:12px;color:var(--muted)">Absences \u2264 ${P.absMax} · Retards \u2264 ${P.retMax}</span></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 12px;align-items:center"><button class="btn btn-ghost" style="font-size:12px;padding:5px 11px" onclick="primeAll(true)">Tout sélectionner</button><button class="btn btn-ghost" style="font-size:12px;padding:5px 11px" onclick="primeAll(false)">Tout désélectionner</button><div style="flex:1"></div>
+    <button class="btn btn-gold" onclick="primePrint(false)">${I.download} Imprimer la sélection</button>
+    <button class="btn btn-ghost" onclick="primePrint(true)">${I.download} Imprimer tout</button>
+    ${can('delete')?`<button class="btn btn-ghost" style="color:var(--thread)" onclick="primeDelete()">Supprimer la sélection</button>`:''}</div>
+    <table class="tbl"><thead><tr><th></th><th>Ouvrière</th><th>Matricule</th><th>Absences</th><th>Retards</th><th>Heures</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function primeToggle(id){const s=PRIME.sel;s.has(id)?s.delete(id):s.add(id);}
+function primeAll(v){PRIME.sel=v?new Set(PRIME.res.map(r=>r.e.id)):new Set();fillPrime();}
+function primePrint(all){const P=PRIME;const rows=(all?P.res:P.res.filter(r=>P.sel.has(r.e.id)));
+  if(!rows.length){toast('Aucune ouvrière sélectionnée','warn');return;}
+  downloadPDF({title:'Prime assiduite '+P.du+' '+P.au,subtitle:"DBS Fashion · Prime d'assiduit\u00e9 · Absences \u2264 "+P.absMax+" · Retards \u2264 "+P.retMax+" · "+fmtJour(P.du)+" au "+fmtJour(P.au),
+    sections:[{title:'Ouvrières éligibles ('+rows.length+')',columns:['Matricule','Nom','Absences','Retards','Heures'],
+      rows:rows.map(r=>[String(r.e.matricule||r.e.cin||''),r.e.prenom+' '+r.e.nom,String(r.jA),String(r.rt),fr2(hDec(r.hN+r.hS))+' h'])}]},'primes_'+P.du+'_'+P.au+'.pdf');
+}
+function primeDelete(){const P=PRIME;const ids=[...P.sel];if(!ids.length){toast('Rien de sélectionné','warn');return;}
+  if(!can('delete')){toast("Réservé à l'administrateur / RH",'warn');return;}
+  if(!confirm('Supprimer '+ids.length+' ouvrière(s) ?\n\nElles ne réapparaîtront plus lors des imports (démission).'))return;
+  ids.forEach(id=>{DB.employees=DB.employees.filter(x=>x.id!==id);for(const ds in DB.pointages){if(DB.pointages[ds])delete DB.pointages[ds][id];}fetch('/api/employee/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,qui:ROLE})}).catch(()=>{});});
+  save();P.res=P.res.filter(r=>!ids.includes(r.e.id));P.sel=new Set();fillPrime();toast(ids.length+' ouvrière(s) supprimée(s)');}
 let REP_FROM='2026-06-01',REP_TO=TODAY;
 function renderRapports(m){
   m.innerHTML=topbar('Rapports & paie','Rapports & paie')+`<div class="page view active">
@@ -1218,7 +1297,7 @@ function renderParametres(m){
   m.innerHTML=topbar('Administration','Sécurité & accès',`<button class="btn btn-ghost" onclick="openSettings()">${I.gear} Paramètres horaires</button>`)+`<div class="page view active"><div class="split"><div>
     ${usersCard()}
     <div class="card tablecard"><div class="table-head">${I.clock}<h3>Historique des modifications</h3></div><table class="tbl"><thead><tr><th>Auteur</th><th>Action</th><th>Horodatage</th></tr></thead><tbody id="auditBody"><tr><td colspan="3"><div class="empty">Chargement…</div></td></tr></tbody></table></div></div>
-    <div><div class="card chartcard" style="margin-bottom:16px"><h3>Espace salarié · QR codes</h3><div class="csub" style="margin-top:6px">Chaque ouvrière consulte son pointage du mois (présences, retards, absences) en scannant son QR personnel puis en saisissant son code à 4 chiffres. Lecture seule.</div><button class="btn btn-gold" style="width:100%;justify-content:center;margin-top:12px" onclick="window.open('/api/qr-codes.pdf','_blank')">${I.download} QR codes du personnel (PDF)</button><div style="font-size:11.5px;color:var(--faint);margin-top:10px">Imprimez et distribuez les cartes (confidentiel : chaque carte porte le code de l\u2019employée). Lien de l\u2019espace : <span class="mono">${location.origin}/moi</span></div></div><div class="card chartcard" style="margin-bottom:16px"><h3>Clé API Anthropic (optionnelle)</h3><div class="csub" style="margin-top:6px">La clé est configurée côté serveur (variable d\u2019environnement ANTHROPIC_API_KEY). Ce champ est informatif.</div><input id="apiKeyInput" type="password" placeholder="sk-ant-..." value="${apiKey}" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-top:12px;outline:none;font-family:var(--mono)"><button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:10px" onclick="saveApiKey()">${I.check} Enregistrer</button></div>
+    <div><div class="card chartcard" style="margin-bottom:16px"><h3>Pointeuse · connexion réseau</h3><div class="csub" style="margin-top:6px">Importer les pointages directement depuis la pointeuse ZKTeco (sans fichier). Fonctionne si ce poste est sur le même réseau que la pointeuse — idéal en version locale.</div><div style="display:flex;gap:8px;margin-top:12px"><input id="dev_ip" class="tinput" style="flex:2" placeholder="IP pointeuse" value="192.168.1.201"><input id="dev_port" class="tinput" style="flex:1" placeholder="Port" value="4370"></div><button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:10px" onclick="pullDevice()">${I.download} Importer depuis la pointeuse</button></div><div class="card chartcard" style="margin-bottom:16px"><h3>Espace salarié · QR codes</h3><div class="csub" style="margin-top:6px">Chaque ouvrière consulte son pointage du mois (présences, retards, absences) en scannant son QR personnel puis en saisissant son code à 4 chiffres. Lecture seule.</div><button class="btn btn-gold" style="width:100%;justify-content:center;margin-top:12px" onclick="window.open('/api/qr-codes.pdf','_blank')">${I.download} QR codes du personnel (PDF)</button><div style="font-size:11.5px;color:var(--faint);margin-top:10px">Imprimez et distribuez les cartes (confidentiel : chaque carte porte le code de l\u2019employée). Lien de l\u2019espace : <span class="mono">${location.origin}/moi</span></div></div><div class="card chartcard" style="margin-bottom:16px"><h3>Clé API Anthropic (optionnelle)</h3><div class="csub" style="margin-top:6px">La clé est configurée côté serveur (variable d\u2019environnement ANTHROPIC_API_KEY). Ce champ est informatif.</div><input id="apiKeyInput" type="password" placeholder="sk-ant-..." value="${apiKey}" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-top:12px;outline:none;font-family:var(--mono)"><button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:10px" onclick="saveApiKey()">${I.check} Enregistrer</button></div>
     <div class="card chartcard" style="margin-bottom:16px"><h3>Sauvegarde des données</h3><div class="csub" style="margin-top:6px">Sauvegarde auto quotidienne. Export/import manuel.</div><div style="display:flex;gap:10px;margin-top:12px"><button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="exportDB()">${I.download} Exporter</button><button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="document.getElementById('impDB').click()">${I.up} Importer</button><input type="file" id="impDB" accept=".json" style="display:none" onchange="importDB(this.files[0])"></div><button class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:10px;color:var(--thread)" onclick="resetDB()">Réinitialiser la démo</button></div>
     <div class="card chartcard"><h3>Intégrations futures</h3><div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">${['Paie','Production textile (PilotPro)','Contrôle qualité','ERP usine'].map(x=>`<div style="display:flex;align-items:center;gap:9px;font-size:13px"><span class="dotmark" style="background:var(--gold)"></span>${x}<span class="tag t-neutral" style="margin-left:auto">À venir</span></div>`).join('')}</div></div></div></div></div>`;
   loadAudit();loadUsers();
@@ -1245,6 +1324,7 @@ function editUser(login,nom,role){$('#u_login').value=login;$('#u_nom').value=no
 function saveUser(){const login=$('#u_login').value.trim(),nom=$('#u_nom').value.trim(),role=$('#u_role').value,password=$('#u_pass').value;if(!login){toast('Identifiant requis','warn');return;}
   fetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login,nom,role,password})}).then(r=>r.json()).then(d=>{if(d.error){toast(d.error,'warn');return;}toast('Compte enregistré');$('#u_login').value='';$('#u_nom').value='';$('#u_pass').value='';loadUsers();}).catch(()=>toast('Erreur','warn'));}
 function delUser(login){if(!confirm('Supprimer le compte « '+login+' » ?'))return;fetch('/api/users/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login})}).then(r=>r.json()).then(d=>{if(d.error){toast(d.error,'warn');return;}toast('Compte supprimé');loadUsers();}).catch(()=>toast('Erreur','warn'));}
+function pullDevice(){const ip=$('#dev_ip').value.trim(),port=($('#dev_port').value.trim()||'4370');if(!ip){toast('Indiquez l\'IP de la pointeuse','warn');return;}toast('Connexion à la pointeuse…');fetch('/api/pull-device',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ip,port:+port})}).then(r=>r.json()).then(d=>{if(d.error){toast(d.error,'warn');return;}load().then(()=>{render();toast('Importé · '+d.pointages+' pointages · '+d.employees+' employées');afterImportReview();});}).catch(()=>toast('Import impossible','warn'));}
 function saveApiKey(){apiKey=$('#apiKeyInput').value.trim();localStorage.setItem('pilotrh_apikey',apiKey);toast(apiKey?'Clé enregistrée':'Clé supprimée')}
 function exportDB(){const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download='pilotrh_sauvegarde_'+TODAY+'.json';a.click();toast('Base exportée')}
 function importDB(f){if(!f)return;const r=new FileReader();r.onload=e=>{try{DB=JSON.parse(e.target.result);persistAll();render();toast('Base importée')}catch(x){toast('Fichier invalide','warn')}};r.readAsText(f)}

@@ -194,6 +194,7 @@ if MDB_PATH:
 app = FastAPI(title="PilotRH")
 
 ADMIN_PW = os.environ.get("PILOTRH_ADMIN_PASSWORD", "")
+OPEN_MODE = os.environ.get("PILOTRH_OPEN", "").lower() in ("1", "true", "yes", "oui", "on")   # poste local : pas de connexion
 
 # ---------------------------------------------------------------------------
 # Comptes utilisateurs + rôles + sessions
@@ -270,14 +271,14 @@ def _current_user(request):
 
 PUBLIC_PREFIXES = ("/moi", "/api/me", "/photos", "/favicon", "/login", "/api/login", "/api/logout", "/static")
 ADMIN_ONLY = ("/api/users",)
-RH_PLUS = ("/api/employee/delete", "/api/import-mdb", "/api/punches", "/api/sync")
+RH_PLUS = ("/api/employee/delete", "/api/import-mdb", "/api/punches", "/api/sync", "/api/pull-device")
 WRITE_PREFIXES = ("/api/pointage", "/api/day", "/api/state", "/api/state-meta", "/api/employee")
 
 @app.middleware("http")
 async def auth_gate(request: Request, call_next):
     """Connexion obligatoire (sauf espace salarié). Applique les rôles."""
     p = request.url.path
-    if not any(p == x or p.startswith(x) for x in PUBLIC_PREFIXES):
+    if not OPEN_MODE and not any(p == x or p.startswith(x) for x in PUBLIC_PREFIXES):
         user = _current_user(request)
         if not user:
             if p.startswith("/api"):
@@ -416,6 +417,40 @@ async def api_punches(req: Request):
 @app.post("/api/sync")
 def api_sync():
     return do_sync(force=True)
+
+@app.post("/api/pull-device")
+async def api_pull_device(req: Request):
+    """Se connecte directement à la pointeuse ZKTeco (réseau) et importe les pointages.
+    Utile surtout pour la version locale (même réseau que la pointeuse)."""
+    b = await req.json()
+    ip = b.get("ip") or "192.168.1.201"
+    port = int(b.get("port") or 4370)
+    pw = int(b.get("password") or 0)
+    try:
+        from zk import ZK
+    except ImportError:
+        return JSONResponse({"error": "Module 'pyzk' non installé sur ce poste (pip install pyzk)."}, status_code=400)
+    conn = None
+    try:
+        conn = ZK(ip, port=port, timeout=20, password=pw, force_udp=False, ommit_ping=False).connect()
+        conn.disable_device()
+        users = conn.get_users() or []
+        att = conn.get_attendance() or []
+        conn.enable_device()
+        urows = [{"badge": str(u.user_id or u.uid), "name": u.name or "", "sexe": ""} for u in users]
+        prows = [{"badge": str(a.user_id), "dt": a.timestamp.strftime("%Y-%m-%d %H:%M:%S")}
+                 for a in att if a.timestamp]
+        s = mdb_import.merge_punches(get_state(), urows, prows)
+        set_state(s); ensure_tokens_persist()
+        audit("Pointeuse", "Import réseau direct · %d pointages, %d employées" % (len(prows), len(s["employees"])))
+        return {"ok": True, "employees": len(s["employees"]), "jours": len(s["pointages"]), "pointages": len(prows)}
+    except Exception as e:
+        return JSONResponse({"error": "Connexion à la pointeuse impossible : %s" % e}, status_code=400)
+    finally:
+        try:
+            if conn: conn.disconnect()
+        except Exception:
+            pass
 
 @app.post("/api/employee/{eid}/photo")
 async def api_photo(eid: str, file: UploadFile = File(...)):
@@ -571,10 +606,38 @@ def api_me(t: str = "", pin: str = "", mois: str = ""):
             try: rec["hM"] = int(hm)
             except Exception: pass
         jours[d] = rec
+    # période de référence des congés : 15/08 → 14/08 (paramétrable via settings.congesDebut = "MM-DD")
+    cd = str((m.get("settings") or {}).get("congesDebut", "08-15"))
+    try:
+        cmonth, cday = int(cd[:2]), int(cd[3:5])
+    except Exception:
+        cmonth, cday = 8, 15
+    ref_year = today.year if (today.month, today.day) >= (cmonth, cday) else today.year - 1
+    try:
+        p_du = datetime.date(ref_year, cmonth, cday)
+        p_end = datetime.date(ref_year + 1, cmonth, cday) - datetime.timedelta(days=1)
+    except Exception:
+        p_du, p_end = datetime.date(ref_year, 8, 15), datetime.date(ref_year + 1, 8, 14)
+    p_to = min(p_end, today)
+    c = _conn()
+    crows = c.execute("SELECT d,statut,entree,sortie,punches,hM FROM pointage WHERE emp=? AND d>=? AND d<=?",
+                      (e["id"], p_du.isoformat(), p_to.isoformat())).fetchall()
+    c.close()
+    cjours = {}
+    for d, st, en, so, p, hm in crows:
+        rec = {"statut": st, "entree": en or "", "sortie": so or ""}
+        if p:
+            try: rec["punches"] = json.loads(p)
+            except Exception: pass
+        if hm not in (None, ""):
+            try: rec["hM"] = int(hm)
+            except Exception: pass
+        cjours[d] = rec
+    conges = {"du": p_du.isoformat(), "au": p_end.isoformat(), "auEffectif": p_to.isoformat(), "jours": cjours}
     return {"nom": e.get("nom", ""), "prenom": e.get("prenom", ""),
             "matricule": e.get("matricule") or e.get("cin") or e["id"],
             "categorie": e.get("categorie", ""), "mois": first.strftime("%Y-%m"),
-            "today": today.isoformat(), "settings": m["settings"], "jours": jours}
+            "today": today.isoformat(), "settings": m["settings"], "jours": jours, "conges": conges}
 
 @app.post("/api/me/flag")
 async def api_me_flag(req: Request, t: str = ""):
@@ -669,6 +732,8 @@ def api_logout():
 
 @app.get("/api/whoami")
 def api_whoami(request: Request):
+    if OPEN_MODE:
+        return {"login": "local", "nom": "Poste local", "role": "admin", "roles": ROLES}
     u = _current_user(request)
     if not u:
         return JSONResponse({"error": "non_connecte"}, status_code=401)

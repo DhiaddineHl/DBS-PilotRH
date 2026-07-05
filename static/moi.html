@@ -165,6 +165,12 @@ function summary(){
   return{trav,abs,conge,retN,retMin,hN,hS,lines};
 }
 
+function congesInfo(){
+  const c=DATA.conges;if(!c)return null;
+  let totMin=0,jT=0;
+  for(const ds in c.jours){const m=metrics(c.jours[ds],ds);if(m.worked){totMin+=(m.heures||0)+(m.hs||0);jT++;}}
+  return {totMin,jT,du:c.du,au:c.au,auEff:c.auEffectif};
+}
 function render(){
   const s=summary();
   const ym=DATA.mois.split('-');const moisTxt=MOIS[+ym[1]-1]+' '+ym[0];
@@ -199,6 +205,15 @@ function render(){
       <div class="kpi"><div class="v">${fr2(hDec(s.hN+s.hS))}<span style="font-size:13px"> h</span></div><div class="l">Heures du mois${s.hS?' (dont '+fr2(hDec(s.hS))+'h sup)':''}</div></div>
     </div>
   </div>
+  ${(function(){const ci=congesInfo();if(!ci)return '';const fd=d=>d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4);
+    return `<div class="card">
+    <h2>Congés — heures cumulées</h2>
+    <div style="display:flex;align-items:baseline;gap:12px;margin-top:8px">
+      <div style="font-size:32px;font-weight:800;color:var(--ink);line-height:1">${hLabel(ci.totMin)}</div>
+      <div class="muted">sur ${ci.jT} jour(s) travaillé(s)</div>
+    </div>
+    <div class="note">Total des heures travaillées sur la période de référence des congés : <b>${fd(ci.du)} → ${fd(ci.au)}</b> — cumul arrêté au ${fd(ci.auEff)}.</div>
+  </div>`;})()}
   <div class="card">
     <h2>Détail jour par jour — ${moisTxt}</h2>
     <table><thead><tr><th>Date</th><th>Statut</th><th>Entrée</th><th>Sortie</th><th>Heures</th><th>Retard</th><th>H.sup</th></tr></thead>
