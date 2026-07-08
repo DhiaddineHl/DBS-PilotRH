@@ -389,6 +389,7 @@ function normalizeSettings(s){
   }
   for(let d=0;d<7;d++){const r=s.jours[d]||{};s.jours[d]={actif:(r.actif===undefined?(d!==0):r.actif),debut:r.debut||'07:30',fin:r.fin||(d===6?'13:00':'16:30'),pause:(r.pause!==undefined?r.pause:(d===6?0:30)),tol:(r.tol!==undefined?r.tol:15),grace:(r.grace!==undefined?r.grace:15)};}
   if(!s.periodes)s.periodes=[];
+  if(!s.congesDebut)s.congesDebut='08-15';
   s.periodes.forEach(p=>{
     if(!p.jours){p.jours={};const lv=p.lunven||{debut:'07:00',fin:'14:00',pause:0},sa=p.samedi||{actif:false,debut:'07:00',fin:'13:00',pause:0};
       [1,2,3,4,5].forEach(d=>p.jours[d]={actif:true,debut:lv.debut,fin:lv.fin,pause:+lv.pause||0,tol:p.tol||15,grace:p.grace||15});
@@ -529,7 +530,7 @@ function catTag(c){return `<span class="cat-tag ${c==='Cadre'?'cat-cad':'cat-ouv
 /* ============================================================ NAV ============= */
 const NAV=[
   {grp:'Pilotage'},{v:'dashboard',ic:I.grid,t:'Tableau de bord'},{v:'presences',ic:I.clock,t:'Présences'},{v:'rapports',ic:I.report,t:'Rapports & paie'},{v:'primes',ic:I.check,t:"Primes d'assiduité"},
-  {grp:'Personnel'},{v:'personnel',ic:I.users,t:'Personnel'},{v:'documents',ic:I.doc,t:'Documents'},{v:'absences',ic:I.calx,t:'Absences'},{v:'retards',ic:I.late,t:'Retards'},{v:'conges',ic:I.cal,t:'Congés & sorties'},
+  {grp:'Personnel'},{v:'personnel',ic:I.users,t:'Personnel'},{v:'documents',ic:I.doc,t:'Documents'},{v:'absences',ic:I.calx,t:'Absences'},{v:'retards',ic:I.late,t:'Retards'},{v:'conges',ic:I.cal,t:'Congés & sorties'},{v:'congescumul',ic:I.report,t:'Cumul congés'},
   {grp:'Intelligence'},{v:'alertes',ic:I.bell,t:'Alertes'},{v:'rse',ic:I.leaf,t:'RSE & bien-être'},{v:'assistant',ic:I.spark,t:'Assistant IA'},
   {grp:'Système'},{v:'parametres',ic:I.shield,t:'Sécurité & accès'},
 ];
@@ -557,7 +558,7 @@ function topbar(crumb,title,actions=''){
 function go(v){VIEW=v;render()}
 function render(){
   $('#app').innerHTML=shell();
-  ({dashboard:renderDashboard,presences:renderPresences,rapports:renderRapports,primes:renderPrimes,personnel:renderPersonnel,documents:renderDocuments,absences:renderAbsences,retards:renderRetards,conges:renderConges,alertes:renderAlertes,rse:renderRSE,assistant:renderAssistant,parametres:renderParametres}[VIEW]||renderDashboard)($('#main'));
+  ({dashboard:renderDashboard,presences:renderPresences,rapports:renderRapports,primes:renderPrimes,congescumul:renderCongesCumul,personnel:renderPersonnel,documents:renderDocuments,absences:renderAbsences,retards:renderRetards,conges:renderConges,alertes:renderAlertes,rse:renderRSE,assistant:renderAssistant,parametres:renderParametres}[VIEW]||renderDashboard)($('#main'));
 }
 
 /* ============================================================ DASHBOARD ====== */
@@ -752,11 +753,13 @@ function renderSettings(){
     <table class="tbl" style="font-size:12.5px"><thead><tr><th>Jour</th><th>Ouvré</th><th>Début</th><th>Fin</th><th>Pause (min)</th><th>Tol.</th><th>Délai HS</th></tr></thead><tbody>${baseRows}</tbody></table>
     <div style="display:flex;align-items:center;margin:18px 0 10px;border-bottom:1px dashed var(--gold-line);padding-bottom:6px"><h4 style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin:0">Modes personnalisés (Ramadan, été, samedi spécial…)</h4><button class="btn btn-ghost" style="margin-left:auto;padding:4px 11px;font-size:12px" onclick="addRamadan()">${I.plus} Ramadan</button><button class="btn btn-ghost" style="margin-left:8px;padding:4px 11px;font-size:12px" onclick="addPeriode()">${I.plus} Créer un mode</button></div>
     ${per||'<div style="color:var(--muted);font-size:12.5px;padding:4px 0">Aucun mode personnalisé — la semaine de référence s\u2019applique toute l\u2019année. Cliquez « Créer un mode » pour définir des horaires spécifiques sur une plage de dates.</div>'}
-    <div style="margin-top:10px;font-size:11.5px;color:var(--faint)">Chaque mode personnalisé remplace la semaine de référence sur sa plage de dates, jour par jour. Le calcul (heures, retards, heures sup., arrondi) suit le mode actif à la date du pointage.</div>`;
+    <div style="margin-top:10px;font-size:11.5px;color:var(--faint)">Chaque mode personnalisé remplace la semaine de référence sur sa plage de dates, jour par jour. Le calcul (heures, retards, heures sup., arrondi) suit le mode actif à la date du pointage.</div>    <h4 style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin:20px 0 8px;border-bottom:1px dashed var(--gold-line);padding-bottom:6px">Congés \u2014 période de référence</h4>    <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">      <div><label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px">Début (jour)</label><input class="tinput" type="number" min="1" max="31" value="${+((c.congesDebut||'08-15').slice(3,5))}" onchange="cfgConges('j',this.value)" style="width:74px"></div>      <div><label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px">Début (mois)</label><input class="tinput" type="number" min="1" max="12" value="${+((c.congesDebut||'08-15').slice(0,2))}" onchange="cfgConges('m',this.value)" style="width:74px"></div>      <div style="color:var(--muted);font-size:13px;padding-bottom:9px">Période annuelle : <b>${congesLabel(c.congesDebut)}</b></div>    </div>    <div style="font-size:11.5px;color:var(--faint);margin-top:8px">Période sur laquelle le temps de travail est cumulé pour les congés (arrêt technique de l\u2019usine). Par défaut 15/08 \u2192 14/08. Ce cumul s\u2019affiche dans l\u2019espace salarié (QR) et dans « Cumul congés ».</div>`;
 }
 function cfgDay(d,f,v){window._cfg.jours[d][f]=v;if(f==='actif')renderSettings();}
 function cfgMode(v){window._cfg.modeHS=v;}
 function cfgSet(f,v){window._cfg[f]=v;if(f==='arrondi')renderSettings();}
+function congesLabel(cd){cd=cd||'08-15';const mo=+cd.slice(0,2),dy=+cd.slice(3,5);const e=new Date(2001,mo-1,dy);e.setDate(e.getDate()-1);return pad(dy)+'/'+pad(mo)+' \u2192 '+pad(e.getDate())+'/'+pad(e.getMonth()+1)+' (année suivante)';}
+function cfgConges(fld,v){const cd=window._cfg.congesDebut||'08-15';let mo=+cd.slice(0,2),dy=+cd.slice(3,5);if(fld==='j')dy=Math.min(31,Math.max(1,+v||1));if(fld==='m')mo=Math.min(12,Math.max(1,+v||1));window._cfg.congesDebut=pad(mo)+'-'+pad(dy);renderSettings();}
 function cfgPer(i,f,v){window._cfg.periodes[i][f]=v;}
 function cfgPerDay(i,d,f,v){window._cfg.periodes[i].jours[d][f]=v;if(f==='actif')renderSettings();}
 function addPeriode(){const j={};[1,2,3,4,5,6].forEach(d=>j[d]={actif:true,debut:'07:00',fin:'14:00',pause:0,tol:15,grace:15});j[0]={actif:false,debut:'07:00',fin:'14:00',pause:0,tol:15,grace:15};window._cfg.periodes.push({nom:'Nouveau mode',du:TODAY,au:TODAY,jours:j});renderSettings();}
@@ -901,6 +904,37 @@ function primePrint(all){const P=PRIME;const rows=(all?P.res:P.res.filter(r=>P.s
   downloadPDF({title:'Prime assiduite '+P.du+' '+P.au,subtitle:"DBS Fashion · Prime d'assiduit\u00e9 · Absences \u2264 "+P.absMax+" · Retards \u2264 "+P.retMax+" · "+fmtJour(P.du)+" au "+fmtJour(P.au),
     sections:[{title:'Ouvrières éligibles ('+rows.length+')',columns:['Matricule','Nom','Absences','Retards','Heures'],
       rows:rows.map(r=>[String(r.e.matricule||r.e.cin||''),r.e.prenom+' '+r.e.nom,String(r.jA),String(r.rt),fr2(hDec(r.hN+r.hS))+' h'])}]},'primes_'+P.du+'_'+P.au+'.pdf');
+}
+function congesPeriode(refY){
+  const cd=(DB.settings&&DB.settings.congesDebut)||'08-15';const mo=+cd.slice(0,2),dy=+cd.slice(3,5);
+  const t=new Date(TODAY+'T12:00');let y=refY;
+  if(!y)y=((t.getMonth()+1>mo)||(t.getMonth()+1===mo&&t.getDate()>=dy))?t.getFullYear():t.getFullYear()-1;
+  const du=y+'-'+pad(mo)+'-'+pad(dy);const end=new Date(y+1,mo-1,dy);end.setDate(end.getDate()-1);const au=isoOf(end);
+  return {y,du,au,auEff:(au<=TODAY?au:TODAY)};
+}
+function renderCongesCumul(m){
+  const P=window._cc||(window._cc={y:null});
+  const per=congesPeriode(P.y);
+  const rows=summarize(per.du,per.auEff).map(r=>({e:r.e,h:r.hN+r.hS,jT:r.jT})).sort((a,b)=>(a.e.nom||'').localeCompare(b.e.nom||''));
+  window._ccRows=rows;window._ccPer=per;
+  const curY=congesPeriode().y;const years=[curY,curY-1,curY-2];
+  m.innerHTML=topbar('Congés',"Cumul heures cong\u00e9s")+`<div class="page view active">
+    <div class="card" style="padding:14px 18px;margin-bottom:16px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+      <div><label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px">Période de référence</label>
+        <select class="ssel" onchange="ccYear(this.value)">${years.map(y=>`<option value="${y}" ${per.y===y?'selected':''}>${y} \u2192 ${y+1}</option>`).join('')}</select></div>
+      <div style="color:var(--muted);font-size:12.5px">${fmtJour(per.du)} \u2192 ${fmtJour(per.au)}<br><span style="color:var(--faint)">Cumul arrêté au ${fmtJour(per.auEff)}</span></div>
+      <div style="flex:1"></div>
+      <button class="btn btn-gold" onclick="ccPrint()">${I.download} Imprimer le tableau</button>
+    </div>
+    <div class="card tablecard"><div class="table-head">${I.report}<h3>${rows.length} ouvri\u00e8re(s)</h3></div>
+    <table class="tbl"><thead><tr><th>Matricule</th><th>Ouvrière</th><th>Jours travaillés</th><th>Heures cumulées</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr><td class="mono">${r.e.matricule||r.e.cin||''}</td><td>${r.e.prenom} ${r.e.nom}</td><td class="mono">${r.jT}</td><td class="mono" style="font-weight:700">${hLabel(r.h)}</td></tr>`).join('')||'<tr><td colspan="4" class="empty">Aucune donnée</td></tr>'}</tbody></table></div></div>`;
+}
+function ccYear(y){window._cc={y:+y};render();}
+function ccPrint(){const rows=window._ccRows,per=window._ccPer;if(!rows||!rows.length){toast('Aucune donnée','warn');return;}
+  downloadPDF({title:'Cumul conges '+per.du,subtitle:"DBS Fashion · Cumul heures cong\u00e9s · "+fmtJour(per.du)+" au "+fmtJour(per.au)+" (arrêté au "+fmtJour(per.auEff)+")",
+    sections:[{title:'Heures cumulées par ouvrière ('+rows.length+')',columns:['Matricule','Nom','Jours travaillés','Heures cumulées'],
+      rows:rows.map(r=>[String(r.e.matricule||r.e.cin||''),r.e.prenom+' '+r.e.nom,String(r.jT),hLabel(r.h)])}]},'conges_'+per.du+'.pdf');
 }
 function primeDelete(){const P=PRIME;const ids=[...P.sel];if(!ids.length){toast('Rien de sélectionné','warn');return;}
   if(!can('delete')){toast("Réservé à l'administrateur / RH",'warn');return;}
