@@ -47,9 +47,9 @@ def _conn():
     c = sqlite3.connect(DB_PATH)
     c.execute("CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT)")
     c.execute("""CREATE TABLE IF NOT EXISTS pointage(
-                 d TEXT, emp TEXT, statut TEXT, entree TEXT, sortie TEXT, punches TEXT, hM TEXT,
+                 d TEXT, emp TEXT, statut TEXT, entree TEXT, sortie TEXT, punches TEXT, hM TEXT, manuel TEXT,
                  PRIMARY KEY(d, emp))""")
-    for col in ("punches", "hM"):
+    for col in ("punches", "hM", "manuel"):
         try:
             c.execute("ALTER TABLE pointage ADD COLUMN %s TEXT" % col)
         except Exception:
@@ -103,10 +103,10 @@ def _find_by_token(t):
 
 def get_pointages():
     c = _conn()
-    rows = c.execute("SELECT d, emp, statut, entree, sortie, punches, hM FROM pointage").fetchall()
+    rows = c.execute("SELECT d, emp, statut, entree, sortie, punches, hM, manuel FROM pointage").fetchall()
     c.close()
     out = {}
-    for d, emp, st, e, s, p, hm in rows:
+    for d, emp, st, e, s, p, hm, man in rows:
         rec = {"statut": st, "entree": e or "", "sortie": s or ""}
         if p:
             try: rec["punches"] = json.loads(p)
@@ -114,6 +114,8 @@ def get_pointages():
         if hm not in (None, ""):
             try: rec["hM"] = int(hm)
             except Exception: pass
+        if man not in (None, "", "0"):
+            rec["manuel"] = 1
         out.setdefault(d, {})[emp] = rec
     return out
 
@@ -126,9 +128,10 @@ def replace_pointages(pts):
     c = _conn()
     rows = [(d, emp, r.get("statut", "absent"), r.get("entree", ""), r.get("sortie", ""),
              json.dumps(r["punches"]) if r.get("punches") else None,
-             str(r["hM"]) if r.get("hM") not in (None, "") else None)
+             str(r["hM"]) if r.get("hM") not in (None, "") else None,
+             "1" if r.get("manuel") else None)
             for d, day in pts.items() for emp, r in day.items()]
-    c.executemany("INSERT OR REPLACE INTO pointage(d,emp,statut,entree,sortie,punches,hM) VALUES(?,?,?,?,?,?,?)", rows)
+    c.executemany("INSERT OR REPLACE INTO pointage(d,emp,statut,entree,sortie,punches,hM,manuel) VALUES(?,?,?,?,?,?,?,?)", rows)
     c.commit(); c.close()
 
 def set_state(s):
@@ -337,10 +340,11 @@ async def api_pointage(req: Request):
     b = await req.json()
     d, emp = b["date"], b["id"]
     c = _conn()
-    c.execute("INSERT OR REPLACE INTO pointage(d,emp,statut,entree,sortie,punches,hM) VALUES(?,?,?,?,?,?,?)",
+    c.execute("INSERT OR REPLACE INTO pointage(d,emp,statut,entree,sortie,punches,hM,manuel) VALUES(?,?,?,?,?,?,?,?)",
               (d, emp, b.get("statut", "absent"), b.get("entree", ""), b.get("sortie", ""),
                json.dumps(b["punches"]) if b.get("punches") else None,
-               str(b["hM"]) if b.get("hM") not in (None, "") else None))
+               str(b["hM"]) if b.get("hM") not in (None, "") else None,
+               "1" if b.get("manuel") else None))
     c.commit(); c.close()
     audit(b.get("qui", "RH"), f"Pointage modifié · {emp} · {d} ({b.get('statut')} {b.get('entree','')}-{b.get('sortie','')})")
     return {"ok": True}
@@ -350,10 +354,11 @@ async def api_day(req: Request):
     b = await req.json()
     d = b["date"]; recs = b["recs"]
     c = _conn()
-    c.executemany("INSERT OR REPLACE INTO pointage(d,emp,statut,entree,sortie,punches,hM) VALUES(?,?,?,?,?,?,?)",
+    c.executemany("INSERT OR REPLACE INTO pointage(d,emp,statut,entree,sortie,punches,hM,manuel) VALUES(?,?,?,?,?,?,?,?)",
                   [(d, emp, r.get("statut", "absent"), r.get("entree", ""), r.get("sortie", ""),
                     json.dumps(r["punches"]) if r.get("punches") else None,
-                    str(r["hM"]) if r.get("hM") not in (None, "") else None) for emp, r in recs.items()])
+                    str(r["hM"]) if r.get("hM") not in (None, "") else None,
+                    "1" if r.get("manuel") else None) for emp, r in recs.items()])
     c.commit(); c.close()
     audit("RH", f"Journée créée/mise à jour · {d} ({len(recs)} employées)")
     return {"ok": True}

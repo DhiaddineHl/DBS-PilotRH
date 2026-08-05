@@ -389,7 +389,6 @@ function normalizeSettings(s){
   }
   for(let d=0;d<7;d++){const r=s.jours[d]||{};s.jours[d]={actif:(r.actif===undefined?(d!==0):r.actif),debut:r.debut||'07:30',fin:r.fin||(d===6?'13:00':'16:30'),pause:(r.pause!==undefined?r.pause:(d===6?0:30)),tol:(r.tol!==undefined?r.tol:15),grace:(r.grace!==undefined?r.grace:15)};}
   if(!s.periodes)s.periodes=[];
-  if(!s.congesDebut)s.congesDebut='08-15';
   s.periodes.forEach(p=>{
     if(!p.jours){p.jours={};const lv=p.lunven||{debut:'07:00',fin:'14:00',pause:0},sa=p.samedi||{actif:false,debut:'07:00',fin:'13:00',pause:0};
       [1,2,3,4,5].forEach(d=>p.jours[d]={actif:true,debut:lv.debut,fin:lv.fin,pause:+lv.pause||0,tol:p.tol||15,grace:p.grace||15});
@@ -467,7 +466,7 @@ async function load(){
   DB.settings=normalizeSettings(DB.settings);
 }
 let _saveT;function save(){clearTimeout(_saveT);_saveT=setTimeout(()=>{fetch('/api/state-meta',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({employees:DB.employees,settings:DB.settings,documents:DB.documents,conges:DB.conges,absences:DB.absences})}).catch(()=>{})},400)}
-function persistPointage(date,id){const r=(DB.pointages[date]||{})[id]||{statut:'absent',entree:'',sortie:''};fetch('/api/pointage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:date,id:id,statut:r.statut,entree:r.entree,sortie:r.sortie,punches:r.punches||null,hM:(r.hM!=null?r.hM:null),qui:ROLE})}).catch(()=>{});}
+function persistPointage(date,id){const r=(DB.pointages[date]||{})[id]||{statut:'absent',entree:'',sortie:''};fetch('/api/pointage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:date,id:id,statut:r.statut,entree:r.entree,sortie:r.sortie,punches:r.punches||null,hM:(r.hM!=null?r.hM:null),manuel:(r.manuel?1:null),qui:ROLE})}).catch(()=>{});}
 function persistDay(date){const recs=DB.pointages[date]||{};fetch('/api/day',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:date,recs:recs})}).catch(()=>{});}
 function persistAll(){fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(DB)}).catch(()=>{});}
 async function loadAudit(){try{const r=await fetch('/api/audit?limit=40');const rows=await r.json();const tb=document.getElementById('auditBody');if(tb)tb.innerHTML=rows.map(a=>`<tr><td><b>${a.qui}</b></td><td style="color:var(--muted)">${a.action}</td><td class="mono" style="font-size:12px">${(a.ts||'').replace('T',' ')}</td></tr>`).join('')||'<tr><td colspan="3"><div class="empty">Aucune entrée</div></td></tr>';}catch(e){}}
@@ -529,8 +528,8 @@ function catTag(c){return `<span class="cat-tag ${c==='Cadre'?'cat-cad':'cat-ouv
 
 /* ============================================================ NAV ============= */
 const NAV=[
-  {grp:'Pilotage'},{v:'dashboard',ic:I.grid,t:'Tableau de bord'},{v:'presences',ic:I.clock,t:'Présences'},{v:'rapports',ic:I.report,t:'Rapports & paie'},{v:'primes',ic:I.check,t:"Primes d'assiduité"},
-  {grp:'Personnel'},{v:'personnel',ic:I.users,t:'Personnel'},{v:'documents',ic:I.doc,t:'Documents'},{v:'absences',ic:I.calx,t:'Absences'},{v:'retards',ic:I.late,t:'Retards'},{v:'conges',ic:I.cal,t:'Congés & sorties'},{v:'congescumul',ic:I.report,t:'Cumul congés'},
+  {grp:'Pilotage'},{v:'dashboard',ic:I.grid,t:'Tableau de bord'},{v:'presences',ic:I.clock,t:'Présences'},{v:'rapports',ic:I.report,t:'Rapports & paie'},
+  {grp:'Personnel'},{v:'personnel',ic:I.users,t:'Personnel'},{v:'documents',ic:I.doc,t:'Documents'},{v:'absences',ic:I.calx,t:'Absences'},{v:'retards',ic:I.late,t:'Retards'},{v:'conges',ic:I.cal,t:'Congés & sorties'},
   {grp:'Intelligence'},{v:'alertes',ic:I.bell,t:'Alertes'},{v:'rse',ic:I.leaf,t:'RSE & bien-être'},{v:'assistant',ic:I.spark,t:'Assistant IA'},
   {grp:'Système'},{v:'parametres',ic:I.shield,t:'Sécurité & accès'},
 ];
@@ -545,7 +544,6 @@ function shell(){
   }).join('');
   return `<aside class="side"><div class="brand"><div class="mark"><div class="glyph">${I.scissors}</div><div><div class="name">PilotRH</div><div class="sub">DBS Fashion</div></div></div></div>
     <nav class="nav">${nav}</nav>
-    ${reviewPill()}
     <div class="side-foot"><div class="role-box"><div class="av">${initials(ME.nom)}</div><div class="who">${ME.nom}<small>${ROLE_LABELS[ME.role]||ME.role}</small></div></div><button class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:9px;font-size:12px" onclick="logout()">Se déconnecter</button></div></aside>
     <main class="main" id="main"></main>`;
 }
@@ -558,7 +556,7 @@ function topbar(crumb,title,actions=''){
 function go(v){VIEW=v;render()}
 function render(){
   $('#app').innerHTML=shell();
-  ({dashboard:renderDashboard,presences:renderPresences,rapports:renderRapports,primes:renderPrimes,congescumul:renderCongesCumul,personnel:renderPersonnel,documents:renderDocuments,absences:renderAbsences,retards:renderRetards,conges:renderConges,alertes:renderAlertes,rse:renderRSE,assistant:renderAssistant,parametres:renderParametres}[VIEW]||renderDashboard)($('#main'));
+  ({dashboard:renderDashboard,presences:renderPresences,rapports:renderRapports,personnel:renderPersonnel,documents:renderDocuments,absences:renderAbsences,retards:renderRetards,conges:renderConges,alertes:renderAlertes,rse:renderRSE,assistant:renderAssistant,parametres:renderParametres}[VIEW]||renderDashboard)($('#main'));
 }
 
 /* ============================================================ DASHBOARD ====== */
@@ -598,36 +596,6 @@ function miniMoves(){
 /* ============================================================ PRÉSENCES ====== */
 function shiftDay(n){const d=new Date(PRES_DATE+'T12:00');d.setDate(d.getDate()+n);PRES_DATE=isoOf(d);renderPresences($('#main'))}
 function setDay(v){if(v)PRES_DATE=v;renderPresences($('#main'))}
-function reviewList(){
-  const out=[],today=TODAY;
-  const cut=isoOf(new Date(new Date(today+'T12:00').getTime()-35*864e5));   // 35 derniers jours (période de paie en cours)
-  for(const ds of Object.keys(DB.pointages).sort().reverse()){
-    if(ds>today||ds<cut)continue;const reg=regimeFor(ds);if(reg.actif===false)continue;
-    const day=DB.pointages[ds];if(!day)continue;
-    for(const id in day){const rec=day[id];if(!rec||rec.statut!=='present')continue;
-      const P=badges(rec),n=P.length;
-      if(n%2===1&&n>=3){
-        out.push({ds,id,txt:P.map(m=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')).join(' · '),n});
-      }
-    }
-  }
-  return out;
-}
-function reviewPill(){const n=reviewList().length;if(!n)return '';
-  return `<div style="padding:0 14px 12px"><button onclick="showReview()" style="width:100%;background:rgba(193,64,41,.16);border:1px solid rgba(193,64,41,.45);color:#f0b8ac;border-radius:11px;padding:11px 10px;font-size:12.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px">\u26a0 ${n} pointage${n>1?'s':''} à vérifier</button></div>`;}
-function showReview(){
-  const list=reviewList();
-  if(!list.length){toast('Aucun pointage à vérifier');return;}
-  const fd=ds=>ds.slice(8,10)+'/'+ds.slice(5,7)+'/'+ds.slice(0,4);
-  const rows=list.slice(0,150).map(r=>{const e=emp(r.id);const nom=e?(e.prenom+' '+e.nom):r.id;
-    return `<tr><td class="mono">${fd(r.ds)}</td><td>${nom}</td><td class="mono" style="color:var(--thread)">${r.txt} <span style="color:var(--faint)">(${r.n} badges)</span></td><td style="text-align:right"><button class="btn btn-ghost" style="padding:4px 11px;font-size:12px" onclick="corrigerJour('${r.ds}','${r.id}')">Corriger</button></td></tr>`;}).join('');
-  openModal(`<div class="modal-head"><h2>\u26a0 Pointages à vérifier (${list.length})</h2><button class="x" onclick="closeModal()">\u2715</button></div>
-    <div class="modal-body"><div class="csub" style="margin-bottom:14px">Nombre de badges <b>impair</b> : impossible d'apparier automatiquement l'entrée et la sortie (un badge a probablement été oublié). Ces heures sont calculées en entrée/sortie simple — vérifiez et corrigez la journée à la main.</div>
-    <table class="tbl"><thead><tr><th>Date</th><th>Ouvrière</th><th>Badges pointés</th><th></th></tr></thead><tbody>${rows}</tbody></table>
-    ${list.length>150?`<div class="csub" style="margin-top:10px">… et ${list.length-150} autres journées.</div>`:''}</div>`);
-}
-function corrigerJour(ds,id){closeModal();PRES_DATE=ds;go('presences');}
-function afterImportReview(){const n=reviewList().length;if(n){toast(n+' pointage'+(n>1?'s':'')+' impair'+(n>1?'s':'')+' à vérifier','warn');showReview();}}
 function renderPresences(m){
   const exists=!!dayRec(PRES_DATE);
   const c=exists?counts(PRES_DATE):null;
@@ -680,9 +648,10 @@ function fillPres(){
     const {e,rec,m}=x;
     const opts=['present','absent','leave','mission','autorisation'].map(o=>`<option value="${o}" ${rec.statut===o?'selected':''}>${{present:'Présente',absent:'Absente',leave:'Congé',mission:'Mission',autorisation:'Autorisation'}[o]}</option>`).join('');
     const showTimes=rec.statut==='present'||rec.statut==='autorisation';
+    const protege=rec.manuel?` <span title="Correction manuelle — protégée, ne sera jamais écrasée par un import du fichier pointeuse. Cliquer pour annuler la protection." style="cursor:pointer;color:var(--gold)" onclick="revertManuel('${e.id}')">🔒</span>`:'';
     return `<tr>
       <td>${empCell(e.id)}</td><td>${catTag(e.categorie)}</td>
-      <td><select class="ssel" onchange="editPres('${e.id}','statut',this.value)">${opts}</select> ${m.late?'<span class="tag t-late" style="margin-left:4px">Retard</span>':''}</td>
+      <td><select class="ssel" onchange="editPres('${e.id}','statut',this.value)">${opts}</select> ${m.late?'<span class="tag t-late" style="margin-left:4px">Retard</span>':''}${protege}</td>
       <td>${showTimes?`<input class="tinput" type="time" value="${rec.entree||''}" onchange="editPres('${e.id}','entree',this.value)">`:'<span style="color:var(--faint)">—</span>'}</td>
       <td>${showTimes?`<input class="tinput" type="time" value="${rec.sortie||''}" onchange="editPres('${e.id}','sortie',this.value)">${(rec.punches&&rec.punches.length>2)?(rec.punches.length%2===0?` <span class="tag" style="background:var(--gold-soft);color:var(--gold);cursor:help" title="Badges : ${rec.punches.join(' · ')} — coupure(s) déduite(s)">\u21c4 ${rec.punches.length}</span>`:` <span class="tag t-late" style="cursor:help" title="Badges impairs (oubli de pointage) : ${rec.punches.join(' · ')} — calculé en entrée/sortie simple, à vérifier">\u26a0 ${rec.punches.length}</span>`):''}`:'<span style="color:var(--faint)">—</span>'}</td>
       <td>${(rec.statut==='present'||rec.statut==='autorisation'||(rec.hM!=null&&rec.hM!==''))?`<input class="tinput" style="width:60px;text-align:center" value="${m.heures?fr2(hDec(m.heures)):''}" title="Heures travaillées — modifiable (laisser vide = calcul auto)" onchange="editHeures('${e.id}',this.value)">${m.manuel?` <span title="Saisie manuelle" style="color:var(--gold)">✎</span>`:''}`:(m.worked&&m.heures?'<b>'+hLabel(m.heures)+'</b>':'—')}</td>
@@ -697,10 +666,20 @@ function editPres(id,field,val){
   if(!DB.pointages[PRES_DATE][id])DB.pointages[PRES_DATE][id]={statut:'absent',entree:'',sortie:''};
   const rec=DB.pointages[PRES_DATE][id];
   rec[field]=val;
+  rec.manuel=1;   // dès qu'on corrige à la main, l'entrée est protégée : un futur import du fichier pointeuse ne l'écrasera plus
   if((field==='entree'||field==='sortie')&&rec.punches)delete rec.punches;   // saisie manuelle : on abandonne les badges intermédiaires
   if(field==='statut'&&val==='absent'){rec.entree='';rec.sortie='';delete rec.punches;delete rec.hM}
   if(field==='statut'&&(val==='present')&&!rec.entree){const rg=regimeFor(PRES_DATE);rec.entree=rg.debut||'07:30';rec.sortie=rg.fin||'16:30'}
   persistPointage(PRES_DATE,id);fillPres();
+}
+function revertManuel(id){
+  if(!can('edit')){toast('Compte en lecture seule','warn');return;}
+  if(!confirm('Annuler la protection manuelle de cette journée ? Les prochaines synchronisations / imports de la pointeuse pourront de nouveau écraser cette entrée.'))return;
+  const rec=DB.pointages[PRES_DATE]&&DB.pointages[PRES_DATE][id];
+  if(!rec)return;
+  delete rec.manuel; delete rec.hM;
+  persistPointage(PRES_DATE,id);fillPres();
+  toast('Protection retirée — réimportez / synchronisez pour restaurer les données de la pointeuse');
 }
 function editHeures(id,val){
   if(!DB.pointages[PRES_DATE])DB.pointages[PRES_DATE]={};
@@ -711,7 +690,7 @@ function editHeures(id,val){
   persistPointage(PRES_DATE,id);fillPres();toast(v===''?'Heures remises en calcul automatique':'Heures saisies manuellement');
 }
 function createDay(){
-  const rg=regimeFor(PRES_DATE);const rec={};DB.employees.forEach(e=>{if(e.actif)rec[e.id]={statut:'present',entree:rg.debut||'07:30',sortie:rg.fin||'16:30'}});
+  const rg=regimeFor(PRES_DATE);const rec={};DB.employees.forEach(e=>{if(e.actif)rec[e.id]={statut:'present',entree:rg.debut||'07:30',sortie:rg.fin||'16:30',manuel:1}});
   DB.pointages[PRES_DATE]=rec;persistDay(PRES_DATE);renderPresences($('#main'));toast('Journée du '+fmtDate(PRES_DATE)+' créée');
 }
 
@@ -753,13 +732,11 @@ function renderSettings(){
     <table class="tbl" style="font-size:12.5px"><thead><tr><th>Jour</th><th>Ouvré</th><th>Début</th><th>Fin</th><th>Pause (min)</th><th>Tol.</th><th>Délai HS</th></tr></thead><tbody>${baseRows}</tbody></table>
     <div style="display:flex;align-items:center;margin:18px 0 10px;border-bottom:1px dashed var(--gold-line);padding-bottom:6px"><h4 style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin:0">Modes personnalisés (Ramadan, été, samedi spécial…)</h4><button class="btn btn-ghost" style="margin-left:auto;padding:4px 11px;font-size:12px" onclick="addRamadan()">${I.plus} Ramadan</button><button class="btn btn-ghost" style="margin-left:8px;padding:4px 11px;font-size:12px" onclick="addPeriode()">${I.plus} Créer un mode</button></div>
     ${per||'<div style="color:var(--muted);font-size:12.5px;padding:4px 0">Aucun mode personnalisé — la semaine de référence s\u2019applique toute l\u2019année. Cliquez « Créer un mode » pour définir des horaires spécifiques sur une plage de dates.</div>'}
-    <div style="margin-top:10px;font-size:11.5px;color:var(--faint)">Chaque mode personnalisé remplace la semaine de référence sur sa plage de dates, jour par jour. Le calcul (heures, retards, heures sup., arrondi) suit le mode actif à la date du pointage.</div>    <h4 style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin:20px 0 8px;border-bottom:1px dashed var(--gold-line);padding-bottom:6px">Congés \u2014 période de référence</h4>    <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">      <div><label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px">Début (jour)</label><input class="tinput" type="number" min="1" max="31" value="${+((c.congesDebut||'08-15').slice(3,5))}" onchange="cfgConges('j',this.value)" style="width:74px"></div>      <div><label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px">Début (mois)</label><input class="tinput" type="number" min="1" max="12" value="${+((c.congesDebut||'08-15').slice(0,2))}" onchange="cfgConges('m',this.value)" style="width:74px"></div>      <div style="color:var(--muted);font-size:13px;padding-bottom:9px">Période annuelle : <b>${congesLabel(c.congesDebut)}</b></div>    </div>    <div style="font-size:11.5px;color:var(--faint);margin-top:8px">Période sur laquelle le temps de travail est cumulé pour les congés (arrêt technique de l\u2019usine). Par défaut 15/08 \u2192 14/08. Ce cumul s\u2019affiche dans l\u2019espace salarié (QR) et dans « Cumul congés ».</div>`;
+    <div style="margin-top:10px;font-size:11.5px;color:var(--faint)">Chaque mode personnalisé remplace la semaine de référence sur sa plage de dates, jour par jour. Le calcul (heures, retards, heures sup., arrondi) suit le mode actif à la date du pointage.</div>`;
 }
 function cfgDay(d,f,v){window._cfg.jours[d][f]=v;if(f==='actif')renderSettings();}
 function cfgMode(v){window._cfg.modeHS=v;}
 function cfgSet(f,v){window._cfg[f]=v;if(f==='arrondi')renderSettings();}
-function congesLabel(cd){cd=cd||'08-15';const mo=+cd.slice(0,2),dy=+cd.slice(3,5);const e=new Date(2001,mo-1,dy);e.setDate(e.getDate()-1);return pad(dy)+'/'+pad(mo)+' \u2192 '+pad(e.getDate())+'/'+pad(e.getMonth()+1)+' (année suivante)';}
-function cfgConges(fld,v){const cd=window._cfg.congesDebut||'08-15';let mo=+cd.slice(0,2),dy=+cd.slice(3,5);if(fld==='j')dy=Math.min(31,Math.max(1,+v||1));if(fld==='m')mo=Math.min(12,Math.max(1,+v||1));window._cfg.congesDebut=pad(mo)+'-'+pad(dy);renderSettings();}
 function cfgPer(i,f,v){window._cfg.periodes[i][f]=v;}
 function cfgPerDay(i,d,f,v){window._cfg.periodes[i].jours[d][f]=v;if(f==='actif')renderSettings();}
 function addPeriode(){const j={};[1,2,3,4,5,6].forEach(d=>j[d]={actif:true,debut:'07:00',fin:'14:00',pause:0,tol:15,grace:15});j[0]={actif:false,debut:'07:00',fin:'14:00',pause:0,tol:15,grace:15};window._cfg.periodes.push({nom:'Nouveau mode',du:TODAY,au:TODAY,jours:j});renderSettings();}
@@ -832,7 +809,7 @@ function handleFile(f){
 async function importMdb(f){
   toast('Lecture de la base Access (.mdb) sur le serveur…');
   const fd=new FormData();fd.append('file',f);
-  try{const r=await fetch('/api/import-mdb',{method:'POST',body:fd});if(!r.ok)throw new Error(r.status);DB=await r.json();closeModal();render();toast('Base .mdb importée — '+DB.employees.length+' employées');afterImportReview();}
+  try{const r=await fetch('/api/import-mdb',{method:'POST',body:fd});if(!r.ok)throw new Error(r.status);DB=await r.json();closeModal();renderPresences($('#main'));toast('Base .mdb importée — '+DB.employees.length+' employées');}
   catch(e){toast('Échec import .mdb ('+e.message+')','warn')}
 }
 async function uploadPhoto(id,f){
@@ -862,85 +839,6 @@ function summarize(a,b){
     return{e,jT,jA,jC,hN,hS,ret,rt};
   });
 }
-let PRIME={du:TODAY.slice(0,7)+'-01',au:TODAY,absMax:0,retMax:0,res:null,sel:new Set()};
-function renderPrimes(m){
-  const P=PRIME;
-  const presets=[["0 absence · 0 retard",0,0],["\u22641 absence · 0 retard",1,0],["\u22642 absences · 0 retard",2,0],["\u22642 absences · \u22641 retard",2,1]];
-  m.innerHTML=topbar('Primes',"Primes d'assiduit\u00e9")+`<div class="page view active">
-    <div class="card" style="padding:16px 18px;margin-bottom:16px">
-      <div class="range-bar" style="margin:0;flex-wrap:wrap;gap:10px">
-        <div class="field"><label>Du</label><input type="date" id="pr_du" value="${P.du}"></div>
-        <div class="field"><label>Au</label><input type="date" id="pr_au" value="${P.au}"></div>
-        <div class="field"><label>Absences max</label><input class="tinput" type="number" min="0" id="pr_abs" value="${P.absMax}" style="width:78px"></div>
-        <div class="field"><label>Retards max</label><input class="tinput" type="number" min="0" id="pr_ret" value="${P.retMax}" style="width:78px"></div>
-        <div style="flex:1"></div>
-        <button class="btn btn-primary" onclick="primeRun()">${I.check} Afficher les \u00e9ligibles</button>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${presets.map(p=>`<button class="btn btn-ghost" style="font-size:12px;padding:5px 11px" onclick="primePreset(${p[1]},${p[2]})">${p[0]}</button>`).join('')}</div>
-      <div style="font-size:11.5px;color:var(--faint);margin-top:9px">Sélectionnez la période et les seuils : la liste des ouvrières qui respectent le barème (absences et retards) s'affiche, prête à imprimer.</div>
-    </div>
-    <div id="primeRes"></div></div>`;
-  fillPrime();
-}
-function primePreset(a,r){$('#pr_abs').value=a;$('#pr_ret').value=r;primeRun();}
-function primeRun(){const P=PRIME;P.du=$('#pr_du').value;P.au=$('#pr_au').value;P.absMax=+$('#pr_abs').value||0;P.retMax=+$('#pr_ret').value||0;
-  P.res=summarize(P.du,P.au).filter(r=>r.jA<=P.absMax&&r.rt<=P.retMax).sort((a,b)=>(a.e.nom||'').localeCompare(b.e.nom||''));
-  P.sel=new Set(P.res.map(r=>r.e.id));fillPrime();}
-function fillPrime(){const P=PRIME;const box=$('#primeRes');if(!box)return;
-  if(!P.res){box.innerHTML='<div class="card" style="padding:22px;text-align:center;color:var(--muted)">Choisissez la période et les seuils, puis « Afficher les éligibles ».</div>';return;}
-  if(!P.res.length){box.innerHTML='<div class="card" style="padding:22px;text-align:center;color:var(--muted)">Aucune ouvrière ne respecte ce barème sur la période.</div>';return;}
-  const rows=P.res.map(r=>`<tr><td style="width:34px"><input type="checkbox" ${P.sel.has(r.e.id)?'checked':''} onclick="primeToggle('${r.e.id}')"></td><td>${r.e.prenom} ${r.e.nom}</td><td class="mono">${r.e.matricule||r.e.cin||''}</td><td class="mono">${r.jA}</td><td class="mono">${r.rt}${r.ret?' ('+r.ret+' min)':''}</td><td class="mono">${fr2(hDec(r.hN+r.hS))} h</td></tr>`).join('');
-  box.innerHTML=`<div class="card tablecard"><div class="table-head">${I.check}<h3>${P.res.length} ouvri\u00e8re(s) \u00e9ligible(s)</h3><div class="spacer"></div><span style="font-size:12px;color:var(--muted)">Absences \u2264 ${P.absMax} · Retards \u2264 ${P.retMax}</span></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 12px;align-items:center"><button class="btn btn-ghost" style="font-size:12px;padding:5px 11px" onclick="primeAll(true)">Tout sélectionner</button><button class="btn btn-ghost" style="font-size:12px;padding:5px 11px" onclick="primeAll(false)">Tout désélectionner</button><div style="flex:1"></div>
-    <button class="btn btn-gold" onclick="primePrint(false)">${I.download} Imprimer la sélection</button>
-    <button class="btn btn-ghost" onclick="primePrint(true)">${I.download} Imprimer tout</button>
-    ${can('delete')?`<button class="btn btn-ghost" style="color:var(--thread)" onclick="primeDelete()">Supprimer la sélection</button>`:''}</div>
-    <table class="tbl"><thead><tr><th></th><th>Ouvrière</th><th>Matricule</th><th>Absences</th><th>Retards</th><th>Heures</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-}
-function primeToggle(id){const s=PRIME.sel;s.has(id)?s.delete(id):s.add(id);}
-function primeAll(v){PRIME.sel=v?new Set(PRIME.res.map(r=>r.e.id)):new Set();fillPrime();}
-function primePrint(all){const P=PRIME;const rows=(all?P.res:P.res.filter(r=>P.sel.has(r.e.id)));
-  if(!rows.length){toast('Aucune ouvrière sélectionnée','warn');return;}
-  downloadPDF({title:'Prime assiduite '+P.du+' '+P.au,subtitle:"DBS Fashion · Prime d'assiduit\u00e9 · Absences \u2264 "+P.absMax+" · Retards \u2264 "+P.retMax+" · "+fmtJour(P.du)+" au "+fmtJour(P.au),
-    sections:[{title:'Ouvrières éligibles ('+rows.length+')',columns:['Matricule','Nom','Absences','Retards','Heures'],
-      rows:rows.map(r=>[String(r.e.matricule||r.e.cin||''),r.e.prenom+' '+r.e.nom,String(r.jA),String(r.rt),fr2(hDec(r.hN+r.hS))+' h'])}]},'primes_'+P.du+'_'+P.au+'.pdf');
-}
-function congesPeriode(refY){
-  const cd=(DB.settings&&DB.settings.congesDebut)||'08-15';const mo=+cd.slice(0,2),dy=+cd.slice(3,5);
-  const t=new Date(TODAY+'T12:00');let y=refY;
-  if(!y)y=((t.getMonth()+1>mo)||(t.getMonth()+1===mo&&t.getDate()>=dy))?t.getFullYear():t.getFullYear()-1;
-  const du=y+'-'+pad(mo)+'-'+pad(dy);const end=new Date(y+1,mo-1,dy);end.setDate(end.getDate()-1);const au=isoOf(end);
-  return {y,du,au,auEff:(au<=TODAY?au:TODAY)};
-}
-function renderCongesCumul(m){
-  const P=window._cc||(window._cc={y:null});
-  const per=congesPeriode(P.y);
-  const rows=summarize(per.du,per.auEff).map(r=>({e:r.e,h:r.hN+r.hS,jT:r.jT})).sort((a,b)=>(a.e.nom||'').localeCompare(b.e.nom||''));
-  window._ccRows=rows;window._ccPer=per;
-  const curY=congesPeriode().y;const years=[curY,curY-1,curY-2];
-  m.innerHTML=topbar('Congés',"Cumul heures cong\u00e9s")+`<div class="page view active">
-    <div class="card" style="padding:14px 18px;margin-bottom:16px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
-      <div><label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px">Période de référence</label>
-        <select class="ssel" onchange="ccYear(this.value)">${years.map(y=>`<option value="${y}" ${per.y===y?'selected':''}>${y} \u2192 ${y+1}</option>`).join('')}</select></div>
-      <div style="color:var(--muted);font-size:12.5px">${fmtJour(per.du)} \u2192 ${fmtJour(per.au)}<br><span style="color:var(--faint)">Cumul arrêté au ${fmtJour(per.auEff)}</span></div>
-      <div style="flex:1"></div>
-      <button class="btn btn-gold" onclick="ccPrint()">${I.download} Imprimer le tableau</button>
-    </div>
-    <div class="card tablecard"><div class="table-head">${I.report}<h3>${rows.length} ouvri\u00e8re(s)</h3></div>
-    <table class="tbl"><thead><tr><th>Matricule</th><th>Ouvrière</th><th>Jours travaillés</th><th>Heures cumulées</th></tr></thead>
-    <tbody>${rows.map(r=>`<tr><td class="mono">${r.e.matricule||r.e.cin||''}</td><td>${r.e.prenom} ${r.e.nom}</td><td class="mono">${r.jT}</td><td class="mono" style="font-weight:700">${hLabel(r.h)}</td></tr>`).join('')||'<tr><td colspan="4" class="empty">Aucune donnée</td></tr>'}</tbody></table></div></div>`;
-}
-function ccYear(y){window._cc={y:+y};render();}
-function ccPrint(){const rows=window._ccRows,per=window._ccPer;if(!rows||!rows.length){toast('Aucune donnée','warn');return;}
-  downloadPDF({title:'Cumul conges '+per.du,subtitle:"DBS Fashion · Cumul heures cong\u00e9s · "+fmtJour(per.du)+" au "+fmtJour(per.au)+" (arrêté au "+fmtJour(per.auEff)+")",
-    sections:[{title:'Heures cumulées par ouvrière ('+rows.length+')',columns:['Matricule','Nom','Jours travaillés','Heures cumulées'],
-      rows:rows.map(r=>[String(r.e.matricule||r.e.cin||''),r.e.prenom+' '+r.e.nom,String(r.jT),hLabel(r.h)])}]},'conges_'+per.du+'.pdf');
-}
-function primeDelete(){const P=PRIME;const ids=[...P.sel];if(!ids.length){toast('Rien de sélectionné','warn');return;}
-  if(!can('delete')){toast("Réservé à l'administrateur / RH",'warn');return;}
-  if(!confirm('Supprimer '+ids.length+' ouvrière(s) ?\n\nElles ne réapparaîtront plus lors des imports (démission).'))return;
-  ids.forEach(id=>{DB.employees=DB.employees.filter(x=>x.id!==id);for(const ds in DB.pointages){if(DB.pointages[ds])delete DB.pointages[ds][id];}fetch('/api/employee/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,qui:ROLE})}).catch(()=>{});});
-  save();P.res=P.res.filter(r=>!ids.includes(r.e.id));P.sel=new Set();fillPrime();toast(ids.length+' ouvrière(s) supprimée(s)');}
 let REP_FROM='2026-06-01',REP_TO=TODAY;
 function renderRapports(m){
   m.innerHTML=topbar('Rapports & paie','Rapports & paie')+`<div class="page view active">
@@ -950,6 +848,7 @@ function renderRapports(m){
         <div class="field"><label>Au</label><input type="date" id="repTo" value="${REP_TO}" onchange="REP_TO=this.value;fillRep()"></div>
         <div style="flex:1"></div>
         <button class="btn btn-ghost" onclick="pdfDaily()">${I.download} PDF journalier</button>
+        <button class="btn btn-ghost" onclick="pdfAbsRetards()">${I.download} PDF absences / retards</button>
         <button class="btn btn-gold" onclick="pdfMonthly()">${I.download} PDF paie (mois)</button>
         <button class="btn btn-ghost" onclick="dlMonthly()" title="Export tableur">CSV</button>
       </div>
@@ -1005,6 +904,28 @@ function pdfMonthly(){
   });
   downloadPDF({title:'Rapport de paie — '+ym,subtitle:'DBS Fashion · Ouvrières en heures · Cadres en jours travaillés',
     sections:[{title:'Synthèse mensuelle',columns:['Mat.','Nom','Cat.','J.trav','Abs','Congé','H.norm.','H.sup.','Retards','Base paie'],rows:rows}]},'rapport_paie_'+ym+'.pdf');
+}
+function absRetSections(a,b){
+  const ret=[],abs=[];
+  eachDay(a,b,ds=>{
+    const rec=dayRec(ds);const reg=regimeFor(ds);if(reg.actif===false)return;
+    DB.employees.forEach(e=>{
+      const r=(rec||{})[e.id];const m=metrics(r,ds);const mat=e.matricule||e.cin||e.id;
+      if(m.statut==='absent')abs.push([fmtDate(ds),mat,e.prenom+' '+e.nom,'Absente']);
+      else if(m.statut==='leave')abs.push([fmtDate(ds),mat,e.prenom+' '+e.nom,'Congé']);
+      else if(m.statut==='mission')abs.push([fmtDate(ds),mat,e.prenom+' '+e.nom,'Mission']);
+      else if(m.late)ret.push([fmtDate(ds),mat,e.prenom+' '+e.nom,(r&&r.entree)||'','+'+m.retard+' min']);
+    });
+  });
+  return [
+    {title:'Retards ('+ret.length+')',columns:['Date','Matricule','Nom','Entrée','Retard'],rows:ret},
+    {title:'Absences / congés / missions ('+abs.length+')',columns:['Date','Matricule','Nom','Motif'],rows:abs},
+  ];
+}
+function pdfAbsRetards(){
+  downloadPDF({title:'État des absences et retards',
+    subtitle:'DBS Fashion · du '+fmtDate(REP_FROM)+' au '+fmtDate(REP_TO),
+    sections:absRetSections(REP_FROM,REP_TO)},'absences_retards_'+REP_FROM+'_'+REP_TO+'.pdf');
 }
 async function syncNow(){
   toast('Synchronisation avec la pointeuse…');
@@ -1331,7 +1252,7 @@ function renderParametres(m){
   m.innerHTML=topbar('Administration','Sécurité & accès',`<button class="btn btn-ghost" onclick="openSettings()">${I.gear} Paramètres horaires</button>`)+`<div class="page view active"><div class="split"><div>
     ${usersCard()}
     <div class="card tablecard"><div class="table-head">${I.clock}<h3>Historique des modifications</h3></div><table class="tbl"><thead><tr><th>Auteur</th><th>Action</th><th>Horodatage</th></tr></thead><tbody id="auditBody"><tr><td colspan="3"><div class="empty">Chargement…</div></td></tr></tbody></table></div></div>
-    <div><div class="card chartcard" style="margin-bottom:16px"><h3>Pointeuse · connexion réseau</h3><div class="csub" style="margin-top:6px">Importer les pointages directement depuis la pointeuse ZKTeco (sans fichier). Fonctionne si ce poste est sur le même réseau que la pointeuse — idéal en version locale.</div><div style="display:flex;gap:8px;margin-top:12px"><input id="dev_ip" class="tinput" style="flex:2" placeholder="IP pointeuse" value="192.168.1.201"><input id="dev_port" class="tinput" style="flex:1" placeholder="Port" value="4370"></div><button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:10px" onclick="pullDevice()">${I.download} Importer depuis la pointeuse</button></div><div class="card chartcard" style="margin-bottom:16px"><h3>Espace salarié · QR codes</h3><div class="csub" style="margin-top:6px">Chaque ouvrière consulte son pointage du mois (présences, retards, absences) en scannant son QR personnel puis en saisissant son code à 4 chiffres. Lecture seule.</div><button class="btn btn-gold" style="width:100%;justify-content:center;margin-top:12px" onclick="window.open('/api/qr-codes.pdf','_blank')">${I.download} QR codes du personnel (PDF)</button><div style="font-size:11.5px;color:var(--faint);margin-top:10px">Imprimez et distribuez les cartes (confidentiel : chaque carte porte le code de l\u2019employée). Lien de l\u2019espace : <span class="mono">${location.origin}/moi</span></div></div><div class="card chartcard" style="margin-bottom:16px"><h3>Clé API Anthropic (optionnelle)</h3><div class="csub" style="margin-top:6px">La clé est configurée côté serveur (variable d\u2019environnement ANTHROPIC_API_KEY). Ce champ est informatif.</div><input id="apiKeyInput" type="password" placeholder="sk-ant-..." value="${apiKey}" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-top:12px;outline:none;font-family:var(--mono)"><button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:10px" onclick="saveApiKey()">${I.check} Enregistrer</button></div>
+    <div><div class="card chartcard" style="margin-bottom:16px"><h3>Espace salarié · QR codes</h3><div class="csub" style="margin-top:6px">Chaque ouvrière consulte son pointage du mois (présences, retards, absences) en scannant son QR personnel puis en saisissant son code à 4 chiffres. Lecture seule.</div><button class="btn btn-gold" style="width:100%;justify-content:center;margin-top:12px" onclick="window.open('/api/qr-codes.pdf','_blank')">${I.download} QR codes du personnel (PDF)</button><div style="font-size:11.5px;color:var(--faint);margin-top:10px">Imprimez et distribuez les cartes (confidentiel : chaque carte porte le code de l\u2019employée). Lien de l\u2019espace : <span class="mono">${location.origin}/moi</span></div></div><div class="card chartcard" style="margin-bottom:16px"><h3>Clé API Anthropic (optionnelle)</h3><div class="csub" style="margin-top:6px">La clé est configurée côté serveur (variable d\u2019environnement ANTHROPIC_API_KEY). Ce champ est informatif.</div><input id="apiKeyInput" type="password" placeholder="sk-ant-..." value="${apiKey}" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-top:12px;outline:none;font-family:var(--mono)"><button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:10px" onclick="saveApiKey()">${I.check} Enregistrer</button></div>
     <div class="card chartcard" style="margin-bottom:16px"><h3>Sauvegarde des données</h3><div class="csub" style="margin-top:6px">Sauvegarde auto quotidienne. Export/import manuel.</div><div style="display:flex;gap:10px;margin-top:12px"><button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="exportDB()">${I.download} Exporter</button><button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="document.getElementById('impDB').click()">${I.up} Importer</button><input type="file" id="impDB" accept=".json" style="display:none" onchange="importDB(this.files[0])"></div><button class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:10px;color:var(--thread)" onclick="resetDB()">Réinitialiser la démo</button></div>
     <div class="card chartcard"><h3>Intégrations futures</h3><div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">${['Paie','Production textile (PilotPro)','Contrôle qualité','ERP usine'].map(x=>`<div style="display:flex;align-items:center;gap:9px;font-size:13px"><span class="dotmark" style="background:var(--gold)"></span>${x}<span class="tag t-neutral" style="margin-left:auto">À venir</span></div>`).join('')}</div></div></div></div></div>`;
   loadAudit();loadUsers();
@@ -1358,7 +1279,6 @@ function editUser(login,nom,role){$('#u_login').value=login;$('#u_nom').value=no
 function saveUser(){const login=$('#u_login').value.trim(),nom=$('#u_nom').value.trim(),role=$('#u_role').value,password=$('#u_pass').value;if(!login){toast('Identifiant requis','warn');return;}
   fetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login,nom,role,password})}).then(r=>r.json()).then(d=>{if(d.error){toast(d.error,'warn');return;}toast('Compte enregistré');$('#u_login').value='';$('#u_nom').value='';$('#u_pass').value='';loadUsers();}).catch(()=>toast('Erreur','warn'));}
 function delUser(login){if(!confirm('Supprimer le compte « '+login+' » ?'))return;fetch('/api/users/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login})}).then(r=>r.json()).then(d=>{if(d.error){toast(d.error,'warn');return;}toast('Compte supprimé');loadUsers();}).catch(()=>toast('Erreur','warn'));}
-function pullDevice(){const ip=$('#dev_ip').value.trim(),port=($('#dev_port').value.trim()||'4370');if(!ip){toast('Indiquez l\'IP de la pointeuse','warn');return;}toast('Connexion à la pointeuse…');fetch('/api/pull-device',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ip,port:+port})}).then(r=>r.json()).then(d=>{if(d.error){toast(d.error,'warn');return;}load().then(()=>{render();toast('Importé · '+d.pointages+' pointages · '+d.employees+' employées');afterImportReview();});}).catch(()=>toast('Import impossible','warn'));}
 function saveApiKey(){apiKey=$('#apiKeyInput').value.trim();localStorage.setItem('pilotrh_apikey',apiKey);toast(apiKey?'Clé enregistrée':'Clé supprimée')}
 function exportDB(){const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download='pilotrh_sauvegarde_'+TODAY+'.json';a.click();toast('Base exportée')}
 function importDB(f){if(!f)return;const r=new FileReader();r.onload=e=>{try{DB=JSON.parse(e.target.result);persistAll();render();toast('Base importée')}catch(x){toast('Fichier invalide','warn')}};r.readAsText(f)}

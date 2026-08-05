@@ -93,6 +93,11 @@ Si vous préférez : **Présences → Importer pointage** → glissez le `.mdb` 
 
 > Règle de pointage : premier badge du jour = **entrée**, dernier badge = **sortie**.
 > Les fiches déjà créées ne sont pas écrasées (poste, catégorie, salaire, photo conservés).
+> **Toute correction manuelle du pointage (statut, entrée, sortie, heures ou journée créée
+> à la main) est automatiquement protégée** : elle n'est **plus jamais écrasée**, même si
+> un import ultérieur (fichier `.mdb`, agent d'usine ou connexion réseau directe) contient
+> des données différentes pour ce jour-là. Vous pouvez réimporter le fichier complet de la
+> pointeuse (3 ans d'historique) chaque jour sans risquer de perdre vos corrections.
 
 ---
 
@@ -143,6 +148,7 @@ référence sur leur plage : **Juillet–Août en séance unique** (ex. 07:00→
 ## 6. Rapports
 
 - **PDF journalier** : présents / retards / absents (entrée, sortie, heures, H.sup).
+- **PDF absences / retards** : état détaillé occurrence par occurrence (une ligne par jour et par employée) sur la période choisie (Du → Au), prêt à imprimer pour le suivi disciplinaire ou l'inspection du travail.
 - **PDF de paie mensuel** : synthèse par employée, prête pour le comptable.
 - Export **CSV** également. Liste du jour **filtrable** (statut, service, atelier, nom) et **triable**.
 
@@ -151,7 +157,9 @@ référence sur leur plage : **Juillet–Août en séance unique** (ex. 07:00→
 ## 7. Espace salarié (QR code + PIN)
 
 Chaque ouvrière peut consulter **son propre pointage du mois** (présences, retards,
-absences, heures) en lecture seule, sans accès à l'administration.
+absences, heures) en lecture seule, sans accès à l'administration, ainsi que son
+**cumul de jours de congé pris sur la période de référence annuelle en cours**
+(15 août → 14 août par défaut, réglable dans Paramètres → `congesDebut`).
 
 - Dans **Sécurité & accès → Espace salarié**, téléchargez le **PDF des QR codes**
   (une carte par employée, avec son nom et son **code à 4 chiffres**). Imprimez et

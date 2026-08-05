@@ -113,6 +113,19 @@ def merge_punches(state, users_rows, punch_rows, du=DEFAULT_DU, au=None):
     return _merge_assembled(state, *parse_punches(users_rows, punch_rows, du, au))
 
 
+def _est_protege(rec):
+    """Un enregistrement de pointage est protégé (jamais écrasé par un import) dès qu'il a
+    été touché manuellement : statut/entrée/sortie corrigés (rec['manuel']) ou heures
+    forcées à la main (rec['hM'])."""
+    if not rec:
+        return False
+    if rec.get("manuel"):
+        return True
+    if rec.get("hM") not in (None, ""):
+        return True
+    return False
+
+
 def _merge_assembled(state, users, actifs, day_user):
     """Fusionne un jeu déjà assemblé (users/actifs/day_user) dans l'état."""
     exclus = set(str(b) for b in state.get("exclus", []))   # badges d'employées supprimées (démission) : jamais réimportées
@@ -156,6 +169,7 @@ def _merge_assembled(state, users, actifs, day_user):
     pointages = state.get("pointages", {})
     emp_ids = [e["id"] for e in employees if e.get("actif", True)]
     for d in sorted(day_user):
+        jour_existant = pointages.get(d, {})
         rec = {}
         present = set()
         for uid, plist in day_user[d].items():
@@ -163,13 +177,21 @@ def _merge_assembled(state, users, actifs, day_user):
             if not eid:
                 continue                            # badge filtré : pas de pointage
             present.add(eid)
+            existant = jour_existant.get(eid)
+            if _est_protege(existant):
+                rec[eid] = existant                 # correction manuelle : jamais écrasée par l'import
+                continue
             r = {"statut": "present", "entree": plist[0], "sortie": plist[-1] if len(plist) > 1 else ""}
             if len(plist) > 2:
                 r["punches"] = plist                # sorties/retours intermédiaires conservés
             rec[eid] = r
         for eid in emp_ids:
             if eid not in present:
-                rec[eid] = {"statut": "absent", "entree": "", "sortie": ""}
+                existant = jour_existant.get(eid)
+                if _est_protege(existant):
+                    rec[eid] = existant              # correction manuelle : jamais écrasée par l'import
+                else:
+                    rec[eid] = {"statut": "absent", "entree": "", "sortie": ""}
         pointages[d] = rec
     state["pointages"] = pointages
 
