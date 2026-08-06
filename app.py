@@ -611,18 +611,28 @@ def api_me(t: str = "", pin: str = "", mois: str = ""):
             try: rec["hM"] = int(hm)
             except Exception: pass
         jours[d] = rec
-    # période de référence des congés : 15/08 → 14/08 (paramétrable via settings.congesDebut = "MM-DD")
-    cd = str((m.get("settings") or {}).get("congesDebut", "08-15"))
-    try:
-        cmonth, cday = int(cd[:2]), int(cd[3:5])
-    except Exception:
-        cmonth, cday = 8, 15
-    ref_year = today.year if (today.month, today.day) >= (cmonth, cday) else today.year - 1
-    try:
-        p_du = datetime.date(ref_year, cmonth, cday)
-        p_end = datetime.date(ref_year + 1, cmonth, cday) - datetime.timedelta(days=1)
-    except Exception:
-        p_du, p_end = datetime.date(ref_year, 8, 15), datetime.date(ref_year + 1, 8, 14)
+    # période de référence des congés : dates explicites (settings.congesDu / congesAu, modifiables par
+    # les RH) si définies, sinon calcul glissant 15/08 → 14/08 par défaut (settings.congesDebut = "MM-DD")
+    st = m.get("settings") or {}
+    p_du = p_end = None
+    if st.get("congesDu") and st.get("congesAu"):
+        try:
+            p_du = datetime.date.fromisoformat(str(st["congesDu"]))
+            p_end = datetime.date.fromisoformat(str(st["congesAu"]))
+        except Exception:
+            p_du = p_end = None
+    if not p_du or not p_end or p_end < p_du:
+        cd = str(st.get("congesDebut", "08-15"))
+        try:
+            cmonth, cday = int(cd[:2]), int(cd[3:5])
+        except Exception:
+            cmonth, cday = 8, 15
+        ref_year = today.year if (today.month, today.day) >= (cmonth, cday) else today.year - 1
+        try:
+            p_du = datetime.date(ref_year, cmonth, cday)
+            p_end = datetime.date(ref_year + 1, cmonth, cday) - datetime.timedelta(days=1)
+        except Exception:
+            p_du, p_end = datetime.date(ref_year, 8, 15), datetime.date(ref_year + 1, 8, 14)
     p_to = min(p_end, today)
     c = _conn()
     crows = c.execute("SELECT d,statut,entree,sortie,punches,hM FROM pointage WHERE emp=? AND d>=? AND d<=?",

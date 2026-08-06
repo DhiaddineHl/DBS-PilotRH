@@ -381,6 +381,9 @@ function normalizeSettings(s){
   if(s.modeHS===undefined)s.modeHS='fin';
   if(s.arrondi===undefined)s.arrondi=0;
   if(s.arrondiSens===undefined)s.arrondiSens='proche';
+  if(s.congesDu===undefined)s.congesDu='';
+  if(s.congesAu===undefined)s.congesAu='';
+  if(s.congesCoef===undefined)s.congesCoef=0;
   if(!s.jours){
     const deb=s.heureDebut||'07:30',fin=s.heureFin||'16:30',pa=(s.pause!==undefined?s.pause:30),tol=(s.toleranceRetard!==undefined?s.toleranceRetard:15),gr=(s.graceHS!==undefined?s.graceHS:15);
     s.jours={};[1,2,3,4,5].forEach(d=>s.jours[d]={actif:true,debut:deb,fin:fin,pause:pa,tol:tol,grace:gr});
@@ -728,6 +731,16 @@ function renderSettings(){
         <select class="ssel" ${c.arrondi==0?'disabled':''} onchange="cfgSet('arrondiSens',this.value)"><option value="proche" ${c.arrondiSens==='proche'?'selected':''}>au plus proche</option><option value="inferieur" ${c.arrondiSens==='inferieur'?'selected':''}>à l\u2019inférieur</option></select></div>
     </div>
     <div style="font-size:11px;color:var(--faint);margin-bottom:6px">L\u2019arrondi s\u2019applique aux heures travaillées et aux heures supplémentaires.</div>
+    <h4 style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin:16px 0 8px;border-bottom:1px dashed var(--gold-line);padding-bottom:6px">Congés — période & calcul du dû (espace salarié)</h4>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+      <div><label style="font-size:11px;color:var(--muted);font-weight:600">Période — du</label><br>
+        <input class="tinput" type="date" value="${c.congesDu||''}" onchange="cfgSet('congesDu',this.value)"></div>
+      <div><label style="font-size:11px;color:var(--muted);font-weight:600">au</label><br>
+        <input class="tinput" type="date" value="${c.congesAu||''}" onchange="cfgSet('congesAu',this.value)"></div>
+      <div><label style="font-size:11px;color:var(--muted);font-weight:600">Coefficient (heures dues = heures travaillées × coefficient)</label><br>
+        <input class="tinput" style="width:100px" type="number" step="0.0001" value="${c.congesCoef||0}" onchange="cfgSet('congesCoef',+this.value)"></div>
+    </div>
+    <div style="font-size:11.5px;color:var(--faint);margin-bottom:6px">Chaque ouvrière voit dans son espace personnel (QR code) son cumul d\u2019heures travaillées sur cette période, et le nombre d\u2019heures de congé qui lui sont dues (heures travaillées × coefficient), moins les congés déjà pris. Laissez les dates vides pour revenir au calcul automatique (15 août → 14 août).</div>
     <h4 style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin:16px 0 8px;border-bottom:1px dashed var(--gold-line);padding-bottom:6px">Semaine de référence (mode par défaut)</h4>
     <table class="tbl" style="font-size:12.5px"><thead><tr><th>Jour</th><th>Ouvré</th><th>Début</th><th>Fin</th><th>Pause (min)</th><th>Tol.</th><th>Délai HS</th></tr></thead><tbody>${baseRows}</tbody></table>
     <div style="display:flex;align-items:center;margin:18px 0 10px;border-bottom:1px dashed var(--gold-line);padding-bottom:6px"><h4 style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin:0">Modes personnalisés (Ramadan, été, samedi spécial…)</h4><button class="btn btn-ghost" style="margin-left:auto;padding:4px 11px;font-size:12px" onclick="addRamadan()">${I.plus} Ramadan</button><button class="btn btn-ghost" style="margin-left:8px;padding:4px 11px;font-size:12px" onclick="addPeriode()">${I.plus} Créer un mode</button></div>
