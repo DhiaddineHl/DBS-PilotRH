@@ -2,7 +2,13 @@
 chcp 65001 >nul
 title PilotRH - Application (laisser cette fenetre ouverte)
 cd /d "%~dp0"
+REM PILOTRH_OPEN=1 desactive TOUTE authentification. C'est acceptable ici parce
+REM que le serveur ecoute exclusivement sur 127.0.0.1 (voir la derniere ligne).
+REM Si vous remplacez 127.0.0.1 par 0.0.0.0 pour y acceder depuis un autre poste,
+REM RETIREZ cette ligne et definissez PILOTRH_ADMIN_PASSWORD : sinon toute
+REM machine du reseau de l'usine obtient l'administration complete.
 set PILOTRH_OPEN=1
+set TZ=Africa/Tunis
 
 REM --- verifier que Python et les composants sont installes ---
 python -c "import uvicorn" 1>nul 2>nul

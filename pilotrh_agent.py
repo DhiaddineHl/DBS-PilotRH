@@ -28,7 +28,14 @@ import os, sys, time
 METHODE   = os.environ.get("PILOTRH_METHODE", "pointeuse")   # "pointeuse" ou "fichier"
 
 URL       = os.environ.get("PILOTRH_URL", "https://VOTRE-APP.up.railway.app").rstrip("/")
-ADMIN_PW  = os.environ.get("PILOTRH_ADMIN_PASSWORD", "")      # mot de passe admin du serveur (si défini)
+
+# Compte de service. Créez dans PilotRH (Sécurité & accès) un compte dédié
+# — par exemple identifiant « agent », rôle « RH » — et mettez son mot de passe
+# ici. N'utilisez PAS le compte administrateur : ce fichier est en clair sur un
+# PC d'usine, et un mot de passe d'administrateur qui traîne sur ce poste donne
+# le contrôle total de l'application.
+LOGIN     = os.environ.get("PILOTRH_LOGIN", "agent")
+MOT_DE_PASSE = os.environ.get("PILOTRH_PASSWORD", "") or os.environ.get("PILOTRH_ADMIN_PASSWORD", "")
 INTERVAL  = int(os.environ.get("PILOTRH_INTERVAL_MIN", "30")) * 60   # minutes entre deux envois
 
 # Pour METHODE = "pointeuse" :
@@ -46,7 +53,7 @@ except ImportError:
     print("Le module 'requests' est requis :  pip install requests")
     sys.exit(1)
 
-AUTH = ("admin", ADMIN_PW) if ADMIN_PW else None
+AUTH = (LOGIN, MOT_DE_PASSE) if MOT_DE_PASSE else None
 
 
 def _log(msg):
@@ -139,7 +146,9 @@ def main():
     if "VOTRE-APP" in URL:
         _log("⚠ Configurez d'abord PILOTRH_URL (l'adresse de votre app Railway) en haut du fichier.")
         return
-    _log("Agent PilotRH démarré · méthode = %s · cible = %s" % (METHODE, URL))
+    if not MOT_DE_PASSE:
+        _log("⚠ Aucun mot de passe configuré (PILOTRH_PASSWORD). Le serveur refusera l'envoi.")
+    _log("Agent PilotRH démarré · méthode = %s · cible = %s · compte = %s" % (METHODE, URL, LOGIN))
     while True:
         envoyer()
         if once:

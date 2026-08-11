@@ -2,30 +2,40 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a1d29">
+<meta name="robots" content="noindex, nofollow">
 <title>Mon pointage — DBS Fashion</title>
+<link rel="manifest" href="/assets/manifest.webmanifest">
+<link rel="icon" href="/assets/icone.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/assets/icone-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="PilotRH">
 <style>
-:root{--ink:#1a1d29;--gold:#c19a3e;--gold-soft:#f6efdd;--paper:#faf8f3;--surface:#fff;
-  --line:#e7e1d4;--muted:#6c7180;--faint:#9aa0ad;--present:#2e7d54;--present-bg:#e6f3ec;
-  --late:#b9842b;--late-bg:#fbf2df;--absent:#b23b3b;--absent-bg:#f8e7e7;--leave:#3b6db2;--leave-bg:#e7eef8;}
+:root{--ink:#1a1d29;--gold:#a3822f;--gold-soft:#f6efdd;--paper:#faf8f3;--surface:#fff;
+  --line:#e7e1d4;--muted:#5c6270;--faint:#6b7280;--present:#256e46;--present-bg:#e6f3ec;
+  --late:#8a6215;--late-bg:#fbf2df;--absent:#a4331f;--absent-bg:#f8e7e7;
+  --leave:#3d52a8;--leave-bg:#e7eef8;--ferie:#0d6a6a;--ferie-bg:#e2f2f2;}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0;background:var(--paper);color:var(--ink);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Arial,sans-serif;
-  line-height:1.5;padding-bottom:40px}
-.wrap{max-width:560px;margin:0 auto;padding:0 16px}
-header{background:var(--ink);color:#fff;padding:22px 0 26px;border-bottom:3px solid var(--gold)}
-.eyebrow{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);font-weight:700}
+  line-height:1.5;padding-bottom:48px}
+.wrap{max-width:600px;margin:0 auto;padding:0 16px}
+header{background:var(--ink);color:#fff;padding:22px 0 26px;border-bottom:3px solid var(--gold);
+  padding-top:calc(22px + env(safe-area-inset-top))}
+.eyebrow{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#d9bd74;font-weight:700}
 .brand{font-size:21px;font-weight:700;margin-top:3px}
 .sub{font-size:12.5px;color:#c7cad3;margin-top:2px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:16px;
   box-shadow:0 1px 2px rgba(26,29,41,.04)}
-h2{font-size:13px;letter-spacing:.04em;margin:0 0 12px;color:var(--ink)}
-.pin-in{width:100%;font-size:30px;letter-spacing:14px;text-align:center;padding:14px;border:1.5px solid var(--line);
+h2{font-size:13.5px;letter-spacing:.02em;margin:0 0 12px;color:var(--ink)}
+.pin-in{width:100%;font-size:28px;letter-spacing:10px;text-align:center;padding:14px;border:1.5px solid var(--line);
   border-radius:13px;outline:none;font-weight:700;color:var(--ink)}
 .pin-in:focus{border-color:var(--gold)}
-.btn{display:block;width:100%;background:var(--gold);color:#fff;border:none;border-radius:13px;padding:14px;
-  font-size:15px;font-weight:700;margin-top:14px;cursor:pointer}
+.btn{display:block;width:100%;background:var(--gold);color:#fff;border:none;border-radius:13px;padding:15px;
+  font-size:15px;font-weight:700;margin-top:14px;cursor:pointer;min-height:50px}
 .btn:active{opacity:.9}
+.btn[disabled]{opacity:.55}
 .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--line);font-weight:600}
 .who{display:flex;align-items:center;gap:13px}
 .av{width:48px;height:48px;border-radius:50%;background:var(--gold-soft);color:var(--gold);
@@ -39,217 +49,374 @@ h2{font-size:13px;letter-spacing:.04em;margin:0 0 12px;color:var(--ink)}
 .kpi.good .v{color:var(--present)} .kpi.warn .v{color:var(--late)} .kpi.bad .v{color:var(--absent)}
 table{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
 th{text-align:left;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);
-  padding:8px 6px;border-bottom:1px solid var(--line)}
-td{padding:9px 6px;border-bottom:1px solid #f1ece1}
+  padding:8px 5px;border-bottom:1px solid var(--line)}
+td{padding:9px 5px;border-bottom:1px solid #f1ece1}
+tr.f td{background:#f4faf9}
 .mono{font-variant-numeric:tabular-nums}
 .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px}
 .t-present{background:var(--present-bg);color:var(--present)}
 .t-late{background:var(--late-bg);color:var(--late)}
 .t-absent{background:var(--absent-bg);color:var(--absent)}
 .t-leave{background:var(--leave-bg);color:var(--leave)}
+.t-ferie{background:var(--ferie-bg);color:var(--ferie)}
+.t-neutral{background:#eae5d9;color:var(--muted)}
 .muted{color:var(--muted)} .center{text-align:center}
-.err{background:var(--absent-bg);color:var(--absent);border-radius:11px;padding:11px 13px;font-size:13px;margin-top:12px}
+.err{background:var(--absent-bg);color:var(--absent);border-radius:11px;padding:12px 14px;font-size:13px;margin-top:12px}
+.ok{background:var(--present-bg);color:var(--present);border-radius:11px;padding:12px 14px;font-size:13px;margin-top:12px}
 .note{font-size:11.5px;color:var(--faint);margin-top:10px}
-textarea,select{width:100%;border:1px solid var(--line);border-radius:11px;padding:11px;font-size:14px;outline:none;font-family:inherit}
+textarea,select{width:100%;border:1px solid var(--line);border-radius:11px;padding:12px;font-size:15px;outline:none;font-family:inherit}
 textarea:focus,select:focus{border-color:var(--gold)}
 .foot{text-align:center;font-size:11px;color:var(--faint);margin-top:22px}
-.hidden{display:none}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:#fff;
-  padding:11px 18px;border-radius:11px;font-size:13.5px;opacity:0;transition:opacity .25s;z-index:9}
+  padding:12px 18px;border-radius:11px;font-size:13.5px;opacity:0;transition:opacity .25s;z-index:9;max-width:90vw;text-align:center}
 .toast.show{opacity:1}
+.seg{display:flex;gap:8px;margin-top:16px}
+.seg button{flex:1;padding:12px 8px;border-radius:11px;border:1px solid var(--line);font-weight:700;
+  font-size:13px;cursor:pointer;background:var(--surface);color:var(--ink);min-height:46px}
+.seg button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.seg button .b{display:inline-block;background:var(--absent);color:#fff;border-radius:20px;
+  font-size:10.5px;padding:1px 6px;margin-left:5px;vertical-align:1px}
+.note-item{border:1px solid var(--line);border-radius:13px;padding:14px;margin-bottom:11px;background:var(--surface)}
+.note-item.nouv{border-color:var(--gold);background:#fffdf6}
+.note-item .t{font-weight:700;font-size:14.5px}
+.note-item .m{font-size:11.5px;color:var(--faint);margin-top:2px}
+.note-item .x{font-size:13.5px;margin-top:9px;white-space:pre-wrap}
+.vote-opt{display:block;width:100%;text-align:left;border:1.5px solid var(--line);border-radius:12px;
+  padding:14px;margin-bottom:9px;font-size:14.5px;background:var(--surface);cursor:pointer;min-height:50px}
+.vote-opt:active{border-color:var(--gold)}
+.vote-opt.mien{border-color:var(--gold);background:var(--gold-soft);font-weight:700}
+.bar{height:8px;border-radius:6px;background:var(--line);overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;background:var(--gold)}
+.install{position:fixed;left:12px;right:12px;bottom:12px;background:var(--ink);color:#fff;border-radius:14px;
+  padding:14px 16px;display:none;align-items:center;gap:12px;z-index:8;box-shadow:0 12px 30px -12px rgba(0,0,0,.5)}
+.install.on{display:flex}
+.install .t{flex:1;font-size:13px}
+.install button{background:var(--gold);color:#fff;border:none;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer}
+.install .c{background:none;color:#aeb4c6;padding:6px}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
 <header><div class="wrap">
   <div class="eyebrow">DBS Fashion</div>
-  <div class="brand">Mon pointage</div>
-  <div class="sub">Présences, retards et absences du mois</div>
+  <div class="brand">Mon espace</div>
+  <div class="sub">Pointage, congés, notes de service</div>
 </div></header>
 
 <div class="wrap" id="app"><div class="card center muted">Chargement…</div></div>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="install" id="install">
+  <div class="t"><b>Installer l’application</b><br><span style="color:#c7cad3">Vous n’aurez plus besoin de rescanner votre QR code.</span></div>
+  <button id="btnInstall">Installer</button>
+  <button class="c" id="btnInstallX" aria-label="Fermer">✕</button>
+</div>
 
+<script src="/assets/pilotrh-core.js"></script>
 <script>
-const params=new URLSearchParams(location.search);
-const TOKEN=params.get('t')||'';
-const app=document.getElementById('app');
-let DATA=null;
+'use strict';
+const C = window.PilotRHCore;
+const { pad, isoOf, hLabel, fr2, hDec, esc } = C;
+const params = new URLSearchParams(location.search);
+const app = document.getElementById('app');
 
-const pad=n=>String(n).padStart(2,'0');
-const toMin=t=>{if(!t)return null;const p=t.split(':');return (+p[0])*60+(+p[1]);};
-const hLabel=m=>Math.floor(m/60)+'h'+pad(Math.round(m%60));
-const fr2=n=>(Math.round(n*100)/100).toString().replace('.',',');
-const hDec=m=>m/60;
+/* Le jeton était dans l'URL à chaque appel : il finissait dans les journaux du
+   serveur et dans l'historique du téléphone. On le garde côté navigateur et on
+   nettoie l'adresse dès la première ouverture. */
+let TOKEN = params.get('t') || '';
+try{
+  if(TOKEN){ localStorage.setItem('pilotrh_t', TOKEN); history.replaceState(null,'','/moi'); }
+  else { TOKEN = localStorage.getItem('pilotrh_t') || ''; }
+}catch(e){}
+
+let DATA=null, PIN='', ONGLET='pointage';
 const JJ=['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
 const MOIS=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
-const fmtPer=iso=>{const p=(iso||'').split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:(iso||'');};
+/* premier / dernier badge quand entree-sortie ne sont pas renseignes */
+const aff=(r,i)=>{if(!r)return '';const p=r.punches;
+  if(i===0)return r.entree||(p&&p.length?p[0]:'');
+  return r.sortie||(p&&p.length>1?p[p.length-1]:'')};
+const fmtPer=iso=>{const p=String(iso||'').split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:(iso||'')};
+const shiftYm=(ym,d)=>{const a=ym.split('-');let Y=+a[0],M=+a[1]+d;while(M<1){M+=12;Y--}while(M>12){M-=12;Y++}return Y+'-'+pad(M)};
 
-function S(){return DATA?DATA.settings:{};}
-function regimeFor(ds){
-  const s=S();const w=new Date(ds+'T12:00').getDay();
-  if(s.periodes)for(const p of s.periodes){if(p.du<=ds&&ds<=p.au){const r=(p.jours||{})[w];return r||{actif:false};}}
-  return (s.jours||{})[w]||{actif:true,debut:'07:30',fin:'16:30',pause:30,tol:15,grace:15};
+const ENGINE = C.makeEngine(()=>(DATA?DATA.settings:{}));
+function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');
+  clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),2600)}
+
+async function post(url,body){
+  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(Object.assign({t:TOKEN},body||{}))});
+  const txt=await r.text();
+  let d=null;try{d=txt?JSON.parse(txt):null}catch(e){}
+  if(!r.ok){const e=new Error((d&&d.error)||('erreur '+r.status));e.status=r.status;e.data=d;throw e}
+  return d;
 }
-function shiftYm(ym,delta){let a=ym.split('-'),Y=+a[0],M=+a[1]+delta;while(M<1){M+=12;Y--;}while(M>12){M-=12;Y++;}return Y+'-'+pad(M);}
-function roundMin(x,step,sens){if(!step||step<=0)return x;return sens==='inferieur'?Math.floor(x/step)*step:Math.round(x/step)*step;}
-function badges(rec){let P=(rec.punches&&rec.punches.length)?rec.punches.slice():[rec.entree,rec.sortie];return P.map(toMin).filter(x=>x!=null).sort((a,b)=>a-b);}
-function metrics(rec,date){
-  const reg=regimeFor(date);
-  if(!rec||rec.statut==='absent')return{statut:'absent',worked:false,heures:0,retard:0,hs:0,late:false};
-  if(['leave','mission'].includes(rec.statut)&&!rec.entree)return{statut:rec.statut,worked:false,heures:0,retard:0,hs:0,late:false};
-  const P=badges(rec);let heures=0,retard=0,hs=0,late=false,coupures=false,revue=false;
-  if(P.length){const firstIn=P[0],lastOut=P[P.length-1];
-    if(reg.actif===false){hs=Math.max(0,lastOut-firstIn-(+reg.pause||0));}
-    else{const debut=toMin(reg.debut),fin=toMin(reg.fin),grace=+reg.grace||0,tol=+reg.tol||0,pause=+reg.pause||0;
-      late=firstIn>debut+tol;retard=late?(firstIn-debut):0;
-      if(P.length>=2){let segs=[];
-        if(P.length%2===0){for(let i=0;i+1<P.length;i+=2)segs.push([P[i],P[i+1]]);coupures=P.length>2;}
-        else{segs=[[firstIn,lastOut]];revue=true;}
-        let norm=0;for(const s of segs){const a=Math.max(s[0],debut),b=Math.min(s[1],fin);if(b>a)norm+=b-a;}
-        let gaps=0;for(let i=0;i+1<segs.length;i++){const g0=Math.max(segs[i][1],debut),g1=Math.min(segs[i+1][0],fin);if(g1>g0)gaps+=g1-g0;}
-        norm-=Math.max(0,pause-gaps);heures=Math.max(0,norm);
-        if(lastOut>=fin+grace){hs=(S().modeHS==='fin')?(lastOut-fin):(lastOut-(fin+grace));}hs=Math.max(0,hs);}}}
-  const ar=+S().arrondi||0;if(ar>0){heures=roundMin(heures,ar,S().arrondiSens);hs=roundMin(hs,ar,S().arrondiSens);}
-  if(rec.hM!=null&&rec.hM!=='')heures=+rec.hM;
-  let statut=rec.statut==='present'?(late?'late':'present'):rec.statut;
-  return{statut,worked:true,heures,retard,hs,late,coupures,revue};
-}
-
-function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2200);}
-
-let PIN='';
 async function fetchMe(pin,mois){
-  const r=await fetch('/api/me?t='+encodeURIComponent(TOKEN)+'&pin='+encodeURIComponent(pin||'')+'&mois='+encodeURIComponent(mois||''));
-  if(r.status===200)return{ok:true,data:await r.json()};
-  const j=await r.json().catch(()=>({}));
-  return{ok:false,status:r.status,need_pin:j.need_pin,error:j.error};
+  try{
+    const d=await post('/api/me',{pin:pin||'',mois:mois||''});
+    return {ok:true,data:d};
+  }catch(e){
+    return {ok:false,status:e.status,need_pin:e.data&&e.data.need_pin,error:e.message};
+  }
 }
-async function loadMonth(ym){const res=await fetchMe(PIN,ym);if(res.ok){DATA=res.data;render();}else toast('Impossible de charger ce mois');}
+async function loadMonth(ym){
+  const res=await fetchMe(PIN,ym);
+  if(res.ok){DATA=res.data;DATA.settings=C.normalizeSettings(DATA.settings);ENGINE.invalidate();render()}
+  else toast('Impossible de charger ce mois');
+}
 
+/* --------------------------------------------------------------- écran du code */
 function pinScreen(msg){
-  app.innerHTML=`<div class="card">
-    <h2>Code d'accès</h2>
-    <p class="muted" style="margin:0 0 14px;font-size:13.5px">Saisissez votre code à 4 chiffres (remis avec votre QR code).</p>
-    <input class="pin-in" id="pin" type="tel" inputmode="numeric" maxlength="4" placeholder="••••">
-    ${msg?`<div class="err">${msg}</div>`:''}
-    <button class="btn" id="go">Voir mon pointage</button>
-    <div class="note">Vos informations sont strictement personnelles et confidentielles.</div>
-  </div>`;
+  app.innerHTML='<div class="card">'+
+    '<h2>Code d’accès</h2>'+
+    '<p class="muted" style="margin:0 0 14px;font-size:13.5px">Saisissez le code personnel remis avec votre QR code.</p>'+
+    '<label for="pin" class="muted" style="font-size:12px">Votre code</label>'+
+    '<input class="pin-in" id="pin" type="tel" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">'+
+    (msg?'<div class="err">'+esc(msg)+'</div>':'')+
+    '<button class="btn" id="go">Voir mon pointage</button>'+
+    '<div class="note">Vos informations sont strictement personnelles et confidentielles. '+
+    'Ne communiquez votre code à personne.</div></div>';
   const inp=document.getElementById('pin');inp.focus();
-  const submit=async()=>{const v=inp.value.trim();if(v.length<4){toast('4 chiffres requis');return;}
-    document.getElementById('go').textContent='…';
+  const btn=document.getElementById('go');
+  const submit=async()=>{
+    const v=inp.value.trim();
+    if(v.length<4){toast('Au moins 4 chiffres');return}
+    btn.disabled=true;btn.textContent='Vérification…';
     const res=await fetchMe(v);
-    if(res.ok){PIN=v;DATA=res.data;render();}
-    else pinScreen('Code incorrect. Réessayez.');};
-  document.getElementById('go').onclick=submit;
+    if(res.ok){PIN=v;DATA=res.data;DATA.settings=C.normalizeSettings(DATA.settings);ENGINE.invalidate();render()}
+    else if(res.status===429)pinScreen('Trop de tentatives. Patientez quelques minutes.');
+    else pinScreen('Code incorrect. Réessayez.');
+  };
+  btn.onclick=submit;
   inp.onkeydown=e=>{if(e.key==='Enter')submit()};
-  inp.oninput=()=>{if(inp.value.length===4)submit()};
+  inp.oninput=()=>{if(inp.value.length===6)submit()};
 }
 
+/* ------------------------------------------------------------------- synthèse */
 function summary(){
   const j=DATA.jours, ym=DATA.mois, today=DATA.today;
-  const a=ym.split('-'),Y=+a[0],M=+a[1];const dim=new Date(Y,M,0).getDate();
-  let trav=0,abs=0,conge=0,retN=0,retMin=0,hN=0,hS=0;const lines=[];
+  const a=ym.split('-'),Y=+a[0],M=+a[1];
+  const dim=new Date(Y,M,0).getDate();
+  let trav=0,abs=0,conge=0,retN=0,retMin=0,hN=0,hS=0,feries=0,revue=0;
+  const lines=[];
   for(let d=1;d<=dim;d++){
-    const ds=ym+'-'+pad(d);if(ds>today)break;const reg=regimeFor(ds);const rec=j[ds];const m=metrics(rec,ds);
-    let label;
-    if(rec){
-      if(m.statut==='absent'){if(reg.actif===false)continue;abs++;label='absent';}
-      else if(m.statut==='leave'||m.statut==='mission'){conge++;label='leave';}
-      else{trav++;if(m.late){retN++;retMin+=m.retard;}hN+=m.heures;hS+=m.hs;label=m.statut;}
-    }else{
-      if(reg.actif===false)continue;
-      abs++;label='absent';
+    const ds=ym+'-'+pad(d);
+    if(ds>today)break;
+    const rec=j[ds];
+    const m=ENGINE.metrics(rec,ds);
+    if(!rec&&!ENGINE.estOuvre(ds))continue;      // repos / férié sans pointage : on n'affiche rien
+    if(m.statut==='repos')continue;
+    if(m.revue)revue++;
+    switch(m.statut){
+      case 'ferie': feries++;break;
+      case 'absent': abs++;break;
+      case 'leave': case 'mission': conge++;break;
+      case 'ferieTravaille': case 'reposTravaille': hS+=m.hs;break;
+      default: trav++;if(m.late){retN++;retMin+=m.retard}hN+=m.heures;hS+=m.hs;
     }
-    lines.push({ds,d,m,rec:rec||{},label});
+    lines.push({ds,d,m,rec:rec||{}});
   }
+  hN=ENGINE.arrondirTotal(hN);hS=ENGINE.arrondirTotal(hS);
   let congeAn=0,hCumul=0;
   if(DATA.conges&&DATA.conges.jours){
-    for(const ds in DATA.conges.jours){const rec=DATA.conges.jours[ds];const reg=regimeFor(ds);
-      if(reg.actif===false)continue;
-      const m=metrics(rec,ds);
+    for(const ds in DATA.conges.jours){
+      const m=ENGINE.metrics(DATA.conges.jours[ds],ds);
       if(m.statut==='leave')congeAn++;
-      else if(m.worked)hCumul+=(m.heures+m.hs);}
+      else if(m.worked)hCumul+=(m.heures+m.hs);
+    }
   }
+  hCumul=ENGINE.arrondirTotal(hCumul);
   const coef=+((DATA.settings||{}).congesCoef||0);
-  const hDues=hCumul*coef;
-  return{trav,abs,conge,retN,retMin,hN,hS,lines,congeAn,hCumul,hDues,coef};
+  return{trav,abs,conge,retN,retMin,hN,hS,lines,congeAn,hCumul,hDues:hCumul*coef,coef,feries,revue};
 }
 
+/* --------------------------------------------------------------------- rendu */
 function render(){
-  const s=summary();
-  const ym=DATA.mois.split('-');const moisTxt=MOIS[+ym[1]-1]+' '+ym[0];
+  const nonLues=(DATA.notes||[]).filter(n=>!n.lu).length;
+  const aVoter=(DATA.votes||[]).filter(v=>!v.vote&&!v.ferme).length;
   const ini=((DATA.prenom||' ')[0]||'')+((DATA.nom||' ')[0]||'');
-  const tagTxt={present:['Présente','t-present'],late:['Retard','t-late'],absent:['Absente','t-absent'],leave:['Congé','t-leave']};
-  const rows=s.lines.slice().reverse().map(l=>{
-    const tg=tagTxt[l.label]||['—',''];const w=new Date(l.ds+'T12:00').getDay();
-    const showT=l.label==='present'||l.label==='late';
-    return `<tr>
-      <td class="mono">${pad(l.d)}/${ym[1]} <span class="muted">${JJ[w]}</span></td>
-      <td><span class="tag ${tg[1]}">${tg[0]}</span></td>
-      <td class="mono">${showT?(l.rec.entree||'—'):'—'}</td>
-      <td class="mono">${showT?(l.rec.sortie||'—'):'—'}${(l.rec.punches&&l.rec.punches.length>2)?` <span title="Badges : ${l.rec.punches.join(' · ')}" style="cursor:help;color:var(--gold)">⇄</span>`:''}</td>
-      <td class="mono">${l.m.heures?hLabel(l.m.heures):'—'}</td>
-      <td class="mono">${l.m.retard?'+'+l.m.retard:'—'}</td>
-      <td class="mono">${l.m.hs?hLabel(l.m.hs):'—'}</td>
-    </tr>`;}).join('');
+  const ym=DATA.mois.split('-');const moisTxt=MOIS[+ym[1]-1]+' '+ym[0];
+  app.innerHTML=
+    '<div class="card"><div class="who"><div class="av">'+esc(ini.toUpperCase())+'</div>'+
+      '<div><div class="nm">'+esc((DATA.prenom||'')+' '+(DATA.nom||''))+'</div>'+
+      '<div class="ct">Matricule <b>'+esc(DATA.matricule)+'</b>'+(DATA.categorie?' · '+esc(DATA.categorie):'')+'</div></div></div></div>'+
+    '<div class="seg">'+
+      '<button class="'+(ONGLET==='pointage'?'on':'')+'" onclick="setOnglet(\'pointage\')">Mon pointage</button>'+
+      '<button class="'+(ONGLET==='notes'?'on':'')+'" onclick="setOnglet(\'notes\')">Notes'+
+        (nonLues?'<span class="b">'+nonLues+'</span>':'')+'</button>'+
+      '<button class="'+(ONGLET==='votes'?'on':'')+'" onclick="setOnglet(\'votes\')">Sondages'+
+        (aVoter?'<span class="b">'+aVoter+'</span>':'')+'</button>'+
+    '</div>'+
+    '<div id="tab"></div>'+
+    '<div class="foot">PilotRH · DBS Fashion — espace salarié</div>';
+  document.getElementById('tab').innerHTML=
+    ONGLET==='pointage'?vuePointage(moisTxt,ym):ONGLET==='notes'?vueNotes():vueVotes();
+  if(ONGLET==='pointage')brancherSignalement();
+  if(ONGLET==='notes')marquerLues();
+}
+function setOnglet(o){ONGLET=o;render()}
+
+function vuePointage(moisTxt,ym){
+  const s=summary();
   const curYm=DATA.today.slice(0,7),prevYm=shiftYm(curYm,-1);
-  app.innerHTML=`
-  <div style="display:flex;gap:8px;margin-top:16px">
-    <button onclick="loadMonth('${curYm}')" style="flex:1;padding:11px;border-radius:11px;border:1px solid var(--line);font-weight:700;font-size:13.5px;cursor:pointer;${DATA.mois===curYm?'background:var(--ink);color:#fff;border-color:var(--ink)':'background:var(--surface);color:var(--ink)'}">Ce mois</button>
-    <button onclick="loadMonth('${prevYm}')" style="flex:1;padding:11px;border-radius:11px;border:1px solid var(--line);font-weight:700;font-size:13.5px;cursor:pointer;${DATA.mois===prevYm?'background:var(--ink);color:#fff;border-color:var(--ink)':'background:var(--surface);color:var(--ink)'}">Mois précédent</button>
-  </div>
-  <div class="card">
-    <div class="who"><div class="av">${ini.toUpperCase()}</div>
-      <div><div class="nm">${DATA.prenom} ${DATA.nom}</div>
-      <div class="ct">Matricule ${DATA.matricule}${DATA.categorie?' · '+DATA.categorie:''} · ${moisTxt}</div></div></div>
-    <div class="kpis">
-      <div class="kpi good"><div class="v">${s.trav}</div><div class="l">Jours travaillés</div></div>
-      <div class="kpi ${s.retN?'warn':''}"><div class="v">${s.retN}</div><div class="l">Retards (${s.retMin} min)</div></div>
-      <div class="kpi ${s.abs?'bad':''}"><div class="v">${s.abs}</div><div class="l">Absences</div></div>
-      <div class="kpi"><div class="v">${fr2(hDec(s.hN+s.hS))}<span style="font-size:13px"> h</span></div><div class="l">Heures du mois${s.hS?' (dont '+fr2(hDec(s.hS))+'h sup)':''}</div></div>
-    </div>
-  </div>
-  <div class="card">
-    <h2>Congés — période du ${fmtPer(DATA.conges.du)} au ${fmtPer(DATA.conges.au)}</h2>
-    <div class="kpis">
-      <div class="kpi"><div class="v">${fr2(hDec(s.hCumul))}<span style="font-size:13px"> h</span></div><div class="l">Heures travaillées cumulées</div></div>
-      <div class="kpi good"><div class="v">${fr2(hDec(s.hDues))}<span style="font-size:13px"> h</span></div><div class="l">Heures de congé dues${s.coef?' (coef. '+s.coef+')':''}</div></div>
-      <div class="kpi"><div class="v">${s.congeAn}<span style="font-size:13px"> j</span></div><div class="l">Jours de congé déjà pris</div></div>
-    </div>
-  </div>
-  <div class="card">
-    <h2>Détail jour par jour — ${moisTxt}</h2>
-    <table><thead><tr><th>Date</th><th>Statut</th><th>Entrée</th><th>Sortie</th><th>Heures</th><th>Retard</th><th>H.sup</th></tr></thead>
-    <tbody>${rows||'<tr><td colspan="7" class="center muted">Aucun pointage ce mois-ci</td></tr>'}</tbody></table>
-    <div class="note">Heures comptées selon l'horaire de l'usine. L'avance avant l'heure de début n'est pas comptée ; les heures sup. sont calculées au-delà de l'heure de fin.</div>
-  </div>
-  <div class="card">
-    <h2>Une erreur dans votre pointage ?</h2>
-    <select id="fday"><option value="">Choisir le jour concerné…</option>${s.lines.slice().reverse().map(l=>`<option value="${l.ds}">${pad(l.d)}/${ym[1]} ${JJ[new Date(l.ds+'T12:00').getDay()]}</option>`).join('')}</select>
-    <textarea id="fmsg" rows="3" style="margin-top:9px" placeholder="Décrivez l'erreur (ex. j'étais présente mais marquée absente)"></textarea>
-    <button class="btn btn-ghost" id="fsend">Signaler aux RH</button>
-    <div class="note">Votre signalement est transmis au service RH avec votre nom. Il ne modifie pas automatiquement le pointage.</div>
-  </div>
-  <div class="foot">PilotRH · DBS Fashion — espace salarié</div>`;
-  document.getElementById('fsend').onclick=async()=>{
-    const date=document.getElementById('fday').value;const message=document.getElementById('fmsg').value.trim();
-    if(!message){toast('Décrivez l\u2019erreur');return;}
-    document.getElementById('fsend').textContent='…';
-    try{const r=await fetch('/api/me/flag?t='+encodeURIComponent(TOKEN),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date,message})});
-      if(r.ok){toast('Signalement envoyé aux RH');document.getElementById('fmsg').value='';}
-      else toast('Échec de l\u2019envoi');}
-    catch(e){toast('Connexion impossible');}
-    document.getElementById('fsend').textContent='Signaler aux RH';
+  const rows=s.lines.slice().reverse().map(l=>{
+    const w=new Date(l.ds+'T12:00').getDay();
+    const showT=['present','late','autorisation','ferieTravaille','reposTravaille'].includes(l.m.statut);
+    return '<tr'+(l.m.ferie?' class="f"':'')+'>'+
+      '<td class="mono">'+pad(l.d)+'/'+ym[1]+' <span class="muted">'+JJ[w]+'</span></td>'+
+      '<td><span class="tag '+C.statutClass(l.m.statut)+'">'+esc(C.statutLabel(l.m.statut,DATA.sexe))+'</span>'+
+        (l.m.revue?' <span class="tag t-late" title="Pointage incomplet">⚠</span>':'')+'</td>'+
+      '<td class="mono">'+(showT?esc(aff(l.rec,0)||'—'):'—')+'</td>'+
+      '<td class="mono">'+(showT?esc(aff(l.rec,1)||'—'):'—')+'</td>'+
+      '<td class="mono">'+(l.m.heures?hLabel(l.m.heures):'—')+'</td>'+
+      '<td class="mono">'+(l.m.retard?'+'+l.m.retard:'—')+'</td>'+
+      '<td class="mono">'+(l.m.hs?hLabel(l.m.hs):'—')+'</td></tr>';
+  }).join('');
+  return '<div class="seg">'+
+      '<button class="'+(DATA.mois===curYm?'on':'')+'" onclick="loadMonth(\''+curYm+'\')">Ce mois</button>'+
+      '<button class="'+(DATA.mois===prevYm?'on':'')+'" onclick="loadMonth(\''+prevYm+'\')">Mois précédent</button>'+
+    '</div>'+
+    '<div class="card"><h2>'+esc(moisTxt)+'</h2>'+
+      '<div class="kpis">'+
+        '<div class="kpi good"><div class="v">'+s.trav+'</div><div class="l">Jours travaillés</div></div>'+
+        '<div class="kpi '+(s.retN?'warn':'')+'"><div class="v">'+s.retN+'</div><div class="l">Retards ('+s.retMin+' min)</div></div>'+
+        '<div class="kpi '+(s.abs?'bad':'')+'"><div class="v">'+s.abs+'</div><div class="l">Absences</div></div>'+
+        '<div class="kpi"><div class="v">'+fr2(hDec(s.hN+s.hS))+'<span style="font-size:13px"> h</span></div>'+
+          '<div class="l">Heures du mois'+(s.hS?' (dont '+fr2(hDec(s.hS))+' h sup.)':'')+'</div></div>'+
+      '</div>'+
+      (s.feries?'<div class="note">'+s.feries+' jour(s) férié(s) ce mois — ils ne comptent pas comme des absences.</div>':'')+
+      (s.revue?'<div class="err" style="margin-top:12px">'+s.revue+' journée(s) ont un pointage incomplet '+
+        '(une entrée ou une sortie manque). Les heures affichées sont provisoires — signalez-le ci-dessous.</div>':'')+
+    '</div>'+
+    '<div class="card"><h2>Congés — période du '+fmtPer(DATA.conges.du)+' au '+fmtPer(DATA.conges.au)+'</h2>'+
+      '<div class="kpis">'+
+        '<div class="kpi"><div class="v">'+fr2(hDec(s.hCumul))+'<span style="font-size:13px"> h</span></div>'+
+          '<div class="l">Heures travaillées cumulées</div></div>'+
+        '<div class="kpi good"><div class="v">'+fr2(hDec(s.hDues))+'<span style="font-size:13px"> h</span></div>'+
+          '<div class="l">Heures de congé dues'+(s.coef?' (coef. '+s.coef+')':'')+'</div></div>'+
+        '<div class="kpi"><div class="v">'+s.congeAn+'<span style="font-size:13px"> j</span></div>'+
+          '<div class="l">Jours de congé déjà pris</div></div>'+
+      '</div></div>'+
+    '<div class="card"><h2>Détail jour par jour</h2>'+
+      '<div style="overflow-x:auto"><table><thead><tr><th>Date</th><th>Statut</th><th>Entrée</th><th>Sortie</th>'+
+      '<th>Heures</th><th>Retard</th><th>H.sup</th></tr></thead><tbody>'+
+      (rows||'<tr><td colspan="7" class="center muted">Aucun pointage ce mois-ci</td></tr>')+'</tbody></table></div>'+
+      '<div class="note">Heures comptées selon l’horaire de l’usine. L’avance avant l’heure de début n’est pas comptée ; '+
+      'les heures supplémentaires sont calculées au-delà de l’heure de fin. Les jours fériés et de repos travaillés '+
+      'sont comptés entièrement en heures supplémentaires.</div></div>'+
+    '<div class="card"><h2>Une erreur dans votre pointage ?</h2>'+
+      '<label for="fday" class="muted" style="font-size:12px">Jour concerné</label>'+
+      '<select id="fday"><option value="">Choisir le jour…</option>'+
+      s.lines.slice().reverse().map(l=>'<option value="'+l.ds+'">'+pad(l.d)+'/'+ym[1]+' '+
+        JJ[new Date(l.ds+'T12:00').getDay()]+' — '+esc(C.statutLabel(l.m.statut,DATA.sexe))+'</option>').join('')+'</select>'+
+      '<label for="fmsg" class="muted" style="font-size:12px;display:block;margin-top:10px">Ce qui s’est passé</label>'+
+      '<textarea id="fmsg" rows="3" placeholder="ex. j’étais présente mais je suis marquée absente"></textarea>'+
+      '<button class="btn btn-ghost" id="fsend">Signaler au service RH</button>'+
+      '<div class="note">Votre signalement est transmis au service RH avec votre nom. '+
+      'Il ne modifie pas automatiquement le pointage.</div></div>';
+}
+function brancherSignalement(){
+  const b=document.getElementById('fsend');if(!b)return;
+  b.onclick=async()=>{
+    const date=document.getElementById('fday').value;
+    const message=document.getElementById('fmsg').value.trim();
+    if(!message){toast('Décrivez le problème');return}
+    b.disabled=true;b.textContent='Envoi…';
+    try{await post('/api/me/flag',{date,message});
+      toast('Signalement envoyé au service RH');
+      document.getElementById('fmsg').value='';
+    }catch(e){toast(e.message||'Échec de l’envoi')}
+    b.disabled=false;b.textContent='Signaler au service RH';
   };
 }
 
+/* -------------------------------------------------------------------- notes */
+function vueNotes(){
+  const notes=DATA.notes||[];
+  if(!notes.length)return '<div class="card center muted" style="padding:34px 18px">Aucune note de service pour le moment.</div>';
+  return notes.map(n=>'<div class="note-item'+(n.lu?'':' nouv')+'">'+
+    '<div class="t">'+esc(n.titre)+(n.important?' <span class="tag t-absent">important</span>':'')+
+      (n.lu?'':' <span class="tag t-leave">nouveau</span>')+'</div>'+
+    '<div class="m">'+esc(String(n.ts||'').replace('T',' ').slice(0,16))+
+      (n.par?' · '+esc(n.par):'')+'</div>'+
+    '<div class="x">'+esc(n.texte)+'</div></div>').join('');
+}
+async function marquerLues(){
+  const nouv=(DATA.notes||[]).filter(n=>!n.lu);
+  for(const n of nouv){
+    try{await post('/api/me/lu',{id:n.id});n.lu=true}catch(e){}
+  }
+  if(nouv.length){
+    const seg=document.querySelectorAll('.seg button');
+    if(seg.length>1)seg[1].innerHTML='Notes';
+  }
+}
+
+/* ------------------------------------------------------------------ sondages */
+function vueVotes(){
+  const votes=DATA.votes||[];
+  if(!votes.length)return '<div class="card center muted" style="padding:34px 18px">Aucun sondage en cours.</div>';
+  return votes.map(v=>{
+    const tot=(v.resultats||[]).reduce((s,x)=>s+x,0);
+    const montre=v.vote||v.ferme;
+    return '<div class="card"><h2>'+esc(v.question)+'</h2>'+
+      (v.ferme?'<div class="note" style="margin-top:-6px;margin-bottom:10px">Sondage clos</div>':'')+
+      (v.options||[]).map((o,i)=>{
+        if(montre){
+          const n=(v.resultats||[])[i]||0;const p=tot?Math.round(n/tot*100):0;
+          return '<div class="vote-opt'+(v.monChoix===i?' mien':'')+'" style="cursor:default">'+
+            '<div style="display:flex;justify-content:space-between"><span>'+esc(o)+'</span><b>'+p+'%</b></div>'+
+            '<div class="bar"><i style="width:'+p+'%"></i></div></div>';
+        }
+        return '<button class="vote-opt" onclick="voter(\''+esc(v.id)+'\','+i+')">'+esc(o)+'</button>';
+      }).join('')+
+      (montre?'<div class="note">'+tot+' réponse(s)'+(v.vote?' · vous avez répondu':'')+'</div>'
+        :'<div class="note">Choisissez une réponse. Vous ne pourrez pas la modifier.</div>')+
+      '</div>';
+  }).join('');
+}
+async function voter(id,choix){
+  const v=(DATA.votes||[]).find(x=>x.id===id);if(!v)return;
+  if(!confirm('Confirmer votre réponse : « '+v.options[choix]+' » ?\n\nElle ne pourra pas être modifiée.'))return;
+  try{
+    const d=await post('/api/me/vote',{id,choix});
+    v.vote=true;v.resultats=d.resultats;v.monChoix=choix;
+    render();toast('Merci, votre réponse est enregistrée');
+  }catch(e){toast(e.message||'Échec');}
+}
+
+/* ------------------------------------------------------------- installation */
+let promptInstall=null;
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault();promptInstall=e;
+  try{ if(localStorage.getItem('pilotrh_noinstall'))return; }catch(x){}
+  document.getElementById('install').classList.add('on');
+});
+document.getElementById('btnInstall').onclick=async()=>{
+  document.getElementById('install').classList.remove('on');
+  if(promptInstall){promptInstall.prompt();promptInstall=null}
+};
+document.getElementById('btnInstallX').onclick=()=>{
+  document.getElementById('install').classList.remove('on');
+  try{localStorage.setItem('pilotrh_noinstall','1')}catch(e){}
+};
+if('serviceWorker' in navigator){navigator.serviceWorker.register('/assets/sw.js').catch(()=>{})}
+
+Object.assign(window,{loadMonth,setOnglet,voter});
+
 (async function init(){
-  if(!TOKEN){app.innerHTML='<div class="card err">Lien invalide. Scannez votre QR code personnel.</div>';return;}
+  if(!TOKEN){
+    app.innerHTML='<div class="card err">Lien invalide. Scannez votre QR code personnel, '+
+      'ou demandez-le au service RH.</div>';
+    return;
+  }
   const res=await fetchMe('');
-  if(res.ok){DATA=res.data;render();}
+  if(res.ok){DATA=res.data;DATA.settings=C.normalizeSettings(DATA.settings);ENGINE.invalidate();render()}
   else if(res.need_pin)pinScreen('');
-  else app.innerHTML='<div class="card err">Lien invalide ou expiré. Demandez votre QR code au service RH.</div>';
+  else if(res.status===429)pinScreen('Trop de tentatives. Patientez quelques minutes.');
+  else{
+    try{localStorage.removeItem('pilotrh_t')}catch(e){}
+    app.innerHTML='<div class="card err">Lien invalide ou expiré. Demandez un nouveau QR code au service RH.</div>';
+  }
 })();
 </script>
 </body>

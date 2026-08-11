@@ -1,9 +1,15 @@
-fastapi==0.111.0
-uvicorn[standard]==0.30.1
+# Versions relevées : python-multipart 0.0.9 et starlette < 0.38 ont des failles
+# de déni de service sur l'analyse multipart (envoi de fichier), corrigées depuis.
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+starlette==0.41.3
+python-multipart==0.0.20
 access-parser==0.0.6
-python-multipart==0.0.9
-httpx==0.27.0
-reportlab==4.2.0
-qrcode==7.4.2
-pillow==10.4.0
-pyzk==0.9
+httpx==0.28.1
+reportlab==4.2.5
+qrcode==8.0
+pillow==11.0.0
+# pyzk n'est utile que si le serveur est sur le même réseau que la pointeuse
+# (installation locale). Sur Railway, la pointeuse n'est pas joignable :
+# laissez cette ligne commentée pour réduire la surface de l'image.
+# pyzk==0.9

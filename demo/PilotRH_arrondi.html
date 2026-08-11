@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PilotRH — les deux façons d'arrondir les heures</title>
+<style>
+:root{--ink:#1a1d29;--gold:#a3822f;--gold-soft:#f6efdd;--paper:#f6f3ec;--surface:#fff;
+  --line:#e7e1d4;--muted:#5c6270;--faint:#6b7280;--ok:#256e46;--ko:#a4331f;--warn:#8a6215}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font:14px/1.55 Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-bottom:60px}
+.wrap{max-width:1000px;margin:0 auto;padding:0 20px}
+header{background:var(--ink);color:#fff;padding:26px 0 30px;border-bottom:3px solid var(--gold)}
+header .eyebrow{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#d9bd74;font-weight:700}
+header h1{font-size:24px;margin-top:4px;font-weight:700}
+header p{color:#c7cad3;font-size:13.5px;margin-top:6px;max-width:700px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px;margin-top:18px}
+h2{font-size:17px;margin-bottom:6px}
+h3{font-size:14px;margin:16px 0 6px}
+p.lead{color:var(--muted);font-size:13.5px;margin-bottom:12px}
+.ctrl{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;padding:14px 16px;background:#fbf9f4;
+  border:1px solid var(--line);border-radius:12px;margin-bottom:16px}
+label{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px}
+select,input{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;background:#fff;min-height:38px}
+input[type=range]{padding:0;min-height:0;width:170px}
+.res{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:4px}
+.box{border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.box .l{font-size:11.5px;color:var(--muted);font-weight:600}
+.box .v{font-size:27px;font-weight:700;margin-top:5px;line-height:1;font-variant-numeric:tabular-nums}
+.box .d{font-size:12px;margin-top:6px;font-weight:600}
+.box.reel{background:#fbf9f4}
+.box.jour{border-color:#eec4b9;background:#fdf3f1}
+.box.tot{border-color:#bfe0cd;background:#f0f8f3}
+.pos{color:var(--ko)} .neg{color:var(--ko)} .bon{color:var(--ok)}
+.verdict{margin-top:14px;padding:13px 15px;border-radius:11px;font-size:13.5px;font-weight:600}
+.verdict.mauvais{background:#fdf3f1;border:1px solid #eec4b9;color:#7d2314}
+.verdict.bon{background:#f0f8f3;border:1px solid #bfe0cd;color:#1c5637}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:12px}
+th{text-align:left;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);
+  padding:8px 6px;border-bottom:1px solid var(--line);font-weight:600}
+td{padding:6px;border-bottom:1px solid #f3efe4;font-variant-numeric:tabular-nums}
+tr.tot td{font-weight:700;background:#fbf9f4;border-top:2px solid var(--line)}
+.up{color:var(--ko)} .down{color:var(--warn)} .zero{color:var(--faint)}
+.scroll{max-height:340px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;margin-top:12px}
+.note{font-size:12.5px;color:var(--muted);margin-top:12px;padding-left:12px;border-left:3px solid var(--gold-soft)}
+.mini{font-size:12px;color:var(--faint);margin-top:8px}
+b.h{font-variant-numeric:tabular-nums}
+.pire{width:100%;font-size:13px}
+.pire td,.pire th{padding:8px 6px}
+.pire td:first-child{font-weight:600}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="eyebrow">PilotRH · DBS Fashion</div>
+  <h1>Les deux façons d'arrondir les heures</h1>
+  <p>Les chiffres ci-dessous sont calculés par le <b>moteur réel de PilotRH</b>, pas par une
+     approximation. Modifiez les réglages : tout se recalcule.</p>
+</div></header>
+
+<div class="wrap">
+
+<div class="card">
+  <h2>Les deux réglages, en une phrase chacun</h2>
+  <p class="lead"><b>Sur chaque journée</b> (réglage par défaut de PilotRH) : chaque jour affiché est
+     un nombre rond, et la somme des journées est <b>exactement</b> égale au total du mois. Une
+     ouvrière peut additionner ses journées et retrouver son bulletin — c'est le réglage le plus
+     simple à expliquer à l'atelier.<br><br>
+     <b>Sur le cumul</b> : un seul arrondi en fin de période, donc un total plus proche du travail
+     réel — mais les journées affichées ne s'additionnent plus exactement au total.</p>
+  <p class="lead">Ce simulateur sert à mesurer l'écart entre les deux, pour choisir en connaissance
+     de cause. <b>Le plus simple reste de ne pas arrondir du tout</b> : les deux méthodes donnent
+     alors le même résultat, à la minute. C'est ce qui est livré.</p>
+  <div class="note">
+    Un détail qui compte : les heures normales s'arrêtent à l'heure de fin de poste. Ce sont donc
+    les <b>minutes d'arrivée</b> qui font varier le total des heures normales (et l'heure de sortie
+    pour les heures supplémentaires). Une ouvrière qui badge à 07:37 au lieu de 07:30 a travaillé
+    8 h 23, pas 8 h 30.
+  </div>
+</div>
+
+<div class="card">
+  <h2>Simulateur</h2>
+  <p class="lead">Choisissez un cas et regardez les trois totaux du mois.</p>
+  <div class="ctrl">
+    <div><label for="cas">Comportement de l'ouvrière</label>
+      <select id="cas">
+        <option value="fixe">Arrive toujours à la même minute (cas fréquent : le bus)</option>
+        <option value="varie">Arrive à des minutes variables</option>
+        <option value="hs">Heures supplémentaires : sortie régulière le soir</option>
+      </select></div>
+    <div id="boxArr"><label for="arr">Heure d'arrivée</label>
+      <select id="arr"></select></div>
+    <div id="boxSor" style="display:none"><label for="sor">Heure de sortie</label>
+      <select id="sor"></select></div>
+    <div><label for="pas">Pas d'arrondi</label>
+      <select id="pas">
+        <option value="0">Aucun</option>
+        <option value="5">5 minutes</option>
+        <option value="15" selected>15 minutes</option>
+        <option value="30">30 minutes</option>
+      </select></div>
+    <div><label for="sens">Sens</label>
+      <select id="sens">
+        <option value="proche">au plus proche</option>
+        <option value="inferieur">à l'inférieur</option>
+      </select></div>
+    <div><label for="nj">Jours travaillés : <b id="njv">26</b></label>
+      <input type="range" id="nj" min="5" max="26" value="26"></div>
+  </div>
+
+  <div class="res">
+    <div class="box reel"><div class="l">Travail réellement effectué</div>
+      <div class="v" id="vReel">—</div><div class="d" id="dReel">&nbsp;</div></div>
+    <div class="box jour"><div class="l">Arrondi sur CHAQUE JOURNÉE (réglage par défaut)</div>
+      <div class="v" id="vJour">—</div><div class="d" id="dJour">&nbsp;</div></div>
+    <div class="box tot"><div class="l">Arrondi sur LE CUMUL (autre option)</div>
+      <div class="v" id="vTot">—</div><div class="d" id="dTot">&nbsp;</div></div>
+  </div>
+  <div class="verdict" id="verdict"></div>
+
+  <h3>Détail jour par jour</h3>
+  <div class="scroll"><table id="tbl"><thead><tr>
+    <th>Jour</th><th>Badges</th><th>Réel</th><th>Arrondi à la journée</th><th>Écart du jour</th><th>Écart cumulé</th>
+  </tr></thead><tbody id="tb"></tbody></table></div>
+  <div class="mini" id="expli"></div>
+</div>
+
+<div class="card">
+  <h2>Deux ouvrières séparées par une seule minute</h2>
+  <p class="lead">Le cas qui montre le mieux le problème. Amal badge à 07:37, Sonia à 07:38.
+     Elles travaillent presque exactement autant.</p>
+  <table class="pire" id="duo"></table>
+  <div class="note" id="duoNote"></div>
+</div>
+
+<div class="card">
+  <h2>Écart maximal possible, par personne et par mois (26 jours)</h2>
+  <p class="lead">Ce plafond est atteint dès que l'ouvrière arrive <b>régulièrement</b> à la même
+     minute — c'est-à-dire précisément pour les personnes les plus ponctuelles et les plus
+     régulières. Quand les minutes d'arrivée varient au hasard, les erreurs se compensent
+     partiellement ; quand elles sont stables, elles s'additionnent toutes dans le même sens.</p>
+  <table class="pire" id="pire"></table>
+  <div class="note" id="atelier"></div>
+</div>
+
+<div class="card">
+  <h2>Ce qu'il faut retenir</h2>
+  <p class="lead" style="margin-bottom:10px">L'arrondi à la journée se trompe dans les
+     <b>deux sens</b> — c'est le point à garder en tête :</p>
+  <ul style="margin-left:20px;font-size:13.5px;color:var(--muted);line-height:1.8">
+    <li>vers le haut, l'usine paie des heures qui n'ont pas été travaillées ;</li>
+    <li>vers le bas, l'ouvrière n'est pas payée pour des heures qu'elle a réellement faites —
+        et c'est exactement ce qu'un contrôle de l'inspection du travail regarde ;</li>
+    <li>« à l'inférieur » se trompe <b>toujours</b> dans le même sens, au détriment du
+        personnel : à éviter, quelle que soit la portée choisie.</li>
+  </ul>
+  <div class="note" style="margin-top:14px">
+    <b>Ce qui est livré :</b> arrondi <b>sur chaque journée</b>, au plus proche, avec un pas à
+    <b>zéro</b> — c'est-à-dire aucun arrondi. Tant que le pas reste à zéro, rien de tout ceci ne
+    s'applique : chaque journée est comptée à la minute et tout s'additionne exactement. Si vous
+    mettez un pas d'arrondi un jour, ce simulateur vous dira ce que ça change.
+    Réglage dans <b>Présences → engrenage → Calcul</b>.
+  </div>
+</div>
+
+</div>
+
+<script>/* ============================================================================
+   PilotRH — moteur de calcul partagé
+   ============================================================================
+   Ce fichier est chargé par l'interface RH (index.html) ET par l'espace salarié
+   (moi.html). Il contient l'UNIQUE implémentation du calcul des heures, retards,
+   heures supplémentaires, pauses et jours fériés.
+
+   Avant, ce calcul était dupliqué dans les deux pages et les deux copies avaient
+   déjà divergé : une ouvrière pouvait lire dans son espace un nombre d'heures
+   différent de celui envoyé au comptable. Un seul fichier = plus de divergence.
+   ============================================================================ */
+(function (root) {
+'use strict';
+
+/* ---------------------------------------------------------------- utilitaires */
+const pad = n => String(n).padStart(2, '0');
+const isoOf = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+function toMin(t) {
+  if (!t) return null;
+  const m = String(t).match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return (+m[1]) * 60 + (+m[2]);
+}
+function fromMin(m) {
+  if (m == null || isNaN(m)) return '';
+  m = Math.round(m);
+  const j = Math.floor(m / 1440);            // dépassement de minuit conservé, pas replié
+  const r = ((m % 1440) + 1440) % 1440;
+  return pad(Math.floor(r / 60)) + ':' + pad(r % 60) + (j > 0 ? ' (+' + j + 'j)' : '');
+}
+const hDec = min => min / 60;
+const fr2 = n => Number(n).toFixed(2).replace('.', ',');
+function hLabel(min) {
+  const neg = min < 0; min = Math.abs(min);
+  const h = Math.floor(min / 60), m = Math.round(min % 60);
+  return (neg ? '-' : '') + h + 'h' + (m ? pad(m) : '');
+}
+/* Échappement HTML — OBLIGATOIRE sur toute donnée venant du serveur, de la
+   pointeuse (le nom d'une employée est un champ libre sur l'appareil) ou de l'IA. */
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+/* Échappement pour un attribut onclick="fn('…')" */
+function escJs(s) { return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/</g, '\\u003c'); }
+
+/* ------------------------------------------------------- jours fériés (Tunisie) */
+/* Fêtes à date fixe — s'appliquent chaque année. */
+const FERIES_FIXES_DEFAUT = [
+  { md: '01-01', nom: 'Nouvel An' },
+  { md: '01-14', nom: 'Fête de la Révolution' },
+  { md: '03-20', nom: "Fête de l'Indépendance" },
+  { md: '04-09', nom: 'Jour des Martyrs' },
+  { md: '05-01', nom: 'Fête du Travail' },
+  { md: '07-25', nom: 'Fête de la République' },
+  { md: '08-13', nom: 'Fête de la Femme' },
+  { md: '10-15', nom: "Fête de l'Évacuation" },
+];
+/* Les fêtes religieuses (Aïd El Fitr, Aïd El Idha, Mouled, Ras El Am El Hejri)
+   se déplacent chaque année : elles se saisissent dans les paramètres, dans
+   settings.feries = [{date:'2026-03-20', nom:'…', jours:1}]. */
+
+/* --------------------------------------------------- normalisation des réglages */
+function normalizeSettings(s) {
+  s = s || {};
+  if (s.modeHS !== 'seuil') s.modeHS = 'fin';          // un seul défaut, plus de contradiction
+  if (s.arrondi === undefined) s.arrondi = 0;
+  if (s.arrondiSens === undefined) s.arrondiSens = 'proche';
+  if (s.arrondiPortee !== 'jour') s.arrondiPortee = 'periode';  // arrondi sur le cumul, plus par jour
+  if (s.congesDu === undefined) s.congesDu = '';
+  if (s.congesAu === undefined) s.congesAu = '';
+  if (s.congesCoef === undefined) s.congesCoef = 0;
+  if (!Array.isArray(s.feries)) s.feries = [];
+  if (!Array.isArray(s.feriesFixes) || !s.feriesFixes.length) s.feriesFixes = FERIES_FIXES_DEFAUT.map(f => ({ ...f }));
+  if (s.feriesActifs === undefined) s.feriesActifs = true;
+  if (!Array.isArray(s.clotures)) s.clotures = [];      // mois verrouillés : ['2026-06', …]
+
+  const legacy = {
+    debut: s.heureDebut || '07:30', fin: s.heureFin || '16:30',
+    pause: (s.pause !== undefined ? s.pause : 30),
+    tol: (s.toleranceRetard !== undefined ? s.toleranceRetard : 15),
+    grace: (s.graceHS !== undefined ? s.graceHS : 15),
+  };
+  if (!s.jours) s.jours = {};
+  for (let d = 0; d < 7; d++) s.jours[d] = normalizeDay(s.jours[d], d, legacy);
+
+  if (!Array.isArray(s.periodes)) s.periodes = [];
+  s.periodes.forEach(p => {
+    if (!p.jours) {
+      p.jours = {};
+      const lv = p.lunven || { debut: '07:00', fin: '14:00', pause: 0 };
+      const sa = p.samedi || { actif: false, debut: '07:00', fin: '13:00', pause: 0 };
+      [1, 2, 3, 4, 5].forEach(d => p.jours[d] = { actif: true, debut: lv.debut, fin: lv.fin, pause: +lv.pause || 0, tol: p.tol || 15, grace: p.grace || 15 });
+      p.jours[6] = sa.actif ? { actif: true, debut: sa.debut, fin: sa.fin, pause: +sa.pause || 0, tol: p.tol || 15, grace: p.grace || 15 }
+                            : { actif: false };
+      p.jours[0] = { actif: false };
+    }
+    for (let d = 0; d < 7; d++) p.jours[d] = normalizeDay(p.jours[d], d, { debut: '07:00', fin: '14:00', pause: 0, tol: 15, grace: 15 });
+  });
+  /* Une période sans dates valides ne doit jamais s'appliquer silencieusement. */
+  s.periodes.forEach(p => { if (p.du && p.au && p.au < p.du) { const t = p.du; p.du = p.au; p.au = t; } });
+  return s;
+}
+function normalizeDay(r, d, def) {
+  r = r || {};
+  const day = {
+    actif: (r.actif === undefined ? (d !== 0) : !!r.actif),
+    debut: r.debut || def.debut || '07:30',
+    fin: r.fin || (d === 6 ? '13:00' : (def.fin || '16:30')),
+    pause: (r.pause !== undefined ? +r.pause : (d === 6 ? 0 : (def.pause !== undefined ? +def.pause : 30))),
+    tol: (r.tol !== undefined ? +r.tol : (def.tol !== undefined ? +def.tol : 15)),
+    grace: (r.grace !== undefined ? +r.grace : (def.grace !== undefined ? +def.grace : 15)),
+    pauseDe: r.pauseDe || '',
+    pauseA: r.pauseA || '',
+    pauseAuto: false,
+  };
+  /* Plage de pause : si elle n'est pas renseignée, on la déduit du milieu de la
+     journée pour que la pause ne soit PLUS déduite d'une demi-journée ou d'une
+     autorisation de sortie. La plage déduite est signalée dans l'interface pour
+     que les RH saisissent la vraie plage (ex. 12:00 → 12:30). */
+  if (day.pause > 0 && (!day.pauseDe || !day.pauseA)) {
+    const a = toMin(day.debut), b = toMin(day.fin);
+    if (a != null && b != null && b > a) {
+      const mid = Math.round((a + b) / 2);
+      day.pauseDe = fromMin(mid - day.pause / 2).slice(0, 5);
+      day.pauseA = fromMin(mid + day.pause / 2).slice(0, 5);
+      day.pauseAuto = true;
+    }
+  }
+  return day;
+}
+
+/* ------------------------------------------------------------ régime d'un jour */
+/* Les résultats sont mémoïsés : regimeFor était appelé des centaines de milliers
+   de fois par rendu, en allouant un objet Date à chaque appel. */
+function makeEngine(getSettings) {
+  const cacheReg = new Map();
+  const cacheFerie = new Map();
+  let stamp = 0;
+
+  function invalidate() { cacheReg.clear(); cacheFerie.clear(); stamp++; }
+
+  function S() { return getSettings() || {}; }
+
+  function regimeFor(ds) {
+    if (cacheReg.has(ds)) return cacheReg.get(ds);
+    const s = S();
+    const w = new Date(ds + 'T12:00').getDay();
+    let reg = null;
+    if (s.periodes) {
+      for (const p of s.periodes) {
+        if (p.du && p.au && p.du <= ds && ds <= p.au) { reg = (p.jours || {})[w] || { actif: false }; break; }
+      }
+    }
+    if (!reg) reg = (s.jours || {})[w] || { actif: true, debut: '07:30', fin: '16:30', pause: 30, tol: 15, grace: 15, pauseDe: '', pauseA: '' };
+    cacheReg.set(ds, reg);
+    return reg;
+  }
+
+  /* Renvoie {nom} si le jour est férié, sinon null. */
+  function ferieFor(ds) {
+    if (cacheFerie.has(ds)) return cacheFerie.get(ds);
+    const s = S();
+    let out = null;
+    if (s.feriesActifs !== false) {
+      const md = String(ds).slice(5);
+      const fx = (s.feriesFixes || []).find(f => f.md === md);
+      if (fx) out = { nom: fx.nom, fixe: true };
+      if (!out) {
+        for (const f of (s.feries || [])) {
+          if (!f.date) continue;
+          const n = Math.max(1, +f.jours || 1);
+          const d0 = new Date(f.date + 'T12:00');
+          for (let k = 0; k < n; k++) {
+            if (isoOf(d0) === ds) { out = { nom: f.nom || 'Jour férié', fixe: false }; break; }
+            d0.setDate(d0.getDate() + 1);
+          }
+          if (out) break;
+        }
+      }
+    }
+    cacheFerie.set(ds, out);
+    return out;
+  }
+
+  /* Un jour est-il « attendu au travail » ? Non si repos hebdomadaire OU férié. */
+  function estOuvre(ds) {
+    const reg = regimeFor(ds);
+    if (reg.actif === false) return false;
+    if (ferieFor(ds)) return false;
+    return true;
+  }
+
+  const roundMin = (x, step, sens) => (!step || step <= 0) ? x : (sens === 'inferieur' ? Math.floor(x / step) * step : Math.round(x / step) * step);
+
+  function badges(rec) {
+    const P = (rec.punches && rec.punches.length) ? rec.punches.slice() : [rec.entree, rec.sortie];
+    const out = [];
+    P.map(toMin).filter(x => x != null).sort((a, b) => a - b).forEach(m => {
+      /* déduplication : deux badges à moins de 5 min sont le même passage
+         (double lecture du doigt), sinon la journée est coupée en deux à tort */
+      if (out.length && m - out[out.length - 1] < 5) return;
+      out.push(m);
+    });
+    return out;
+  }
+
+  /* Durée d'intersection entre une liste de segments et une fenêtre [a,b]. */
+  function chevauchement(segs, a, b) {
+    if (a == null || b == null || b <= a) return 0;
+    let t = 0;
+    for (const s of segs) { const x = Math.max(s[0], a), y = Math.min(s[1], b); if (y > x) t += y - x; }
+    return t;
+  }
+
+  /* ------------------------------------------------------------------ metrics */
+  /* Renvoie, pour un enregistrement de pointage :
+       statut   : present | late | absent | leave | mission | autorisation | ferie | ferieTravaille | repos
+       heures   : minutes normales payées
+       hs       : minutes supplémentaires
+       retard   : minutes de retard
+       revue    : true si la journée doit être vérifiée par les RH avant la paie
+       motifRevue : raison lisible
+       manuel / manuelHS : la valeur a été saisie à la main
+  */
+  function metrics(rec, date) {
+    const ds = date || isoOf(new Date());
+    const reg = regimeFor(ds);
+    const ferie = ferieFor(ds);
+    const arrondiParJour = S().arrondiPortee === 'jour';
+    const base = { statut: 'absent', worked: false, heures: 0, retard: 0, hs: 0, late: false,
+                   manuel: false, manuelHS: false, coupures: false, revue: false, motifRevue: '',
+                   ferie: !!ferie, ferieNom: ferie ? ferie.nom : '', ouvre: estOuvre(ds) };
+
+    const P = rec ? badges(rec) : [];
+    const aucunPointage = !P.length;
+
+    /* Statuts sans pointage : le jour n'est PAS une absence s'il est férié ou de repos. */
+    if (!rec || rec.statut === 'absent') {
+      if (aucunPointage) {
+        if (ferie) return { ...base, statut: 'ferie' };
+        if (reg.actif === false) return { ...base, statut: 'repos' };
+        return { ...base, statut: 'absent' };
+      }
+    }
+    if (rec && ['leave', 'mission'].includes(rec.statut) && aucunPointage) {
+      return { ...base, statut: rec.statut };
+    }
+    if (aucunPointage && rec && rec.statut !== 'present' && rec.statut !== 'autorisation') {
+      return { ...base, statut: rec.statut || 'absent' };
+    }
+
+    let heures = 0, retard = 0, hs = 0, late = false, coupures = false, revue = false, motifRevue = '';
+
+    if (P.length === 1) {
+      /* Un seul badge : la sortie (ou l'entrée) manque. On ne paie PAS 0 h en
+         silence — la journée est marquée à revoir et remonte dans les alertes. */
+      revue = true;
+      motifRevue = 'Un seul badge (' + fromMin(P[0]) + ') — sortie manquante';
+    } else if (P.length) {
+      const firstIn = P[0], lastOut = P[P.length - 1];
+      if (reg.actif === false || ferie) {
+        /* Repos hebdomadaire ou jour férié travaillé : tout le temps de présence
+           est en heures supplémentaires.
+           On somme les SEGMENTS badgés au lieu de faire (dernier - premier) :
+           l'ancien calcul comptait comme travaillée une sortie de deux heures au
+           milieu de la journée, et retirait à l'inverse une pause théorique que
+           personne n'avait prise. */
+        if (P.length % 2 === 0) {
+          for (let i = 0; i + 1 < P.length; i += 2) hs += P[i + 1] - P[i];
+          coupures = P.length > 2;
+        } else {
+          hs = lastOut - firstIn;
+          revue = true;
+          motifRevue = 'Nombre de badges impair (' + P.length + ') un jour non ouvré';
+        }
+        hs = Math.max(0, hs);
+      } else {
+        const debut = toMin(reg.debut), fin = toMin(reg.fin);
+        const grace = +reg.grace || 0, tol = +reg.tol || 0, pause = +reg.pause || 0;
+        late = firstIn > debut + tol;
+        retard = late ? (firstIn - debut) : 0;
+
+        let segs = [];
+        if (P.length % 2 === 0) { for (let i = 0; i + 1 < P.length; i += 2) segs.push([P[i], P[i + 1]]); coupures = P.length > 2; }
+        else { segs = [[firstIn, lastOut]]; revue = true; motifRevue = 'Nombre de badges impair (' + P.length + ') — un pointage a été oublié'; }
+
+        const clip = segs.map(s => [Math.max(s[0], debut), Math.min(s[1], fin)]).filter(s => s[1] > s[0]);
+        let norm = clip.reduce((t, s) => t + (s[1] - s[0]), 0);
+
+        /* Pause : déduite uniquement à hauteur du temps réellement travaillé
+           PENDANT la plage de pause. Une autorisation 07:55 → 11:00 ne se voit
+           donc plus retirer 30 minutes de déjeuner qu'elle n'a pas prises. */
+        if (pause > 0) {
+          const pa = toMin(reg.pauseDe), pb = toMin(reg.pauseA);
+          if (pa != null && pb != null && pb > pa) norm -= Math.min(pause, chevauchement(clip, pa, pb));
+          else {
+            /* pas de plage définie : on retombe sur l'ancien calcul, mais au
+               prorata du temps de présence pour ne pas surdéduire */
+            let gaps = 0;
+            for (let i = 0; i + 1 < clip.length; i++) { const g0 = clip[i][1], g1 = clip[i + 1][0]; if (g1 > g0) gaps += g1 - g0; }
+            const attendu = Math.max(1, (fin - debut) - pause);
+            norm -= Math.max(0, pause - gaps) * Math.min(1, norm / attendu);
+          }
+        }
+        heures = Math.max(0, norm);
+        if (lastOut >= fin + grace) hs = (S().modeHS === 'fin') ? (lastOut - fin) : (lastOut - (fin + grace));
+        hs = Math.max(0, hs);
+      }
+    }
+
+    /* Arrondi : par défaut sur le CUMUL de la période (voir arrondirTotal), pas
+       par jour — l'arrondi journalier dérivait jusqu'à plusieurs heures par mois. */
+    if (arrondiParJour) {
+      const ar = +S().arrondi || 0;
+      if (ar > 0) { heures = roundMin(heures, ar, S().arrondiSens); hs = roundMin(hs, ar, S().arrondiSens); }
+    }
+
+    /* Saisie manuelle. hM remplace les heures normales ; hsM remplace les heures
+       supplémentaires. Si les RH saisissent hM sans saisir hsM, les heures sup.
+       calculées sont mises à zéro : la saisie manuelle est considérée comme
+       exhaustive, sinon on payait deux fois la même journée. */
+    let manuel = false, manuelHS = false;
+    if (rec && rec.hM != null && rec.hM !== '') { heures = +rec.hM; manuel = true; }
+    if (rec && rec.hsM != null && rec.hsM !== '') { hs = +rec.hsM; manuelHS = true; }
+    else if (manuel) hs = 0;
+
+    let statut;
+    if (ferie) statut = (heures || hs || P.length) ? 'ferieTravaille' : 'ferie';
+    else if (reg.actif === false && P.length) statut = 'reposTravaille';
+    else if (rec && rec.statut === 'present') statut = late ? 'late' : 'present';
+    else statut = (rec && rec.statut) || 'absent';
+
+    return { ...base, statut, worked: true, heures, retard, hs, late, manuel, manuelHS, coupures, revue, motifRevue };
+  }
+
+  /* Arrondi appliqué au TOTAL d'une période (comportement par défaut). */
+  function arrondirTotal(min) {
+    if (S().arrondiPortee === 'jour') return min;
+    const ar = +S().arrondi || 0;
+    return ar > 0 ? roundMin(min, ar, S().arrondiSens) : min;
+  }
+
+  function moisClos(ym) { return (S().clotures || []).indexOf(ym) >= 0; }
+
+  return { regimeFor, ferieFor, estOuvre, metrics, badges, roundMin, arrondirTotal, moisClos, invalidate, get stamp() { return stamp; } };
+}
+
+/* ------------------------------------------------------------------- libellés */
+/* Libellés accordés au genre de la personne pour les lignes individuelles, et
+   neutres pour les compteurs collectifs (l'effectif comporte des hommes). */
+const STATUTS = {
+  present:        { f: 'Présente',    h: 'Présent',    cls: 't-present' },
+  late:           { f: 'En retard',   h: 'En retard',  cls: 't-late' },
+  absent:         { f: 'Absente',     h: 'Absent',     cls: 't-absent' },
+  leave:          { f: 'En congé',    h: 'En congé',   cls: 't-leave' },
+  mission:        { f: 'En mission',  h: 'En mission', cls: 't-mission' },
+  autorisation:   { f: 'Autorisation', h: 'Autorisation', cls: 't-leave' },
+  ferie:          { f: 'Férié',       h: 'Férié',      cls: 't-ferie' },
+  ferieTravaille: { f: 'Férié travaillé', h: 'Férié travaillé', cls: 't-mission' },
+  repos:          { f: 'Repos',       h: 'Repos',      cls: 't-neutral' },
+  reposTravaille: { f: 'Repos travaillé', h: 'Repos travaillé', cls: 't-mission' },
+};
+function statutLabel(st, sexe) {
+  const s = STATUTS[st];
+  if (!s) return st || '—';
+  return (sexe === 'H') ? s.h : s.f;
+}
+function statutClass(st) { return (STATUTS[st] || { cls: 't-neutral' }).cls; }
+/* Les statuts qui comptent comme une absence à justifier. */
+const EST_ABSENCE = st => st === 'absent';
+
+/* Une journée est protégée des imports dès qu'elle porte une trace de saisie
+   manuelle. Doit rester le MIROIR EXACT de _est_protege() dans mdb_import.py :
+   sinon l'interface affiche un cadenas là où le serveur n'en met pas, ou pire,
+   n'en affiche pas là où la journée est réellement protégée. */
+function estProtege(rec) {
+  if (!rec) return false;
+  if (rec.manuel) return true;
+  if (rec.hM != null && rec.hM !== '') return true;
+  if (rec.hsM != null && rec.hsM !== '') return true;
+  if (rec.src === 'conge') return true;
+  return false;
+}
+
+root.PilotRHCore = {
+  pad, isoOf, toMin, fromMin, hDec, fr2, hLabel, esc, escJs,
+  normalizeSettings, normalizeDay, makeEngine,
+  FERIES_FIXES_DEFAUT, STATUTS, statutLabel, statutClass, EST_ABSENCE, estProtege,
+};
+})(typeof window !== 'undefined' ? window : this);
+</script>
+<script>
+'use strict';
+(function(){
+const C = window.PilotRHCore;
+if(!C){ document.body.insertAdjacentHTML('afterbegin',
+  '<div style="background:#fdf3f1;color:#7d2314;padding:14px;text-align:center;font-weight:600">'+
+  'Ce fichier doit être ouvert depuis PilotRH (il utilise le moteur de calcul de l’application).</div>'); return }
+
+const S = C.normalizeSettings({});
+[1,2,3,4,5].forEach(function(d){
+  Object.assign(S.jours[d],{debut:'07:30',fin:'16:30',pause:30,pauseDe:'12:00',pauseA:'12:30',tol:15,grace:15});
+});
+const E = C.makeEngine(function(){ return S });
+const JOUR = '2026-08-11';                       // un mardi ouvré
+const hm = function(m){ const s = m<0?'−':''; m=Math.abs(Math.round(m));
+  return s+Math.floor(m/60)+' h '+String(m%60).padStart(2,'0') };
+const sgn = function(m){ return (m>0?'+':m<0?'−':'')+hm(Math.abs(m)).replace('−','') };
+
+/* minutes réelles / arrondies pour une journée */
+function jour(entree, sortie, pas, sens, portee, champ){
+  S.arrondi=+pas; S.arrondiSens=sens; S.arrondiPortee=portee; E.invalidate();
+  const m = E.metrics({statut:'present',entree:entree,sortie:sortie}, JOUR);
+  return m[champ];
+}
+function cumul(min, pas, sens){
+  S.arrondi=+pas; S.arrondiSens=sens; S.arrondiPortee='periode'; E.invalidate();
+  return E.arrondirTotal(min);
+}
+
+/* listes déroulantes */
+const arr=document.getElementById('arr'), sor=document.getElementById('sor');
+for(let m=25;m<=59;m++) arr.innerHTML+='<option value="07:'+String(m).padStart(2,'0')+'"'+
+  (m===37?' selected':'')+'>07:'+String(m).padStart(2,'0')+'</option>';
+for(let h=17;h<=19;h++) for(let m=0;m<60;m+=1)
+  sor.innerHTML+='<option value="'+h+':'+String(m).padStart(2,'0')+'"'+
+    (h===18&&m===7?' selected':'')+'>'+h+':'+String(m).padStart(2,'0')+'</option>';
+
+const VARIE=['07:37','07:29','07:33','07:41','07:28','07:36','07:31','07:44','07:26','07:38',
+ '07:35','07:47','07:32','07:26','07:52','07:39','07:34','07:43','07:30','07:37',
+ '07:49','07:27','07:36','07:42','07:31','07:55'];
+
+function lire(){
+  return {cas:document.getElementById('cas').value,
+          arr:arr.value, sor:sor.value,
+          pas:+document.getElementById('pas').value,
+          sens:document.getElementById('sens').value,
+          nj:+document.getElementById('nj').value};
+}
+
+function calculer(){
+  const o=lire();
+  document.getElementById('njv').textContent=o.nj;
+  document.getElementById('boxArr').style.display = o.cas==='hs' ? 'none' : '';
+  document.getElementById('boxSor').style.display = o.cas==='hs' ? '' : 'none';
+
+  const champ = o.cas==='hs' ? 'hs' : 'heures';
+  const lignes=[];
+  for(let i=0;i<o.nj;i++){
+    let e,s;
+    if(o.cas==='hs'){ e='07:30'; s=o.sor; }
+    else if(o.cas==='varie'){ e=VARIE[i%VARIE.length]; s='16:30'; }
+    else { e=o.arr; s='16:30'; }
+    const reel = jour(e,s,0,'proche','periode',champ);
+    const rond = o.pas ? jour(e,s,o.pas,o.sens,'jour',champ) : reel;
+    lignes.push({e:e,s:s,reel:reel,rond:rond});
+  }
+  const tReel=lignes.reduce(function(t,l){return t+l.reel},0);
+  const tJour=lignes.reduce(function(t,l){return t+l.rond},0);
+  const tTot = o.pas ? cumul(tReel,o.pas,o.sens) : tReel;
+
+  document.getElementById('vReel').textContent=hm(tReel);
+  document.getElementById('dReel').innerHTML='<span class="zero">référence</span>';
+  document.getElementById('vJour').textContent=hm(tJour);
+  document.getElementById('dJour').innerHTML = (tJour-tReel)
+    ? '<span class="pos">'+sgn(tJour-tReel)+' par rapport au réel</span>'
+    : '<span class="bon">exact</span>';
+  document.getElementById('vTot').textContent=hm(tTot);
+  document.getElementById('dTot').innerHTML = (tTot-tReel)
+    ? '<span class="bon">'+sgn(tTot-tReel)+' par rapport au réel</span>'
+    : '<span class="bon">exact</span>';
+
+  const ecart=Math.abs(tJour-tTot);
+  const v=document.getElementById('verdict');
+  if(!o.pas){ v.className='verdict bon';
+    v.textContent='Sans arrondi, les deux méthodes donnent le même résultat : le travail réel.'; }
+  else if(!ecart){ v.className='verdict bon';
+    v.textContent='Sur ce cas précis, les deux méthodes tombent d’accord. Changez l’heure d’arrivée d’une minute pour voir l’écart apparaître.'; }
+  else { v.className='verdict mauvais';
+    v.innerHTML='Les deux méthodes s’écartent de <b>'+hm(ecart)+'</b> sur le mois, pour une seule personne. '+
+      (tJour>tReel ? 'Ici l’arrondi journalier paie <b>'+hm(tJour-tReel)+'</b> de plus que le travail réel.'
+                   : 'Ici l’arrondi journalier retire <b>'+hm(tReel-tJour)+'</b> de travail réellement effectué.'); }
+
+  let cum=0, html='';
+  lignes.forEach(function(l,i){
+    const d=l.rond-l.reel; cum+=d;
+    html+='<tr><td>'+(i+1)+'</td><td>'+l.e+' → '+l.s+'</td><td>'+hm(l.reel)+'</td><td>'+hm(l.rond)+'</td>'+
+      '<td class="'+(d>0?'up':d<0?'down':'zero')+'">'+(d?sgn(d):'—')+'</td>'+
+      '<td class="'+(cum>0?'up':cum<0?'down':'zero')+'"><b>'+(cum?sgn(cum):'—')+'</b></td></tr>';
+  });
+  html+='<tr class="tot"><td colspan="2">TOTAL du mois</td><td>'+hm(tReel)+'</td><td>'+hm(tJour)+'</td>'+
+    '<td colspan="2">'+(tJour-tReel?sgn(tJour-tReel):'—')+'</td></tr>';
+  document.getElementById('tb').innerHTML=html;
+
+  const pj=lignes[0] ? lignes[0].rond-lignes[0].reel : 0;
+  document.getElementById('expli').innerHTML = o.pas
+    ? 'Colonne « écart cumulé » : c’est là que se voit le problème. Chaque jour ajoute '+
+      (o.cas==='varie' ? 'un écart qui change de signe — ils se compensent en partie.'
+        : '<b>'+sgn(pj)+'</b>, toujours dans le même sens, et la colonne s’éloigne de zéro sans jamais y revenir.')
+    : 'Aucun arrondi : chaque journée est payée à la minute.';
+}
+
+/* --- tableau des deux ouvrières séparées d'une minute --- */
+function duo(){
+  const NJ=26, pas=15, sens='proche';
+  const gens=[{nom:'Amal',e:'07:37'},{nom:'Sonia',e:'07:38'}];
+  const l=gens.map(function(g){
+    const reel=jour(g.e,'16:30',0,'proche','periode','heures');
+    const rond=jour(g.e,'16:30',pas,sens,'jour','heures');
+    return {nom:g.nom,e:g.e,reel:reel*NJ,jour:rond*NJ,tot:cumul(reel*NJ,pas,sens)};
+  });
+  document.getElementById('duo').innerHTML=
+    '<thead><tr><th>Ouvrière</th><th>Badge d’arrivée</th><th>Travail réel du mois</th>'+
+    '<th>Payé — arrondi à la journée</th><th>Payé — arrondi sur le cumul</th></tr></thead><tbody>'+
+    l.map(function(x){return '<tr><td>'+x.nom+'</td><td>'+x.e+'</td><td>'+hm(x.reel)+'</td>'+
+      '<td class="up">'+hm(x.jour)+'</td><td class="bon">'+hm(x.tot)+'</td></tr>'}).join('')+
+    '<tr class="tot"><td colspan="2">Écart entre les deux ouvrières</td>'+
+    '<td>'+hm(Math.abs(l[0].reel-l[1].reel))+'</td>'+
+    '<td class="up">'+hm(Math.abs(l[0].jour-l[1].jour))+'</td>'+
+    '<td class="bon">'+hm(Math.abs(l[0].tot-l[1].tot))+'</td></tr></tbody>';
+  document.getElementById('duoNote').innerHTML=
+    'Elles ont travaillé à <b>'+hm(Math.abs(l[0].reel-l[1].reel))+'</b> près sur le mois. '+
+    'Avec l’arrondi à la journée, leurs bulletins affichent <b>'+hm(Math.abs(l[0].jour-l[1].jour))+
+    ' d’écart</b> — parce que 503 minutes s’arrondissent à 510 et 502 minutes à 495. '+
+    'Une minute de badge, treize fois plus d’écart sur la paie. Avec l’arrondi sur le cumul, l’écart '+
+    'retombe à <b>'+hm(Math.abs(l[0].tot-l[1].tot))+'</b>.';
+}
+
+/* --- pire cas par réglage --- */
+function pire(){
+  const NJ=26;
+  const reglages=[[5,'proche'],[5,'inferieur'],[15,'proche'],[15,'inferieur'],[30,'proche'],[30,'inferieur']];
+  document.getElementById('pire').innerHTML=
+    '<thead><tr><th>Réglage</th><th>Erreur maximale par jour</th>'+
+    '<th>Arrondi à la journée → sur 26 jours</th><th>Arrondi sur le cumul → sur 26 jours</th></tr></thead><tbody>'+
+    reglages.map(function(r){
+      const pas=r[0], sens=r[1];
+      const mx = sens==='proche' ? pas/2 : pas-1;
+      return '<tr><td>'+pas+' min, '+(sens==='proche'?'au plus proche':'à l’inférieur')+'</td>'+
+        '<td>'+mx+' min</td><td class="up"><b>jusqu’à '+hm(mx*NJ)+'</b></td>'+
+        '<td class="bon">au maximum '+hm(mx)+'</td></tr>';
+    }).join('')+'</tbody>';
+  const mx=7.5, N=86;
+  document.getElementById('atelier').innerHTML=
+    '<b>À l’échelle de l’atelier.</b> Avec un pas de 15 minutes au plus proche et '+N+' personnes '+
+    'régulières, l’écart peut atteindre <b>'+hm(mx*NJ)+' par personne</b>, soit environ '+
+    '<b>'+Math.round(mx*NJ*N/60)+' heures par mois</b> et <b>'+Math.round(mx*NJ*N*12/60)+
+    ' heures par an</b> pour l’usine. Ce n’est pas une erreur d’arrondi : c’est un poste de charge.';
+}
+
+['cas','arr','sor','pas','sens','nj'].forEach(function(id){
+  document.getElementById(id).addEventListener('input', calculer);
+  document.getElementById(id).addEventListener('change', calculer);
+});
+calculer(); duo(); pire();
+})();
+</script>
+</body>
+</html>

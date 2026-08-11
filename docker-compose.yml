@@ -1,18 +1,28 @@
 services:
   pilotrh:
     build: .
-    container_name: pilotrh
+    # Publié sur la boucle locale : mettez un reverse-proxy TLS devant plutôt
+    # que d'exposer le port sur toutes les interfaces du réseau de l'usine.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
-      - ./data:/app/data                          # persistance : SQLite + photos + documents
-      # --- Synchronisation auto depuis le partage réseau de la pointeuse ---
-      # 1) montez d'abord le partage sur l'hôte (voir README §3a)
-      # 2) décommentez la ligne suivante :
-      # - /mnt/pointeuse:/mnt/pointeuse:ro
+      - pilotrh_data:/app/data          # base, photos, documents ET sauvegardes
     environment:
-      - PILOTRH_ADMIN_PASSWORD=${PILOTRH_ADMIN_PASSWORD:-}  # protège l'admin (obligatoire si public)
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}   # optionnel : OCR + assistant IA
-      # - PILOTRH_MDB_PATH=/mnt/pointeuse/attBackup.mdb   # active la lecture auto du .mdb
-      # - PILOTRH_SYNC_MINUTES=60
+      TZ: Africa/Tunis
+      PILOTRH_DATA: /app/data
+      # OBLIGATOIRE au premier démarrage, sinon un mot de passe aléatoire est
+      # généré et affiché une seule fois dans les journaux.
+      PILOTRH_ADMIN_PASSWORD: ${PILOTRH_ADMIN_PASSWORD:?definissez PILOTRH_ADMIN_PASSWORD}
+      # Recommandé : sort la clé de signature des sessions de la base.
+      PILOTRH_SESSION_SECRET: ${PILOTRH_SESSION_SECRET:-}
+      PILOTRH_PUBLIC_URL: ${PILOTRH_PUBLIC_URL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      PILOTRH_MDB_PATH: ${PILOTRH_MDB_PATH:-}
+      PILOTRH_SYNC_MINUTES: ${PILOTRH_SYNC_MINUTES:-60}
     restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+volumes:
+  pilotrh_data:

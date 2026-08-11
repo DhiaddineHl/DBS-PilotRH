@@ -1,0 +1,366 @@
+import sys, os, json, tempfile, threading, time, asyncio, shutil
+ICI=os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0,ICI)
+sys.path.insert(0,os.path.dirname(ICI))
+DATA = tempfile.mkdtemp(prefix='pilotrh_test_')
+os.environ['PILOTRH_DATA']=DATA
+os.environ['PILOTRH_SEED']='0'          # pas d'amorçage depuis le .mdb
+os.environ['PILOTRH_ADMIN_PASSWORD']='motdepasse-test'
+os.environ['PILOTRH_SESSION_SECRET']='secret-de-test'
+sys.path.insert(0,'/home/claude/rh/pilotrh_server_final')
+import app as A
+
+ok=ko=0
+def t(nom,got,exp):
+    global ok,ko
+    if got==exp: ok+=1
+    else:
+        ko+=1
+        print("  ECHEC %s\n    attendu %r\n    obtenu  %r" % (nom,exp,got))
+def tv(nom,cond,detail=''):
+    global ok,ko
+    if cond: ok+=1
+    else: ko+=1; print("  ECHEC %s %s" % (nom,detail))
+
+print("\n--- schema et index ---")
+with A.conn_ro() as c:
+    cols={r[1] for r in c.execute("PRAGMA table_info(pointage)").fetchall()}
+    idx={r[1] for r in c.execute("PRAGMA index_list(pointage)").fetchall()}
+    jm=c.execute("PRAGMA journal_mode").fetchone()[0]
+    acols={r[1] for r in c.execute("PRAGMA table_info(audit)").fetchall()}
+tv("colonne hsM ajoutée", 'hsM' in cols, cols)
+tv("colonnes de tracabilite src/maj/par", {'src','maj','par'} <= cols, cols)
+tv("index sur pointage(emp,d)", 'idx_pointage_emp_d' in idx, idx)
+t("mode WAL actif", jm, 'wal')
+tv("audit horodate avec role et ip", {'id','role','ip'} <= acols, acols)
+
+print("\n--- C1 : /api/state ne fuite plus les comptes ni la cle de signature ---")
+A.set_meta_serveur({'users':[{'login':'admin','role':'admin','pass':'sel$hash'}],'_secret':'CLE-SECRETE'})
+priv = A.get_meta(prive=True)
+pub  = A.get_meta(prive=False)
+tv("en interne le secret existe", priv.get('_secret')=='CLE-SECRETE')
+t("_secret absent de la reponse client", pub.get('_secret'), None)
+t("users absent de la reponse client", pub.get('users'), None)
+t("notes/votes hors de /api/state", (pub.get('notes'),pub.get('votes')), (None,None))
+st = A.get_state(prive=False)
+tv("get_state expurge aussi", '_secret' not in st and 'users' not in st, list(st.keys()))
+
+print("\n--- C2 : le client ne peut plus s'octroyer le role admin ---")
+A.set_meta({'users':[{'login':'pirate','role':'admin','pass':'x'}],'_secret':'0000'})
+m = A.get_meta()
+t("users inchange apres ecriture client", [u['login'] for u in m['users']], ['admin'])
+t("_secret inchange apres ecriture client", m['_secret'], 'CLE-SECRETE')
+
+print("\n--- validation : plus de mise hors service par donnee malformee ---")
+for mauvais in ({'employees':0},{'employees':'x'},{'settings':[]},{'employees':[{'nom':'sans id'}]}):
+    try:
+        A.set_meta(mauvais); tv("refuse %r" % mauvais, False)
+    except ValueError: ok+=1
+t("l'etat reste sain", isinstance(A.get_meta().get('employees'),list), True)
+
+print("\n--- ecriture des pointages ---")
+A.set_meta({'employees':[{'id':'E001','matricule':'10','prenom':'A','nom':'Aa'},
+                         {'id':'E002','matricule':'20','prenom':'B','nom':'Bb'}]})
+A.write_pointages([A._rec_row('2026-08-10','E001',{'statut':'present','entree':'07:30','sortie':'16:30'},'RH','import')])
+p=A.get_pointages('2026-08-01','2026-08-31')
+t("relecture du pointage", p['2026-08-10']['E001']['statut'], 'present')
+A.write_pointages([A._rec_row('2026-08-11','E001',{'statut':'present','entree':'07:30','sortie':'19:00','hM':480,'hsM':60,'manuel':1},'RH','manuel')])
+r=A.get_pointages('2026-08-11','2026-08-11')['2026-08-11']['E001']
+t("hM relu", r.get('hM'), 480)
+t("hsM relu (nouvelle colonne)", r.get('hsM'), 60)
+t("manuel relu", r.get('manuel'), 1)
+
+print("\n--- fenetrage : /api/state ne renvoie plus 3 ans ---")
+A.write_pointages([A._rec_row('2023-01-05','E001',{'statut':'present','entree':'07:30','sortie':'16:30'},'RH','import')])
+tout = A.get_pointages()
+fen  = A.get_pointages('2026-06-01','2026-12-31')
+tv("l'historique complet contient 2023", '2023-01-05' in tout)
+tv("la fenetre ne contient PAS 2023", '2023-01-05' not in fen, sorted(fen))
+
+print("\n--- E11 : ecritures concurrentes, plus de perte de mise a jour ---")
+A.set_meta({'documents':[]})
+def ajoute(i):
+    for k in range(12):
+        with A._WLOCK:
+            m=A.get_meta()
+            docs=m.get('documents') or []
+            docs.append({'docId':'D%d-%d'%(i,k)})
+            A.set_meta({'documents':docs})
+th=[threading.Thread(target=ajoute,args=(i,)) for i in range(6)]
+[x.start() for x in th]; [x.join() for x in th]
+t("6 threads x 12 ecritures = 72 documents conserves", len(A.get_meta()['documents']), 72)
+
+def ecrit_pointages(i):
+    rows=[A._rec_row('2026-09-%02d'%(d+1),'E%03d'%(i+1),{'statut':'present','entree':'07:30','sortie':'16:30'},'T%d'%i,'import') for d in range(25)]
+    A.write_pointages(rows)
+th=[threading.Thread(target=ecrit_pointages,args=(i,)) for i in range(8)]
+[x.start() for x in th]; [x.join() for x in th]
+sept=A.get_pointages('2026-09-01','2026-09-30')
+t("8 threads x 25 jours, aucune perte", sum(len(v) for v in sept.values()), 200)
+
+print("\n--- restauration : remplacer vs fusionner ---")
+n=A.set_state({'employees':[{'id':'E001'}],'settings':A.default_settings(),
+               'pointages':{'2026-10-01':{'E001':{'statut':'present','entree':'08:00','sortie':'16:00'}}}},
+              remplacer=False)
+tv("fusion : l'ancien historique subsiste", '2023-01-05' in A.get_pointages())
+A.set_state({'employees':[{'id':'E001'}],'settings':A.default_settings(),
+             'pointages':{'2026-10-02':{'E001':{'statut':'present','entree':'08:00','sortie':'16:00'}}}},
+            remplacer=True)
+tout=A.get_pointages()
+t("remplacement : seule la sauvegarde subsiste", sorted(tout.keys()), ['2026-10-02'])
+
+print("\n--- cloture de mois ---")
+s=A.default_settings(); s['clotures']=['2026-10']
+A.set_meta({'settings':s})
+t("mois clos detecte", A._mois_clos(['2026-10-05','2026-11-02']), ['2026-10'])
+t("mois ouvert non signale", A._mois_clos(['2026-11-02']), [])
+
+print("\n--- mots de passe ---")
+h=A._hash_pw('secret123')
+tv("format sel$iterations$empreinte", h.count('$')==2 and len(h)>60, h[:30])
+tv("ancien format (v2) toujours accepte",
+   A._check_pw('abc', 'sel12345$'+__import__('hashlib').pbkdf2_hmac('sha256',b'abc',b'sel12345',100000).hex()))
+tv("bon mot de passe accepte", A._check_pw('secret123',h))
+tv("mauvais mot de passe refuse", not A._check_pw('secret124',h))
+tv("hash non deterministe (sel aleatoire)", A._hash_pw('a')!=A._hash_pw('a'))
+
+print("\n--- C4 : la porte derobee ADMIN_PW a disparu ---")
+src=open(os.path.join(os.path.dirname(ICI),'app.py')).read()
+tv("plus de 'pw == ADMIN_PW'", 'pw == ADMIN_PW' not in src)
+tv("ADMIN_PW ne sert plus qu'a l'amorcage", src.count('ADMIN_PW')<=4, src.count('ADMIN_PW'))
+
+print("\n--- sessions ---")
+u={'login':'admin','role':'admin','nom':'Admin'}
+tok=A._sign_session(u)
+class Req:
+    def __init__(self,cookies=None,headers=None):
+        self.cookies=cookies or {}; self.headers=headers or {}
+        self.client=type('c',(),{'host':'1.2.3.4'})()
+t("session valide relue", A._read_session(Req({'pilotrh_sess':tok}))['role'], 'admin')
+payload,sig=tok.rsplit('.',1)
+t("signature falsifiee rejetee", A._read_session(Req({'pilotrh_sess':payload+'.'+('0'*32)})), None)
+import base64 as b64
+faux=b64.urlsafe_b64encode(json.dumps({'login':'x','role':'admin','exp':9999999999}).encode()).decode()
+t("payload forge sans signature valide rejete", A._read_session(Req({'pilotrh_sess':faux+'.'+sig})), None)
+
+print("\n--- auteur des modifications : la session, plus le client ---")
+tv("_acteur derive de la session", A._acteur(Req({'pilotrh_sess':tok}))==('Admin','admin'))
+t("sans session : role minimal", A._acteur(Req())[1], 'lecture')
+tv("le corps de requete n'est plus lu pour 'qui'", "b.get(\"qui\"" not in src)
+
+print("\n--- E9 : chemin de photo valide ---")
+tv("E001 accepte", A._ID_RE.match('E001') is not None)
+for mauvais in ('..\\..\\evil','../../evil','E001/../x','D:evil','',' '):
+    tv("refuse %r" % mauvais, A._ID_RE.match(mauvais) is None)
+
+print("\n--- E12 : la sauvegarde automatique existe vraiment ---")
+info=A.faire_backup('test')
+chemin=os.path.join(A.BACKUP_DIR,info['fichier'])
+tv("fichier de sauvegarde ecrit", os.path.exists(chemin))
+import sqlite3
+c2=sqlite3.connect(chemin)
+n=c2.execute("SELECT COUNT(*) FROM pointage").fetchone()[0]
+c2.close()
+tv("la sauvegarde est lisible et coherente", n>=1, n)
+for i in range(4): A.faire_backup('test%d'%i)
+tv("rotation en place", len([f for f in os.listdir(A.BACKUP_DIR) if f.endswith('.db')])<=A.BACKUP_KEEP)
+
+print("\n--- notes de service et sondages ---")
+A._set_coms(notes=[],votes=[])
+async def go():
+    class R(Req):
+        def __init__(self,body): super().__init__({'pilotrh_sess':tok}); self._b=body
+        async def json(self): return self._b
+    await A.api_coms_note(R({'titre':'Fermeture','texte':'Vendredi ferme',
+                             'cible':{'service':'Couture'},'important':True}))
+    await A.api_coms_vote(R({'question':'Pause a 12h ou 12h30 ?','options':['12:00','12:30'],
+                             'cible':{},'anonyme':True}))
+    return A.api_coms()
+res=asyncio.get_event_loop().run_until_complete(go())
+t("note publiee", res['notes'][0]['titre'], 'Fermeture')
+t("ciblage enregistre", res['notes'][0]['cible']['service'], 'Couture')
+t("sondage publie", res['votes'][0]['question'], 'Pause a 12h ou 12h30 ?')
+t("compteurs de vote initialises", res['votes'][0]['resultats'], [0,0])
+
+emp_couture={'id':'E001','service':'Couture','atelier':'Atelier A','categorie':'Ouvrier','actif':True}
+emp_coupe  ={'id':'E002','service':'Coupe','atelier':'Atelier B','categorie':'Ouvrier','actif':True}
+tv("ciblage : la couturiere est concernee", A._cible_ok(emp_couture,{'service':'Couture'}))
+tv("ciblage : la coupeuse n'est pas concernee", not A._cible_ok(emp_coupe,{'service':'Couture'}))
+tv("ciblage vide = tout le monde", A._cible_ok(emp_coupe,{}))
+
+A.set_meta({'employees':[dict(emp_couture,token='TOK1',pin='123456',prenom='A',nom='Aa'),
+                         dict(emp_coupe,token='TOK2',pin='654321',prenom='B',nom='Bb')]})
+n1,v1=A._coms_pour(A.get_meta()['employees'][0])
+n2,v2=A._coms_pour(A.get_meta()['employees'][1])
+t("E001 (Couture) voit la note", len(n1), 1)
+t("E002 (Coupe) ne la voit pas", len(n2), 0)
+t("les deux voient le sondage", (len(v1),len(v2)), (1,1))
+t("resultats masques avant d'avoir vote", v1[0]['resultats'], None)
+
+async def voter():
+    class R(Req):
+        def __init__(self,body): super().__init__(); self._b=body
+        async def json(self): return self._b
+    vid=A._coms()[1][0]['id']
+    a=await A.api_me_vote(R({'t':'TOK1','id':vid,'choix':1}))
+    b=await A.api_me_vote(R({'t':'TOK1','id':vid,'choix':0}))   # deuxieme vote
+    c=await A.api_me_vote(R({'t':'TOK2','id':vid,'choix':1}))
+    return a,b,c
+a,b,c=asyncio.get_event_loop().run_until_complete(voter())
+t("premier vote compte", a['resultats'], [0,1])
+t("second vote de la meme personne refuse", getattr(b,'status_code',None), 409)
+t("vote d'une autre personne compte", c['resultats'], [0,2])
+
+async def lire():
+    class R(Req):
+        def __init__(self,body): super().__init__(); self._b=body
+        async def json(self): return self._b
+    nid=A._coms()[0][0]['id']
+    await A.api_me_lu(R({'t':'TOK1','id':nid}))
+    await A.api_me_lu(R({'t':'TOK1','id':nid}))     # deux fois
+    await A.api_me_lu(R({'t':'TOK2','id':nid}))     # pas concernee
+    return A._coms()[0][0]['lus']
+lus=asyncio.get_event_loop().run_until_complete(lire())
+t("accuse de lecture unique et cible", lus, ['E001'])
+
+print("\n--- E2 : anti-force brute du code salarie ---")
+A._PIN_FAILS.clear()
+cle='E001|1.2.3.4'
+for i in range(4): A._pin_echec(cle)
+tv("4 essais : pas encore bloque", not A._pin_bloque(cle))
+A._pin_echec(cle); A._pin_echec(cle)
+tv("au-dela : bloque", A._pin_bloque(cle))
+A._pin_ok(cle)
+tv("succes remet le compteur a zero", not A._pin_bloque(cle))
+
+print("\n--- code salarie tire avec secrets, 6 chiffres ---")
+A.set_meta({'employees':[{'id':'E009','matricule':'99','prenom':'C','nom':'Cc'}]})
+m=A.ensure_tokens_persist()
+e=[x for x in A.get_meta()['employees'] if x['id']=='E009'][0]
+t("code a 6 chiffres", len(e['pin']), 6)
+tv("jeton suffisamment long", len(e['token'])>=12, e['token'])
+tv("plus de module random pour les secrets", 'random.randint' not in src)
+avant=dict(e)
+A.ensure_tokens_persist()
+e2=[x for x in A.get_meta()['employees'] if x['id']=='E009'][0]
+t("un second appel ne regenere pas l'acces", (e2['token'],e2['pin']), (avant['token'],avant['pin']))
+
+print("\n--- echappement du balisage PDF ---")
+t("balise img neutralisee", A._rl('<img src="/app/data/pilotrh.db"/>'),
+  '&lt;img src="/app/data/pilotrh.db"/&gt;')
+t("None -> vide", A._rl(None), '')
+
+print("\n--- SSRF : la pointeuse doit etre sur le reseau local ---")
+tv("192.168.1.201 accepte", A._ip_privee('192.168.1.201'))
+tv("10.0.0.5 accepte", A._ip_privee('10.0.0.5'))
+tv("8.8.8.8 refuse", not A._ip_privee('8.8.8.8'))
+tv("169.254.169.254 (metadonnees cloud) refuse", not A._ip_privee('169.254.169.254'))
+tv("127.0.0.1 refuse", not A._ip_privee('127.0.0.1'))
+
+print("\n--- journal d'audit ---")
+A.audit('Testeur','Action de test','admin','1.2.3.4')
+rows=A.api_audit(limit=5)
+tv("entree enregistree avec role et ip",
+   any(r['qui']=='Testeur' and r['role']=='admin' and r['ip']=='1.2.3.4' for r in rows), rows[:2])
+t("limite bornee cote signature", A.api_audit(limit=1).__len__(), 1)
+
+print("\n--- surface publique du middleware ---")
+tv("/api/state n'est pas public", not A._est_public('/api/state'))
+tv("/api/metrics ne devient pas public par prefixe", not A._est_public('/api/metrics'))
+tv("/api/me public", A._est_public('/api/me'))
+tv("/api/me/flag public", A._est_public('/api/me/flag'))
+tv("/photos n'est plus public", not A._est_public('/photos/E001.jpg'))
+tv("/assets/ public", A._est_public('/assets/pilotrh-core.js'))
+tv("/api/health public et minimal", A._est_public('/api/health') and A.health()=={'ok':True})
+tv("/api/health/detail protege", not A._est_public('/api/health/detail'))
+
+print("\n--- statistiques d'absenteisme reelles ---")
+A.set_state({'employees':[{'id':'E001'}],'settings':A.default_settings(),'pointages':{}},remplacer=True)
+rows=[]
+for d in range(1,11):
+    rows.append(A._rec_row('2026-08-%02d'%d,'E001',{'statut':'absent' if d<=2 else 'present','entree':'','sortie':''},'T','import'))
+A.write_pointages(rows)
+stats=A.api_stats_abs(mois=1)
+t("taux calcule sur les donnees", stats[-1]['taux'], 20.0)
+t("nombre de jours pris en compte", stats[-1]['jours'], 10)
+
+print("\n--- modèle et import des fiches du personnel ---")
+A.set_state({'employees':[{'id':'E001','matricule':'101','nom':'Nom1','prenom':'A',
+                           'categorie':'Ouvrier','sexe':'F'}],
+             'settings':A.default_settings(),'pointages':{}},remplacer=True)
+A.write_pointages([A._rec_row('2026-08-03','E001',
+                              {'statut':'present','entree':'07:30','sortie':'16:30'},'T','import')])
+
+class ReqS(Req):
+    """Requête authentifiée en administrateur."""
+    def __init__(self): super().__init__({'pilotrh_sess':tok})
+
+class ReqLect(Req):
+    """Requête d'un compte en lecture seule."""
+    def __init__(self):
+        super().__init__({'pilotrh_sess':A._sign_session(
+            {'login':'obs','role':'lecture','nom':'Observateur'})})
+
+rep=A.api_modele_fiches(ReqS(), actuels=0)
+tv("le modèle est un classeur xlsx", getattr(rep,'content',b'')[:2]==b'PK')
+tv("nom de fichier proposé",
+   'PilotRH_modele_fiches.xlsx' in str(getattr(rep,'headers',{})))
+rep2=A.api_modele_fiches(ReqS(), actuels=1)
+tv("le classeur prérempli est produit", len(getattr(rep2,'content',b''))>2000)
+t("modèle refusé à un compte en lecture seule",
+  getattr(A.api_modele_fiches(ReqLect()),'status_code',None), 403)
+
+class Up:
+    """Doublure d'UploadFile : renvoie le contenu en un seul morceau."""
+    def __init__(self,nom,data): self.filename=nom; self._d=data; self._lu=False
+    async def read(self,n=None):
+        if self._lu: return b''
+        self._lu=True; return self._d
+
+CSV_FICHES=('Matricule;Nom;Prénom;Salaire mensuel (TND)\r\n'
+            '101;Nom1;A;600\r\n'
+            '777;Nouvelle;Ouvriere;500\r\n'
+            ';Sans matricule;;\r\n').encode('utf-8')
+
+async def _apercu():
+    return await A.api_import_fiches(ReqS(), Up('f.csv',CSV_FICHES), 0)
+rap=asyncio.get_event_loop().run_until_complete(_apercu())
+t("aperçu : 1 création, 1 mise à jour, 1 erreur",
+  [rap['resume']['creation'],rap['resume']['maj'],rap['resume']['erreur']], [1,1,1])
+t("l'aperçu n'écrit rien", len(A.get_meta()['employees']), 1)
+
+async def _appliquer():
+    return await A.api_import_fiches(ReqS(), Up('f.csv',CSV_FICHES), 1)
+rap=asyncio.get_event_loop().run_until_complete(_appliquer())
+t("application : 1 créée, 1 mise à jour",
+  [rap['applique']['crees'],rap['applique']['majs']], [1,1])
+emps={e['matricule']:e for e in A.get_meta()['employees']}
+t("effectif après import", sorted(emps), ['101','777'])
+t("salaire mis à jour", emps['101']['salaire'], 600)
+t("nom conservé (cellule non vide, valeur identique)", emps['101']['nom'], 'Nom1')
+tv("la nouvelle fiche reçoit un accès QR",
+   bool(emps['777'].get('token')) and bool(emps['777'].get('pin')))
+t("les pointages existants sont intacts",
+  A.get_pointages('2026-08-03','2026-08-03')['2026-08-03']['E001']['entree'], '07:30')
+tv("l'import est journalisé",
+   any('Import de fiches' in r['action'] for r in A.api_audit(limit=20)))
+
+async def _refus():
+    return await A.api_import_fiches(ReqLect(), Up('f.csv',CSV_FICHES), 1)
+t("import refusé à un compte en lecture seule",
+  getattr(asyncio.get_event_loop().run_until_complete(_refus()),'status_code',None), 403)
+
+async def _vide():
+    return await A.api_import_fiches(ReqS(), Up('f.csv',b'Matricule;Nom\r\n'), 0)
+t("fichier sans ligne de données refusé proprement",
+  getattr(asyncio.get_event_loop().run_until_complete(_vide()),'status_code',None), 400)
+
+async def _illisible():
+    return await A.api_import_fiches(ReqS(), Up('f.csv',b'Colonne A;Colonne B\r\n1;2\r\n'), 0)
+t("fichier sans colonne Matricule refusé",
+  getattr(asyncio.get_event_loop().run_until_complete(_illisible()),'status_code',None), 400)
+
+print("\n=========================")
+print("  %d réussis · %d échoués" % (ok,ko))
+shutil.rmtree(DATA, ignore_errors=True)
+sys.exit(1 if ko else 0)

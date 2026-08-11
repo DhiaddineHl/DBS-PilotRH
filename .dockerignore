@@ -1,0 +1,21 @@
+# Sans ce fichier, `COPY . .` embarquait dans l'image : la base de la pointeuse
+# avec les vraies identités, le .env avec la clé Anthropic, et tout l'historique Git.
+.git
+.gitignore
+data/
+seed/*.mdb
+*.mdb
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.log
+*.zip
+tests/

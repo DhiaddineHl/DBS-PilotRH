@@ -1,3 +1,9 @@
+> **Note de version — v3.0.** Ce README décrit la version précédente sur
+> plusieurs points. Les changements de la v3 (jours fériés, plage de pause,
+> clôture de mois, saisie rapide, correction par plage de dates, notes de
+> service, sondages, application installable, sauvegardes réelles) sont
+> décrits dans **MISE_A_JOUR_v3.md**, qui prévaut en cas de contradiction.
+
 # PilotRH — Serveur RH · DBS Fashion
 
 Application RH pour usine textile, **installée sur votre serveur** (pas un simple fichier HTML).
@@ -190,7 +196,11 @@ si vous avez déjà PilotPro. Pour le relier, mettez simplement un lien depuis P
    `.mdb`, mot de passe admin). Sur Windows : Planificateur de tâches au démarrage.
 
 > Railway fournit le HTTPS automatiquement : les liens des QR et les codes ne circulent
-> jamais en clair.
+> transmis dans le corps de la requete (POST), et non plus dans l'adresse :
+> ils n'apparaissent donc plus dans les journaux du serveur ni dans
+> l'historique du navigateur. En HTTP simple (installation locale), la
+> circulation reste en clair sur le reseau : mettez un reverse-proxy TLS
+> devant le serveur si le poste est accessible depuis le reseau de l'usine.
 
 ---
 
@@ -228,14 +238,14 @@ Vous pouvez aussi exporter/importer la base en JSON depuis **Sécurité & accès
 | `PILOTRH_DATA` | Dossier de données | `./data` |
 | `PILOTRH_MODEL` | Modèle IA | `claude-sonnet-4-6` |
 
-Fenêtre d'import `.mdb` par défaut : 2026-03-01 → 2026-06-30 (modifiable dans `mdb_import.py`,
+Fenêtre d'import `.mdb` par défaut : 2023-01-01 → aujourd'hui + 1 jour (modifiable dans `mdb_import.py`,
 constantes `DEFAULT_DU` / `DEFAULT_AU`).
 
 ---
 
 ## 7. Évolutions possibles
 
-- Multi-utilisateurs avec comptes et permissions réels (actuellement mono-poste)
+- Module de paie chiffrée (taux horaire, brut/net, majorations légales des heures supplémentaires, CNSS)
 - Import `.mdb` planifié automatiquement (lecture directe depuis le partage réseau de la pointeuse)
 - Modèle de base de données normalisé (tables dédiées) si le volume devient très important
 - Connexion au module Paie / à l'ERP usine (PilotPro)

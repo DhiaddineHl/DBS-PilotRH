@@ -31,10 +31,13 @@ except ImportError:
 
 URL      = os.environ.get("PILOTRH_URL", "https://VOTRE-APP.up.railway.app").rstrip("/")
 MDB      = os.environ.get("PILOTRH_MDB", r"C:\ZKTeco\attBackup.mdb")
-ADMIN_PW = os.environ.get("PILOTRH_ADMIN_PASSWORD", "")
+# Compte de service dédié (à créer dans Sécurité & accès), et non le compte
+# administrateur : ce fichier est en clair sur un PC d'usine.
+LOGIN    = os.environ.get("PILOTRH_LOGIN", "agent")
+MOT_DE_PASSE = os.environ.get("PILOTRH_PASSWORD", "") or os.environ.get("PILOTRH_ADMIN_PASSWORD", "")
 INTERVAL = int(os.environ.get("PILOTRH_INTERVAL_MIN", "30")) * 60
 
-auth = ("admin", ADMIN_PW) if ADMIN_PW else None
+auth = (LOGIN, MOT_DE_PASSE) if MOT_DE_PASSE else None
 
 
 def envoyer():
