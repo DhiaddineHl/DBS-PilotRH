@@ -177,42 +177,6 @@ t('escJs apostrophes', C.escJs("O'Brien"), "O\\'Brien");
 console.log('\n--- fromMin ne replie plus minuit ---');
 t('fromMin(1500) signale le jour suivant', C.fromMin(1500), '01:00 (+1j)');
 
-console.log('\n--- Rémunération : mode heure / mode journée ---');
-S = conf({tauxHoraireDefaut:2, tauxJourDefaut:40});
-E.invalidate();
-const OUV={id:'E1',categorie:'Ouvrier'}, CAD={id:'E2',categorie:'Cadre'};
-t('mode déduit : ouvrier => horaire', C.modePaie(OUV), 'horaire');
-t('mode déduit : cadre => journalier', C.modePaie(CAD), 'journalier');
-t('mode explicite l’emporte sur la catégorie',
-  C.modePaie({categorie:'Cadre',modePaie:'horaire'}), 'horaire');
-t('mode invalide ignoré, on retombe sur la catégorie',
-  C.modePaie({categorie:'Cadre',modePaie:'mensuel'}), 'journalier');
-/* 26 j travaillés, 200 h normales + 10 h sup */
-const SYN={jT:26,jFT:0,hN:200*60,hS:10*60};
-t('ouvrier : quantité = heures normales + sup',
-  (p=>[p.mode,p.unite,p.qte,p.taux,p.montant])(E.paie(OUV,SYN)),
-  ['horaire','h',210,2,420]);
-t('cadre : quantité = jours travaillés',
-  (p=>[p.mode,p.unite,p.qte,p.taux,p.montant])(E.paie(CAD,SYN)),
-  ['journalier','j',26,40,1040]);
-t('cadre : les fériés travaillés comptent une journée',
-  E.paie(CAD,{jT:26,jFT:1,hN:0,hS:60}).qte, 27);
-t('taux de la fiche prioritaire sur le taux par défaut',
-  E.paie({categorie:'Ouvrier',tauxHoraire:3.25},SYN).montant, 682.5);
-t('taux par défaut signalé comme tel', E.paie(OUV,SYN).tauxDefaut, true);
-t('taux propre non signalé comme défaut',
-  E.paie({categorie:'Ouvrier',tauxHoraire:3},SYN).tauxDefaut, false);
-S = conf();
-E.invalidate();
-t('aucun taux nulle part => montant 0, pas NaN',
-  (p=>[p.taux,p.montant])(E.paie(OUV,SYN)), [0,0]);
-t('quantité calculée même sans taux', E.paie(OUV,SYN).qte, 210);
-t('synthèse vide => 0', (p=>[p.qte,p.montant])(E.paie(OUV,{})), [0,0]);
-t('réglages par défaut : taux à zéro',
-  [C.normalizeSettings({}).tauxHoraireDefaut, C.normalizeSettings({}).tauxJourDefaut], [0,0]);
-t('taux existants préservés par la normalisation',
-  C.normalizeSettings({tauxHoraireDefaut:2.75}).tauxHoraireDefaut, 2.75);
-
 console.log('\n=========================');
 console.log('  '+ok+' réussis · '+ko+' échoués');
 process.exit(ko?1:0);

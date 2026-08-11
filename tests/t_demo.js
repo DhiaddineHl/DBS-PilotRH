@@ -153,35 +153,6 @@ const DEMO = path.join(__dirname,'..','demo');
   await s.screenshot({path:'./captures/demo_salarie.png'});
   t('aucune erreur JS côté salarié', errS.length===0, errS.join(' | '));
 
-  console.log('\n--- Alertes cliquables et import de fiches (hors ligne) ---');
-  await p.setViewportSize({width:1440,height:1000});
-  await p.evaluate(()=>go('alertes')); await p.waitForSelector('.alert-row');
-  const nA = await p.locator('.alert-row').count();
-  t('les alertes de la démo sont cliquables', await p.locator('.alert-clic').count() === nA, 'n='+nA);
-  const cible = await p.locator('.alert-clic').first().getAttribute('onclick');
-  t('l’alerte porte bien une action', /\w+\(/.test(cible||''), cible||'');
-  await p.locator('.alert-clic').first().click(); await p.waitForTimeout(1200);
-  t('le clic mène ailleurs : modale ouverte ou changement de vue',
-    (await p.locator('#overlay.open').count()) === 1 ||
-    (await p.evaluate(()=>window.VIEW)) !== 'alertes',
-    'vue='+(await p.evaluate(()=>window.VIEW)));
-  await p.keyboard.press('Escape'); await p.waitForTimeout(200);
-
-  await p.evaluate(()=>go('personnel')); await p.waitForSelector('#persBody tr');
-  await p.click('button:has-text("Importer des fiches")');
-  await p.waitForSelector('#fichesIn',{state:'attached'});
-  t('le parcours d’import est présent dans la démo',
-    (await p.locator('.modal-body').innerText()).includes('Modèle vierge'));
-  await p.click('button:has-text("Modèle vierge")'); await p.waitForTimeout(800);
-  const tst = await p.locator('#toasts').innerText().catch(()=>'');
-  t('la démo explique honnêtement que le classeur vient du serveur',
-    /serveur|impossible/i.test(tst), tst.slice(0,140));
-  await p.keyboard.press('Escape'); await p.waitForTimeout(200);
-
-  await p.evaluate(()=>go('rapports')); await p.waitForSelector('#repBody tr');
-  t('les colonnes de rémunération sont là',
-    /montant/i.test(await p.locator('.tablecard thead').innerText()));
-
   console.log('\n--- Erreurs console ---');
   const graves = errs.filter(e=>!/favicon|manifest|sw\.js|ServiceWorker|net::ERR_FILE_NOT_FOUND|fonts\.googleapis|fonts\.gstatic|ERR_INTERNET|ERR_NAME_NOT_RESOLVED|Failed to load resource/i.test(e));
   t('aucune erreur JavaScript', graves.length===0, graves.slice(0,4).join(' | '));

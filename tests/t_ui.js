@@ -193,121 +193,12 @@ const { chromium } = require('playwright');
   t('après vote, les résultats s\'affichent', (await p2.content()).includes('réponse(s)'));
   await p2.screenshot({ path:'./captures/vue_salarie.png', fullPage:false });
 
-  console.log('\n--- Alertes cliquables : de l\'alerte à la correction ---');
-  await page.goto('http://localhost:8777/#/alertes',{waitUntil:'networkidle'});
-  await page.waitForSelector('.alert-row');
-  const nAl = await page.locator('.alert-row').count();
-  const nClic = await page.locator('.alert-clic').count();
-  t('des alertes sont affichées', nAl > 0, 'n='+nAl);
-  t('toutes les alertes sont cliquables', nClic === nAl, nClic+'/'+nAl);
-  t('chaque alerte cliquable est accessible au clavier',
-    await page.locator('.alert-clic[role="button"][tabindex="0"]').count() === nClic);
-  t('l\'action attendue est annoncée',
-    (await page.locator('.alert-clic').first().getAttribute('title') || '').length > 3);
-
-  const docAl = page.locator('.alert-clic', { hasText:'Document manquant' }).first();
-  if(await docAl.count()){
-    await docAl.click(); await page.waitForSelector('.modal .profile-top',{timeout:6000});
-    t('l\'alerte « document manquant » ouvre la fiche concernée', true);
-    t('la fiche ouverte est bien celle nommée dans l\'alerte',
-      (await page.locator('.modal .profile-top h2').innerText()).trim().length > 1);
-    t('la fiche montre le bloc Rémunération',
-      /r[ée]mun[ée]ration/i.test(await page.locator('.modal-body').innerText()));
-    await page.keyboard.press('Escape'); await page.waitForTimeout(200);
-  } else { t('alerte document manquant présente', false, 'absente du jeu de test') }
-
-  const revAl = page.locator('.alert-clic', { hasText:'Pointage à vérifier' }).first();
-  if(await revAl.count()){
-    await revAl.click(); await page.waitForSelector('.modal',{timeout:6000});
-    const m = await page.locator('.modal').innerText();
-    t('l\'alerte de pointage ouvre la liste des journées à vérifier', m.includes('Journées à vérifier'), m.slice(0,80));
-    t('chaque ligne propose de corriger', await page.locator('.modal button:has-text("Corriger")').count() > 0);
-    await page.locator('.modal button:has-text("Corriger")').first().click();
-    await page.waitForSelector('#presBody tr',{timeout:8000});
-    await page.waitForTimeout(500);
-    t('on arrive sur la feuille de pointage du jour', (await page.locator('#dPres').inputValue()).length === 10);
-    t('la ligne à corriger est mise en évidence', await page.locator('tr.focus-row').count() === 1);
-  } else { t('alerte pointage à vérifier présente', false, 'absente du jeu de test') }
-
-  console.log('\n--- Rémunération : à l\'heure ou à la journée, par fiche ---');
-  await page.goto('http://localhost:8777/#/personnel',{waitUntil:'networkidle'});
-  await page.waitForSelector('#persBody tr');
-  await page.locator('#persBody button:has-text("Fiche")').first().click();
-  await page.waitForSelector('.modal .profile-top');
-  await page.click('.modal button:has-text("Modifier la fiche")');
-  await page.waitForSelector('#ed_modePaie');
-  t('le mode de paie est saisissable', await page.locator('#ed_modePaie option').count() === 2);
-  t('prix de l\'heure saisissable', await page.locator('#ed_tauxHoraire').count() === 1);
-  t('prix de la journée saisissable', await page.locator('#ed_tauxJour').count() === 1);
-  t('l\'aide explique le mode retenu',
-    (await page.locator('#paieHint').innerText()).includes('heure'));
-  await page.selectOption('#ed_modePaie','journalier'); await page.waitForTimeout(150);
-  t('changer de mode change l\'explication',
-    (await page.locator('#paieHint').innerText()).includes('journée travaillée'));
-  await page.fill('#ed_tauxJour','45,5'.replace(',','.'));
-  await page.selectOption('#ed_modePaie','horaire');
-  await page.fill('#ed_tauxHoraire','2.75');
-  await page.click('.modal button:has-text("Enregistrer")');
-  await page.waitForSelector('.modal .profile-top',{timeout:6000});
-  const fiche = await page.locator('.modal-body').innerText();
-  t('le taux saisi est repris dans la fiche', fiche.includes('2,75'), fiche.slice(-400));
-  t('le mode retenu est affiché', /[àa] l[’']heure/i.test(fiche));
-  t('une estimation du mois est calculée', /estimation brute du mois/i.test(fiche));
-  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
-
-  await page.goto('http://localhost:8777/#/rapports',{waitUntil:'networkidle'});
-  await page.waitForSelector('#repBody tr');
-  const tete = (await page.locator('.tablecard thead').innerText()).toLowerCase();
-  t('colonne Taux dans le rapport de paie', tete.includes('taux'), tete.slice(0,160));
-  t('colonne Montant estimé dans le rapport de paie', tete.includes('montant'));
-  t('le total inclut un montant en TND',
-    (await page.locator('#repBody tr.rep-tot').innerText()).includes('TND'));
-  const l1 = await page.locator('#repBody tr:first-child').innerText();
-  t('la base de paie porte son unité', /\d\s?(h|j)\b/.test(l1), l1.slice(0,120));
-
-  console.log('\n--- Import en masse des fiches ---');
-  await page.goto('http://localhost:8777/#/personnel',{waitUntil:'networkidle'});
-  await page.waitForSelector('#persBody tr');
-  await page.click('button:has-text("Importer des fiches")');
-  await page.waitForSelector('#fichesIn',{state:'attached'});
-  const mod = await page.locator('.modal-body').innerText();
-  t('le modèle vierge est proposé', mod.includes('Modèle vierge'));
-  t('le classeur prérempli est proposé', /fiches actuelles/.test(mod));
-  t('les trois règles de sécurité sont rappelées',
-    mod.includes('matricule') && mod.includes('vide ne change rien') && mod.includes('jamais touchés'));
-  t('le bouton Appliquer est désactivé avant tout fichier',
-    await page.locator('#btnAppFiches').isDisabled());
-  await page.setInputFiles('#fichesIn',{ name:'fiches.csv', mimeType:'text/csv',
-    buffer: Buffer.from('Matricule;Nom\n101;Nom1\n') });
-  await page.waitForSelector('#rapFiches .tablecard',{timeout:8000});
-  const ap = await page.locator('#rapFiches').innerText();
-  t('l\'aperçu annonce que rien n\'est encore écrit', /rien n[’']est encore [ée]crit/i.test(ap));
-  t('les créations sont comptées', /[àa] cr[ée]er/i.test(ap));
-  t('les erreurs sont comptées et expliquées', ap.includes('matricule manquant'));
-  t('les colonnes non reconnues sont signalées', ap.includes('Colonne bidon'));
-  t('les fiches absentes du fichier sont rassurées', ap.includes('jamais supprimées'));
-  t('les champs concernés sont nommés en français',
-    ap.includes('prix de l’heure') || ap.includes('CNSS'), ap.slice(0,200));
-  t('les lignes en erreur remontent en haut',
-    (await page.locator('#rapFiches tbody tr:first-child').innerText()).includes('erreur'));
-  t('le bouton Appliquer s\'active et annonce le nombre',
-    !(await page.locator('#btnAppFiches').isDisabled()) &&
-    (await page.locator('#btnAppFiches').innerText()).includes('2'));
-  page.once('dialog', d => { t('une confirmation détaille ce qui sera écrit',
-    d.message().includes('créée') && d.message().includes('Aucun pointage')); d.accept() });
-  await page.click('#btnAppFiches');
-  await page.waitForSelector('#persBody tr',{timeout:8000});
-  t('après application, on revient sur la liste du personnel',
-    /personnel/i.test(await page.locator('.topbar').innerText()));
-
   console.log('\n--- Erreurs console ---');
   const graves = erreurs.filter(e=>!/favicon|manifest|sw\.js|ServiceWorker|Failed to load resource/i.test(e));
   t('aucune erreur JavaScript', graves.length===0, graves.slice(0,4).join(' | '));
 
-  /* on navigue comme un utilisateur (clic sur le menu) : un page.goto qui ne
-     change que le fragment d'URL n'est pas garanti de déclencher le rendu */
-  await page.click('[data-v="dashboard"]');
-  await page.waitForSelector('#cAbs svg',{timeout:15000});
+  await page.goto('http://localhost:8777/#/dashboard',{waitUntil:'networkidle'});
+  await page.waitForSelector('#cAbs svg');
   await page.screenshot({ path:'./captures/vue_dashboard.png' });
   await page.click('[data-v="presences"]'); await page.waitForSelector('#presBody tr');
   await page.screenshot({ path:'./captures/vue_presences.png' });

@@ -79,10 +79,6 @@ function normalizeSettings(s) {
   if (!Array.isArray(s.feriesFixes) || !s.feriesFixes.length) s.feriesFixes = FERIES_FIXES_DEFAUT.map(f => ({ ...f }));
   if (s.feriesActifs === undefined) s.feriesActifs = true;
   if (!Array.isArray(s.clotures)) s.clotures = [];      // mois verrouillés : ['2026-06', …]
-  /* Taux par défaut de la convention : servent de repli quand la fiche n'a pas
-     de taux propre, pour ne pas ressaisir le même chiffre sur tout l'effectif. */
-  if (s.tauxHoraireDefaut === undefined) s.tauxHoraireDefaut = 0;
-  if (s.tauxJourDefaut === undefined) s.tauxJourDefaut = 0;
 
   const legacy = {
     debut: s.heureDebut || '07:30', fin: s.heureFin || '16:30',
@@ -364,38 +360,7 @@ function makeEngine(getSettings) {
 
   function moisClos(ym) { return (S().clotures || []).indexOf(ym) >= 0; }
 
-  /* ------------------------------------------------------------ rémunération */
-  /* Le taux de la fiche l'emporte ; s'il est vide, on retombe sur le taux par
-     défaut des paramètres (convention collective). Cela évite de saisir le même
-     taux horaire sur les 97 fiches. */
-  function taux(e) {
-    const s = S(), m = modePaie(e);
-    if (m === 'journalier') return +(e && e.tauxJour) || +s.tauxJourDefaut || 0;
-    return +(e && e.tauxHoraire) || +s.tauxHoraireDefaut || 0;
-  }
-  /* Base de paie d'une personne sur une période, à partir d'une ligne de
-     synthèse {jT,jFT,hN,hS}. Aucune majoration légale n'est appliquée ici :
-     la quantité est celle qui est réellement constatée sur les pointages. */
-  function paie(e, s) {
-    s = s || {};
-    const mode = modePaie(e), t = taux(e);
-    const qte = (mode === 'journalier')
-      ? ((+s.jT || 0) + (+s.jFT || 0))
-      : hDec((+s.hN || 0) + (+s.hS || 0));
-    return {
-      mode: mode,
-      unite: (mode === 'journalier') ? 'j' : 'h',
-      uniteLong: (mode === 'journalier') ? 'jour(s) travaillé(s)' : 'heure(s) payée(s)',
-      label: (mode === 'journalier') ? 'Journée' : 'Heure',
-      qte: qte,
-      taux: t,
-      montant: t ? Math.round(qte * t * 1000) / 1000 : 0,
-      tauxDefaut: !(mode === 'journalier' ? (e && +e.tauxJour) : (e && +e.tauxHoraire)),
-    };
-  }
-
-  return { regimeFor, ferieFor, estOuvre, metrics, badges, roundMin, arrondirTotal, moisClos,
-           taux, paie, invalidate, get stamp() { return stamp; } };
+  return { regimeFor, ferieFor, estOuvre, metrics, badges, roundMin, arrondirTotal, moisClos, invalidate, get stamp() { return stamp; } };
 }
 
 /* ------------------------------------------------------------------- libellés */
@@ -426,18 +391,6 @@ const EST_ABSENCE = st => st === 'absent';
    manuelle. Doit rester le MIROIR EXACT de _est_protege() dans mdb_import.py :
    sinon l'interface affiche un cadenas là où le serveur n'en met pas, ou pire,
    n'en affiche pas là où la journée est réellement protégée. */
-/* ------------------------------------------------------------- rémunération */
-/* Deux modes seulement, volontairement : les ouvrières sont payées à l'heure
-   (convention collective du textile) et les cadres à la journée travaillée.
-   Si la fiche ne dit rien, on déduit le mode de la catégorie — c'est ce que
-   faisait l'application avant que le mode devienne saisissable. */
-const MODES_PAIE = ['horaire', 'journalier'];
-const MODES_PAIE_LABEL = { horaire: 'À l’heure', journalier: 'À la journée' };
-function modePaie(e) {
-  if (e && MODES_PAIE.indexOf(e.modePaie) >= 0) return e.modePaie;
-  return (e && e.categorie === 'Cadre') ? 'journalier' : 'horaire';
-}
-
 function estProtege(rec) {
   if (!rec) return false;
   if (rec.manuel) return true;
@@ -451,6 +404,5 @@ root.PilotRHCore = {
   pad, isoOf, toMin, fromMin, hDec, fr2, hLabel, esc, escJs,
   normalizeSettings, normalizeDay, makeEngine,
   FERIES_FIXES_DEFAUT, STATUTS, statutLabel, statutClass, EST_ABSENCE, estProtege,
-  MODES_PAIE, MODES_PAIE_LABEL, modePaie,
 };
 })(typeof window !== 'undefined' ? window : this);

@@ -137,11 +137,10 @@ VUES.rapports = async function(main){
     '</div>'+
     '<div class="card tablecard">'+
       '<div class="table-head">'+I.report+'<h3>Synthèse — <span id="repTitre">'+fmtDate(REP_FROM)+' → '+fmtDate(REP_TO)+'</span></h3>'+
-      '<div class="spacer"></div><span style="font-size:12px;color:var(--muted)">Chaque fiche a son mode : à l’heure ou à la journée</span></div>'+
+      '<div class="spacer"></div><span style="font-size:12px;color:var(--muted)">Ouvriers en heures · cadres en jours</span></div>'+
       '<div class="tblwrap"><table class="tbl"><thead>'+
         theadRow('rep',[['mat','Mat.'],['name','Employée'],'Cat.',['jt','Jours trav.'],['ja','Absences'],
-          'Congés','Fériés',['hn','H. normales'],['hs','H. sup.'],['ret','Retards'],'Base paie',
-          ['taux','Taux'],['mt','Montant estimé']])+
+          'Congés','Fériés',['hn','H. normales'],['hs','H. sup.'],['ret','Retards'],'Base paie'])+
       '</thead><tbody id="repBody"></tbody></table></div></div>'+
     '<div style="margin-top:10px;font-size:12px;color:var(--muted)">'+esc(mentionRegime())+'</div>'+
   '</div>';
@@ -157,33 +156,27 @@ function repFiltre(rows){
 }
 function repRows(){
   let rows=repFiltre(summarize(REP_FROM,REP_TO));
-  if(SORT.rep){const s=SORT.rep;const g=r=>({mat:matOf(r.e),name:r.e.nom||'',jt:r.jT,ja:r.jA,hn:r.hN,hs:r.hS,ret:r.ret,
-    taux:ENGINE.paie(r.e,r).taux,mt:ENGINE.paie(r.e,r).montant}[s.k]);
+  if(SORT.rep){const s=SORT.rep;const g=r=>({mat:matOf(r.e),name:r.e.nom||'',jt:r.jT,ja:r.jA,hn:r.hN,hs:r.hS,ret:r.ret}[s.k]);
     rows=[...rows].sort((a,b)=>{const va=g(a),vb=g(b);return(va>vb?1:va<vb?-1:0)*s.dir})}
   return rows;
 }
 function fillRep(){
   const rows=repRows();
-  let TjT=0,ThN=0,ThS=0,Tret=0,TjA=0,Tmt=0;
+  let TjT=0,ThN=0,ThS=0,Tret=0,TjA=0;
   const tb=$('#repBody'); if(!tb)return;
   tb.innerHTML=(rows.map(r=>{
     TjT+=r.jT;ThN+=r.hN;ThS+=r.hS;Tret+=r.ret;TjA+=r.jA;
-    const p=ENGINE.paie(r.e,r);Tmt+=p.montant;
-    const base='<b>'+fr2(p.qte)+' '+p.unite+'</b>';
-    return '<tr'+(r.revue?' class="revue-row"':'')+'><td class="mono">'+esc(matOf(r.e))+'</td><td>'+empCell(r.e.id,true)+'</td><td>'+catTag(r.e.categorie,r.e)+'</td>'+
+    const base=r.e.categorie==='Cadre'?('<b>'+r.jT+' j</b>'):('<b>'+fr2(hDec(r.hN+r.hS))+' h</b>');
+    return '<tr'+(r.revue?' class="revue-row"':'')+'><td class="mono">'+esc(matOf(r.e))+'</td><td>'+empCell(r.e.id,true)+'</td><td>'+catTag(r.e.categorie)+'</td>'+
       '<td>'+r.jT+'</td><td>'+(r.jA?'<b style="color:var(--absent)">'+r.jA+'</b>':'0')+'</td><td>'+(r.jC||'0')+'</td>'+
       '<td>'+(r.jF||'0')+(r.jFT?' <span class="tag t-ferie">+'+r.jFT+' trav.</span>':'')+'</td>'+
-      '<td>'+(p.mode==='journalier'?'<span style="color:var(--faint)">—</span>':fr2(hDec(r.hN))+' h')+'</td>'+
+      '<td>'+(r.e.categorie==='Cadre'?'<span style="color:var(--faint)">—</span>':fr2(hDec(r.hN))+' h')+'</td>'+
       '<td>'+(r.hS?'<b style="color:var(--mission)">'+fr2(hDec(r.hS))+' h</b>':'—')+'</td>'+
       '<td>'+(r.ret?r.ret+' min':'—')+'</td><td>'+base+
-      (r.revue?' <span class="tag t-late" title="'+r.revue+' journée(s) à vérifier">⚠</span>':'')+'</td>'+
-      '<td class="mono">'+(p.taux?fr2(p.taux)+'<small style="color:var(--faint)">/'+p.unite+'</small>':
-        '<button class="linkish" title="Aucun taux sur la fiche ni par défaut" onclick="openEditEmp(\''+escJs(r.e.id)+'\')">à saisir</button>')+'</td>'+
-      '<td class="mono">'+(p.taux?'<b>'+fr2(p.montant)+'</b>':'—')+'</td></tr>';
-  }).join('')||'<tr><td colspan="13"><div class="empty">Aucune ligne</div></td></tr>')+
+      (r.revue?' <span class="tag t-late" title="'+r.revue+' journée(s) à vérifier">⚠</span>':'')+'</td></tr>';
+  }).join('')||'<tr><td colspan="11"><div class="empty">Aucune ligne</div></td></tr>')+
     '<tr class="rep-tot"><td colspan="3">TOTAL ('+rows.length+')</td><td>'+TjT+'</td><td>'+TjA+
-    '</td><td colspan="2"></td><td>'+fr2(hDec(ThN))+' h</td><td>'+fr2(hDec(ThS))+' h</td><td>'+Tret+' min</td><td></td>'+
-    '<td></td><td class="mono">'+fr2(Math.round(Tmt*1000)/1000)+' TND</td></tr>';
+    '</td><td colspan="2"></td><td>'+fr2(hDec(ThN))+' h</td><td>'+fr2(hDec(ThS))+' h</td><td>'+Tret+' min</td><td></td></tr>';
 }
 window.fillRep=fillRep;
 
@@ -218,21 +211,15 @@ function pdfPaie(){
   const rows=repRows();
   const l=aRevoir(REP_FROM,REP_TO);
   if(l.length&&!confirm(l.length+' journée(s) de la période sont à vérifier (pointage incomplet).\n\nCes journées comptent 0 h ou une durée approximative.\n\nÉditer le rapport de paie quand même ?'))return;
-  let tot=0;
-  const data=rows.map(r=>{
-    const p=ENGINE.paie(r.e,r);tot+=p.montant;
-    return [matOf(r.e),(r.e.prenom||'')+' '+(r.e.nom||''),r.e.service||'',r.e.categorie,
-      String(r.jT),String(r.jA),String(r.jC),String(r.jF),fr2(hDec(r.hN))+' h',
-      r.hS?fr2(hDec(r.hS))+' h':'-',r.ret?r.ret+' min':'-',
-      fr2(p.qte)+' '+p.unite,p.taux?fr2(p.taux):'-',p.taux?fr2(p.montant):'-'];
-  });
-  data.push(['','TOTAL ('+rows.length+')','','','','','','','','','','','',fr2(Math.round(tot*1000)/1000)]);
+  const data=rows.map(r=>[matOf(r.e),(r.e.prenom||'')+' '+(r.e.nom||''),r.e.service||'',r.e.categorie,
+    String(r.jT),String(r.jA),String(r.jC),String(r.jF),fr2(hDec(r.hN))+' h',
+    r.hS?fr2(hDec(r.hS))+' h':'-',r.ret?r.ret+' min':'-',
+    r.e.categorie==='Cadre'?(r.jT+' j'):(fr2(hDec(r.hN+r.hS))+' h')]);
   downloadPDF({title:'Rapport de paie',
-    subtitle:'DBS Fashion · du '+fmtDate(REP_FROM)+' au '+fmtDate(REP_TO)+' · quantité et taux propres à chaque fiche',
-    note:mentionRegime()+' · montants indicatifs, sans majoration légale ni retenue'+
-      (l.length?' · ATTENTION : '+l.length+' journée(s) à vérifier':''),
+    subtitle:'DBS Fashion · du '+fmtDate(REP_FROM)+' au '+fmtDate(REP_TO)+' · ouvriers en heures, cadres en jours',
+    note:mentionRegime()+(l.length?' · ATTENTION : '+l.length+' journée(s) à vérifier':''),
     sections:[{title:'Synthèse de la période',
-      columns:['Mat.','Nom','Service','Cat.','J.trav','Abs','Congé','Férié','H.norm.','H.sup.','Retards','Base paie','Taux','Montant'],rows:data}]},
+      columns:['Mat.','Nom','Service','Cat.','J.trav','Abs','Congé','Férié','H.norm.','H.sup.','Retards','Base paie'],rows:data}]},
     'rapport_paie_'+REP_FROM+'_'+REP_TO+'.pdf');
 }
 function absRetSections(a,b){
@@ -263,19 +250,14 @@ function pdfAbsRetards(){
 function csvPaie(){
   const rows=repRows();
   const out=[['Rapport de paie — DBS Fashion'],['Période','du '+REP_FROM,'au '+REP_TO],[mentionRegime()],[],
-    ['Matricule','Nom','Prénom','Service','Atelier','Catégorie','Mode de paie','Base de paie','Quantité paie',
-     'Taux (TND)','Montant estimé (TND)',
+    ['Matricule','Nom','Prénom','Service','Atelier','Catégorie','Base de paie','Quantité paie',
      'Jours travaillés','Jours absents','Jours congé','Jours fériés','Heures normales','Heures sup.','Retards (min)','Nb retards','À vérifier']];
-  let tot=0;
   rows.forEach(r=>{
-    const p=ENGINE.paie(r.e,r);tot+=p.montant;
-    out.push([matOf(r.e),r.e.nom||'',r.e.prenom||'',r.e.service||'',r.e.atelier||'',r.e.categorie,
-      C.MODES_PAIE_LABEL[p.mode],p.mode==='journalier'?'Jours':'Heures',fr2(p.qte),
-      p.taux?fr2(p.taux):'',p.taux?fr2(p.montant):'',
+    const base=r.e.categorie==='Cadre'?'Jours':'Heures';
+    const qty=r.e.categorie==='Cadre'?r.jT:fr2(hDec(r.hN+r.hS));
+    out.push([matOf(r.e),r.e.nom||'',r.e.prenom||'',r.e.service||'',r.e.atelier||'',r.e.categorie,base,qty,
       r.jT,r.jA,r.jC,r.jF,fr2(hDec(r.hN)),fr2(hDec(r.hS)),r.ret,r.rt,r.revue||'']);
   });
-  out.push([]);
-  out.push(['TOTAL',rows.length+' salarié(s)','','','','','','','','',fr2(Math.round(tot*1000)/1000)]);
   csvDL('rapport_paie_'+REP_FROM+'_'+REP_TO+'.csv',out);
   toast('CSV de paie exporté — prêt pour le comptable');
 }
@@ -305,7 +287,6 @@ Object.assign(window,{pdfDailyFor,pdfDaily,pdfPaie,pdfAbsRetards,csvPaie,csvJour
    ============================================================================ */
 VUES.personnel = async function(main){
   main.innerHTML=topbar('Dossiers personnel','Personnel ('+DB.employees.length+')',
-    (can('import')?'<button class="btn btn-ghost" onclick="openImportFiches()">'+I.up+' Importer des fiches</button>':'')+
     (can('edit')?'<button class="btn btn-gold" onclick="openAddEmp()">'+I.plus+' Nouveau salarié</button>':''))+
   '<div class="page view">'+
     '<div class="filterbar">'+
@@ -345,7 +326,7 @@ function fillPers(){
   const tb=$('#persBody');if(!tb)return;
   tb.innerHTML=rows.map(e=>'<tr><td class="mono">'+esc(matOf(e))+'</td><td>'+empCell(e.id,true)+'</td>'+
     '<td>'+esc(e.poste||'—')+(e.aCompleter?' <span class="tag t-late" title="Fiche créée par l’import — à compléter">à compléter</span>':'')+'</td>'+
-    '<td>'+catTag(e.categorie,e)+'</td><td>'+esc(e.service||'—')+'</td><td>'+esc(e.atelier||'—')+'</td>'+
+    '<td>'+catTag(e.categorie)+'</td><td>'+esc(e.service||'—')+'</td><td>'+esc(e.atelier||'—')+'</td>'+
     '<td class="mono">'+(e.naissance?age(e.naissance)+' ans':'—')+'</td><td>'+ancLabel(e.embauche)+'</td>'+
     '<td><span class="tag '+(e.contrat==='CDI'?'t-present':'t-neutral')+'">'+esc(e.contrat||'—')+'</span></td>'+
     '<td><button class="linkish" onclick="openProfile(\''+escJs(e.id)+'\')">Fiche →</button></td></tr>').join('')
@@ -354,34 +335,13 @@ function fillPers(){
 }
 function csvPersonnel(){
   const out=[['Personnel — DBS Fashion',TODAY],[],
-    ['Matricule','Nom','Prénom','Poste','Catégorie','Service','Atelier','Contrat','Embauche','Naissance','Âge','Ancienneté',
-     'Téléphone','Email','Adresse','Mode de paie','Taux horaire','Taux jour','Salaire mensuel','CNSS','Sexe']];
+    ['Matricule','Nom','Prénom','Poste','Catégorie','Service','Atelier','Contrat','Embauche','Naissance','Âge','Ancienneté','Téléphone','Email','Adresse','Salaire','CNSS','Sexe']];
   persRows().forEach(e=>out.push([matOf(e),e.nom||'',e.prenom||'',e.poste||'',e.categorie||'',e.service||'',
     e.atelier||'',e.contrat||'',e.embauche||'',e.naissance||'',e.naissance?age(e.naissance):'',
-    e.embauche?ancLabel(e.embauche):'',e.tel||'',e.email||'',e.adresse||'',
-    C.MODES_PAIE_LABEL[C.modePaie(e)],e.tauxHoraire||'',e.tauxJour||'',e.salaire||'',e.cnss||'',e.sexe==='H'?'H':'F']));
+    e.embauche?ancLabel(e.embauche):'',e.tel||'',e.email||'',e.adresse||'',e.salaire||'',e.cnss||'',e.sexe==='H'?'H':'F']));
   csvDL('personnel_'+TODAY+'.csv',out);toast('Liste du personnel exportée');
 }
 Object.assign(window,{fillPers,csvPersonnel,persRows});
-
-/* ---------------------------------------------------------------- rémunération */
-function tnd(v){return fr2(Math.round((+v||0)*1000)/1000)+' TND'}
-/* Le mode de paie est propre à chaque fiche : les ouvrières sont payées à
-   l'heure suivant la convention, les cadres à la journée travaillée. Le taux
-   de la fiche l'emporte sur le taux par défaut des paramètres. */
-function blocRemuneration(e,sum,ym){
-  const p=ENGINE.paie(e,sum||{});
-  return '<div class="info-block"><h4>Rémunération</h4>'+
-    row('Mode de paie',C.MODES_PAIE_LABEL[p.mode]+(e.modePaie?'':' (déduit de la catégorie)'))+
-    row(p.mode==='journalier'?'Prix d’une journée':'Prix d’une heure',
-        p.taux?tnd(p.taux)+(p.tauxDefaut?' (taux par défaut)':''):'non renseigné')+
-    row('Salaire mensuel de référence',e.salaire?tnd(e.salaire):'')+
-    row('Quantité du mois ('+ym+')',fr2(p.qte)+' '+p.unite+' — '+p.uniteLong)+
-    row('Estimation brute du mois',p.taux?tnd(p.montant):'—')+
-    '<div class="hint" style="margin-top:8px">Estimation indicative : quantité constatée × taux, '+
-    'sans majoration légale des heures supplémentaires ni retenues.</div></div>';
-}
-Object.assign(window,{blocRemuneration,tnd});
 
 /* --------------------------------------------------------------- fiche salarié */
 function openProfile(id){
@@ -401,7 +361,7 @@ function openProfile(id){
         '<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="document.getElementById(\'photoIn\').click()">'+
         (e.photo?'Changer la photo':'Ajouter une photo')+'</button></div>':'')+
       '<div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap">'+
-        '<span class="tag '+(e.contrat==='CDI'?'t-present':'t-neutral')+'">'+esc(e.contrat||'—')+'</span>'+catTag(e.categorie,e)+
+        '<span class="tag '+(e.contrat==='CDI'?'t-present':'t-neutral')+'">'+esc(e.contrat||'—')+'</span>'+catTag(e.categorie)+
         '<span class="tag t-neutral">'+ancLabel(e.embauche)+'</span>'+
         (e.aCompleter?'<span class="tag t-late">Fiche à compléter</span>':'')+'</div></div></div>'+
     '<div class="info-grid">'+
@@ -411,13 +371,12 @@ function openProfile(id){
       '<div class="info-block"><h4>Situation familiale</h4>'+row('Situation',e.famille)+row('Enfants',e.enfants)+
         row('Niveau scolaire',e.niveau)+row('Sexe',e.sexe==='H'?'Homme':'Femme')+'</div>'+
       '<div class="info-block"><h4>Informations professionnelles</h4>'+row('Poste',e.poste)+
-        row('Catégorie',e.categorie||'')+
+        row('Catégorie',(e.categorie||'')+(e.categorie==='Cadre'?' (jour travaillé)':' (heures)'))+
         row('Service',e.service)+row('Atelier',e.atelier)+row('Responsable',e.responsable)+
-        row('Embauche',e.embauche?fmtDate(e.embauche):'')+'</div>'+
+        row('Embauche',e.embauche?fmtDate(e.embauche):'')+row('Salaire',e.salaire?e.salaire+' TND':'')+'</div>'+
       '<div class="info-block"><h4>Synthèse du mois ('+ym+')</h4>'+row('Jours travaillés',sum.jT)+
         row('Heures (norm. + sup.)',fr2(hDec(sum.hN+sum.hS))+' h')+row('Dont heures sup.',fr2(hDec(sum.hS))+' h')+
         row('Retards',sum.rt)+row('Absences',sum.jA)+row('Congés',sum.jC)+'</div>'+
-      blocRemuneration(e,sum,ym)+
     '</div>'+
     '<div class="info-block"><h4>Historique de pointage</h4>'+
       '<div class="range-bar" style="margin:0 0 12px">'+
@@ -503,39 +462,6 @@ function fldSel(lbl,k,val,opts){
   const o2=opts.includes(val)?opts:(val?[val,...opts]:opts);
   return '<div class="info-block" style="margin-bottom:0"><label class="fldlab" for="ed_'+k+'">'+esc(lbl)+'</label>'+
     '<select class="fldin" id="ed_'+k+'">'+o2.map(o=>'<option'+(o===val?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select></div>'}
-/* Bloc de rémunération de l'éditeur de fiche : le mode est explicite et le taux
-   se saisit directement, à l'heure ou à la journée selon la personne. */
-function champsPaie(e){
-  e=e||{};
-  const mode=C.modePaie(e);
-  return '<div class="info-block" style="margin-top:14px;background:var(--surface-2)">'+
-    '<h4>Rémunération</h4>'+
-    '<div class="info-grid" style="gap:14px 16px">'+
-      '<div class="info-block" style="margin-bottom:0"><label class="fldlab" for="ed_modePaie">Payé(e)</label>'+
-        '<select class="fldin" id="ed_modePaie" onchange="majChampsPaie()">'+
-        C.MODES_PAIE.map(m=>'<option value="'+m+'"'+(m===mode?' selected':'')+'>'+esc(C.MODES_PAIE_LABEL[m])+'</option>').join('')+
-        '</select></div>'+
-      fldTxt('Prix d’une heure (TND)','tauxHoraire',e.tauxHoraire,'number')+
-      fldTxt('Prix d’une journée (TND)','tauxJour',e.tauxJour,'number')+
-      fldTxt('Salaire mensuel de référence (TND)','salaire',e.salaire,'number')+
-    '</div>'+
-    '<div class="hint" id="paieHint" style="margin-top:8px"></div></div>';
-}
-function majChampsPaie(){
-  const m=(($('#ed_modePaie')||{}).value)||'horaire';
-  const h=$('#paieHint');
-  const bH=$('#ed_tauxHoraire'),bJ=$('#ed_tauxJour');
-  if(bH&&bH.parentNode)bH.parentNode.style.opacity=(m==='horaire')?'1':'.45';
-  if(bJ&&bJ.parentNode)bJ.parentNode.style.opacity=(m==='journalier')?'1':'.45';
-  const s=S();
-  const dft=(m==='journalier')?(+s.tauxJourDefaut||0):(+s.tauxHoraireDefaut||0);
-  if(h)h.innerHTML=(m==='journalier'
-    ? 'Payé(e) <b>à la journée travaillée</b> : la paie du mois = jours travaillés × prix de la journée.'
-    : 'Payé(e) <b>à l’heure</b> : la paie du mois = heures pointées (normales + supplémentaires) × prix de l’heure.')+
-    ' Laissé vide, c’est le taux par défaut des paramètres qui s’applique'+(dft?' ('+fr2(dft)+' TND)':' — non renseigné pour l’instant')+'.'+
-    ' Le salaire mensuel n’entre pas dans le calcul : c’est une information de dossier.';
-}
-Object.assign(window,{champsPaie,majChampsPaie});
 function openEditEmp(id){
   const e=emp(id);
   openModal('<div class="modal-head">'+I.gear+'<h3>Modifier la fiche — '+esc((e.prenom||'')+' '+(e.nom||''))+'</h3>'+
@@ -547,16 +473,16 @@ function openEditEmp(id){
     fldTxt('Email','email',e.email)+fldSel('Poste','poste',e.poste,POSTES)+
     fldSel('Catégorie','categorie',e.categorie,['Ouvrier','Cadre'])+fldSel('Service','service',e.service,SERVICES)+
     fldSel('Atelier','atelier',e.atelier,ATELIERS)+fldSel('Contrat','contrat',e.contrat,CONTRATS)+
-    fldTxt('Date de naissance','naissance',e.naissance,'date')+
+    fldTxt('Salaire (TND)','salaire',e.salaire,'number')+fldTxt('Date de naissance','naissance',e.naissance,'date')+
     fldTxt('Date d’embauche','embauche',e.embauche,'date')+fldSel('Situation','famille',e.famille,FAMILLES)+
     fldTxt('Enfants','enfants',e.enfants,'number')+fldSel('Niveau scolaire','niveau',e.niveau,NIVEAUX)+
     fldSel('Sexe','sexe',(e.sexe==='H'?'Homme':'Femme'),['Femme','Homme'])+fldTxt('Responsable','responsable',e.responsable)+
     fldTxt('Adresse','adresse',e.adresse)+
-  '</div>'+champsPaie(e)+
-  '<div class="hint" style="margin-top:8px">Un champ vidé est bien effacé (ce n’était pas le cas auparavant).</div></div>'+
+  '</div><div class="hint" style="margin-top:8px">La catégorie détermine la paie : <b>Ouvrier</b> = heures · <b>Cadre</b> = jours travaillés. '+
+  'Modifier la catégorie change rétroactivement tous les rapports non clôturés. '+
+  'Un champ vidé est bien effacé (ce n’était pas le cas auparavant).</div></div>'+
   '<div class="modal-foot"><button class="btn btn-ghost" onclick="openProfile(\''+escJs(id)+'\')">Annuler</button>'+
     '<button class="btn btn-gold" onclick="saveEditEmp(\''+escJs(id)+'\')">'+I.check+' Enregistrer</button></div>','wide');
-  majChampsPaie();
 }
 function saveEditEmp(id){
   const e=emp(id),g=k=>{const el=$('#ed_'+k);return el?el.value:undefined};
@@ -566,10 +492,8 @@ function saveEditEmp(id){
     return;
   }
   ['prenom','nom','matricule','cin','cnss','tel','email','poste','categorie','service','atelier','contrat',
-   'famille','responsable','adresse','niveau','modePaie'].forEach(k=>{const v=g(k);if(v!==undefined)e[k]=v.trim?v.trim():v});
+   'famille','responsable','adresse','niveau'].forEach(k=>{const v=g(k);if(v!==undefined)e[k]=v.trim?v.trim():v});
   e.salaire=+g('salaire')||0;
-  e.tauxHoraire=+g('tauxHoraire')||0;
-  e.tauxJour=+g('tauxJour')||0;
   e.enfants=+g('enfants')||0;
   e.naissance=g('naissance')||'';
   e.embauche=g('embauche')||'';
@@ -593,16 +517,13 @@ function openAddEmp(){
     fldTxt('N° CNSS','cnss','')+fldTxt('Téléphone','tel','')+
     fldSel('Poste','poste',POSTES[0],POSTES)+fldSel('Catégorie','categorie','Ouvrier',['Ouvrier','Cadre'])+
     fldSel('Service','service',SERVICES[0],SERVICES)+fldSel('Atelier','atelier',ATELIERS[0],ATELIERS)+
-    fldSel('Contrat','contrat',CONTRATS[0],CONTRATS)+
+    fldSel('Contrat','contrat',CONTRATS[0],CONTRATS)+fldTxt('Salaire (TND)','salaire','','number')+
     fldTxt('Date de naissance','naissance','','date')+fldTxt('Date d’embauche','embauche',TODAY,'date')+
     fldSel('Situation','famille',FAMILLES[0],FAMILLES)+fldTxt('Enfants','enfants','0','number')+
     fldSel('Sexe','sexe','Femme',['Femme','Homme'])+fldTxt('Email','email','')+
-  '</div>'+champsPaie({})+
-  '<div class="hint" style="margin-top:8px">Le <b>matricule</b> doit être celui du badge sur la pointeuse : c’est lui qui permet de rapprocher les pointages importés. '+
-  'Pour créer beaucoup de fiches d’un coup, utilisez plutôt <b>Importer des fiches</b> depuis la liste du personnel.</div></div>'+
+  '</div><div class="hint" style="margin-top:8px">Le <b>matricule</b> doit être celui du badge sur la pointeuse : c’est lui qui permet de rapprocher les pointages importés.</div></div>'+
   '<div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Annuler</button>'+
     '<button class="btn btn-gold" onclick="saveNewEmp()">'+I.check+' Créer la fiche</button></div>','wide');
-  majChampsPaie();
 }
 async function saveNewEmp(){
   const g=k=>{const el=$('#ed_'+k);return el?el.value.trim():''};
@@ -615,7 +536,6 @@ async function saveNewEmp(){
     poste:g('poste'),categorie:g('categorie'),service:g('service'),atelier:g('atelier'),contrat:g('contrat'),
     embauche:g('embauche')||TODAY,naissance:g('naissance'),famille:g('famille'),enfants:+g('enfants')||0,
     niveau:'',email:g('email'),tel:g('tel'),adresse:'',salaire:+g('salaire')||0,
-    modePaie:g('modePaie')||undefined,tauxHoraire:+g('tauxHoraire')||0,tauxJour:+g('tauxJour')||0,
     sexe:g('sexe')==='Homme'?'H':'F',responsable:'',actif:true});
   if(await saveNow()){closeModal();await charger();await go('personnel');toast('Fiche créée pour '+g('prenom')+' '+g('nom'))}
 }
@@ -943,19 +863,16 @@ Object.assign(window,{fillConges,validConge,refuseConge,delConge,openConge,saveC
 function computeAlerts(){
   const al=[];
   const dm=[];
-  const [mA,mB]=monthBounds(TODAY.slice(0,7));
   DB.employees.forEach(e=>{
     if(e.naissance){const b=new Date(e.naissance);
       if(!isNaN(b)&&b.getMonth()===today.getMonth())
         al.push({type:'Anniversaire',ic:I.cake,col:'var(--leave)',bg:'var(--leave-bg)',
-          txt:(e.prenom||'')+' '+(e.nom||''),sub:'Anniversaire le '+pad(b.getDate())+'/'+pad(b.getMonth()+1),when:'Ce mois',id:e.id,
-          act:"openProfile('"+escJs(e.id)+"')",actLbl:'Ouvrir la fiche'});}
+          txt:(e.prenom||'')+' '+(e.nom||''),sub:'Anniversaire le '+pad(b.getDate())+'/'+pad(b.getMonth()+1),when:'Ce mois',id:e.id});}
     if(e.contrat&&e.contrat!=='CDI'&&e.embauche&&anciennete(e.embauche)<1.2){
       const fin=new Date(e.embauche);fin.setMonth(fin.getMonth()+(String(e.contrat).includes('IVP')?12:6));
       const dl=Math.round((fin-today)/864e5);
       if(dl>0&&dl<60)al.push({type:'Fin de période',ic:I.briefcase,col:'var(--late)',bg:'var(--late-bg)',
-        txt:(e.prenom||'')+' '+(e.nom||''),sub:'Fin '+e.contrat+' dans '+dl+' j',when:dl+' j',id:e.id,
-        act:"openProfile('"+escJs(e.id)+"')",actLbl:'Ouvrir la fiche'});}
+        txt:(e.prenom||'')+' '+(e.nom||''),sub:'Fin '+e.contrat+' dans '+dl+' j',when:dl+' j',id:e.id});}
     if(e.aCompleter)dm.push(e);
   });
   /* O(E) au lieu de O(E×D) : l'ancien code refiltrait tous les documents pour
@@ -964,52 +881,26 @@ function computeAlerts(){
   DB.documents.forEach(d=>{if(String(d.type||'').includes('Contrat'))avecContrat.add(d.id)});
   DB.employees.forEach(e=>{if(!avecContrat.has(e.id))
     al.push({type:'Document manquant',ic:I.warn,col:'var(--absent)',bg:'var(--absent-bg)',
-      txt:(e.prenom||'')+' '+(e.nom||''),sub:'Contrat absent du dossier',when:'À régulariser',id:e.id,
-      act:"openProfile('"+escJs(e.id)+"')",actLbl:'Ouvrir le dossier'})});
+      txt:(e.prenom||'')+' '+(e.nom||''),sub:'Contrat absent du dossier',when:'À régulariser',id:e.id})});
   if(dm.length)al.unshift({type:'Fiches incomplètes',ic:I.users,col:'var(--late)',bg:'var(--late-bg)',
-    txt:dm.length+' fiche(s) créée(s) par l’import',sub:'Poste, salaire, dates à compléter',when:'À compléter',
-    act:"allerFichesIncompletes()",actLbl:'Voir les fiches à compléter'});
+    txt:dm.length+' fiche(s) créée(s) par l’import',sub:'Poste, salaire, dates à compléter',when:'À compléter'});
   const revue=aRevoirCount();
   if(revue)al.unshift({type:'Pointage à vérifier',ic:I.warn,col:'var(--absent)',bg:'var(--absent-bg)',
-    txt:revue+' journée(s) incomplètes ce mois',sub:'Sortie manquante ou badges impairs — heures faussées',when:'Avant la paie',
-    act:"openRevue('"+mA+"','"+mB+"')",actLbl:'Voir et corriger la liste'});
+    txt:revue+' journée(s) incomplètes ce mois',sub:'Sortie manquante ou badges impairs — heures faussées',when:'Avant la paie'});
   const nonTraites=(DB.signalements||[]).filter(s=>!s.traite).length;
   if(nonTraites)al.unshift({type:'Signalements salariés',ic:I.bell,col:'var(--leave)',bg:'var(--leave-bg)',
-    txt:nonTraites+' signalement(s) non traité(s)',sub:'Erreurs de pointage remontées depuis l’espace salarié',when:'À traiter',
-    act:"allerSignalements()",actLbl:'Traiter les signalements'});
+    txt:nonTraites+' signalement(s) non traité(s)',sub:'Erreurs de pointage remontées depuis l’espace salarié',when:'À traiter'});
   DB.absences.filter(a=>a.statut==='injustifiée'&&a.debut===TODAY).forEach(a=>
     al.push({type:'Absence injustifiée',ic:I.warn,col:'var(--absent)',bg:'var(--absent-bg)',
-      txt:empName(a.id),sub:'Non signalée aujourd’hui',when:'Aujourd’hui',id:a.id,
-      act:"allerAuJour('"+TODAY+"','"+escJs(a.id)+"')",actLbl:'Aller à la feuille du jour'}));
+      txt:empName(a.id),sub:'Non signalée aujourd’hui',when:'Aujourd’hui',id:a.id}));
   return al;
 }
 function alertCount(){return computeAlerts().length}
-/* Chaque alerte est une porte d'entrée vers la correction : un clic ouvre la
-   fiche, la liste des journées à vérifier ou la feuille de pointage du jour
-   concerné. Avant, l'alerte se contentait de décrire le problème et il fallait
-   retrouver soi-même la personne et la date. */
 function alertRow(a){
-  const dedans='<div class="ai" style="background:'+a.bg+';color:'+a.col+'">'+a.ic+'</div>'+
+  return '<div class="alert-row"><div class="ai" style="background:'+a.bg+';color:'+a.col+'">'+a.ic+'</div>'+
     '<div class="txt"><b>'+esc(a.txt)+' — '+esc(a.type)+'</b><small>'+esc(a.sub)+'</small></div>'+
-    '<div class="when">'+esc(a.when)+'</div>';
-  if(!a.act) return '<div class="alert-row">'+dedans+'</div>';
-  return '<div class="alert-row alert-clic" role="button" tabindex="0" title="'+esc(a.actLbl||'Corriger')+'" '+
-    'onclick="closeModal();'+esc(a.act)+'" '+
-    'onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.click()}">'+
-    dedans+'<span class="alert-go" aria-hidden="true">'+esc(a.actLbl||'Corriger')+' →</span></div>';
+    '<div class="when">'+esc(a.when)+'</div></div>';
 }
-/* Raccourcis de navigation utilisés par les alertes */
-async function allerFichesIncompletes(){
-  await go('personnel');
-  const s=document.getElementById('pIncomplet');
-  if(s){s.value='1';fillPers()}
-}
-async function allerSignalements(){
-  await go('parametres');
-  const t=document.getElementById('sigBody');
-  if(t&&t.scrollIntoView)t.scrollIntoView({block:'center'});
-}
-Object.assign(window,{allerFichesIncompletes,allerSignalements});
 VUES.alertes = async function(main){
   const al=computeAlerts(),g={};al.forEach(a=>(g[a.type]=g[a.type]||[]).push(a));
   main.innerHTML=topbar('Notifications','Alertes ('+al.length+')')+'<div class="page view">'+

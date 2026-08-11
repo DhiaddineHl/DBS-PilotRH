@@ -28,7 +28,6 @@ from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 import httpx
 import mdb_import
-import fiches_import
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("pilotrh")
@@ -171,9 +170,7 @@ def default_settings():
     return {"modeHS": "fin", "jours": jours, "periodes": [],
             "arrondi": 0, "arrondiSens": "proche", "arrondiPortee": "jour",
             "feriesActifs": True, "feriesFixes": mdb_import.FERIES_FIXES,
-            "feries": [], "clotures": [],
-            # taux par défaut de la convention : repli quand la fiche n'en a pas
-            "tauxHoraireDefaut": 0, "tauxJourDefaut": 0}
+            "feries": [], "clotures": []}
 
 mdb_import.default_settings = default_settings
 
@@ -716,76 +713,6 @@ async def api_employee_delete(req: Request):
     audit(qui, "Employée supprimée (démission) · %s %s [badge %s]"
           % (target.get("prenom", ""), target.get("nom", ""), badge or "?"), role, _ip(req))
     return {"ok": True, "exclus": sorted(exclus)}
-
-# ---------------------------------------------------------------------------
-# Fiches du personnel — modèle à remplir et import en masse
-# ---------------------------------------------------------------------------
-@app.get("/api/employees/modele.xlsx")
-def api_modele_fiches(request: Request, actuels: int = 0):
-    """Classeur à remplir. actuels=1 : préremplit avec les fiches existantes,
-    pour corriger en masse plutôt que tout retaper."""
-    u = _current_user(request)
-    if not u or u.get("role") not in ("admin", "rh"):
-        return erreur("Réservé aux RH", 403)
-    emps = get_meta()["employees"] if actuels else None
-    try:
-        data = fiches_import.modele_xlsx(emps)
-    except Exception as e:
-        log.exception("modèle de fiches")
-        return erreur("Génération du modèle impossible : %s" % e, 500)
-    nom = "PilotRH_fiches_actuelles.xlsx" if actuels else "PilotRH_modele_fiches.xlsx"
-    return Response(content=data,
-                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    headers={"Content-Disposition": 'attachment; filename="%s"' % nom})
-
-
-@app.post("/api/employees/import-fiches")
-async def api_import_fiches(req: Request,
-                            file: UploadFile = File(...),
-                            appliquer: int = Form(0)):
-    """Deux temps : appliquer=0 renvoie l'aperçu ligne par ligne sans rien
-    écrire, appliquer=1 écrit. Aucun pointage n'est touché, aucune fiche
-    supprimée."""
-    u = _current_user(req)
-    if not u or u.get("role") not in ("admin", "rh"):
-        return erreur("Réservé aux RH", 403)
-    try:
-        data = await _lire_upload(file, max_mo=12)
-    except ValueError as e:
-        return erreur(str(e), 413)
-    qui, role = _acteur(req)
-
-    def _travail():
-        lignes, inconnues = fiches_import.lire(file.filename or "", data)
-        if not lignes:
-            raise ValueError("Aucune ligne à traiter dans ce fichier.")
-        if appliquer:
-            with _WLOCK:
-                m = get_meta()
-                rap = fiches_import.analyser(m, lignes)
-                res = fiches_import.appliquer(m, rap)
-                set_meta({"employees": m["employees"]})
-            ensure_tokens_persist()      # les fiches créées reçoivent leur accès QR
-            rap["applique"] = res
-        else:
-            rap = fiches_import.analyser(get_meta(), lignes)
-        rap["inconnues"] = inconnues
-        rap["fichier"] = file.filename or ""
-        return rap
-
-    try:
-        rap = await run_in_threadpool(_travail)
-    except ValueError as e:
-        return erreur(str(e))
-    except Exception as e:
-        log.exception("import de fiches")
-        return erreur("Lecture impossible : %s" % e)
-    if appliquer:
-        a = rap.get("applique") or {}
-        audit(qui, "Import de fiches (%d créée(s), %d mise(s) à jour) depuis %s"
-              % (a.get("crees", 0), a.get("majs", 0), rap.get("fichier") or "?"), role, _ip(req))
-    return rap
-
 
 # ---------------------------------------------------------------------------
 # Pointages
