@@ -423,6 +423,9 @@ FAUX_RESEAU = r"""
         return err("L’assistant IA et la lecture de documents passent par le serveur : indisponibles dans cette démonstration.", 503);
       case '/api/import-mdb':
         return err("La lecture d’un fichier .mdb est faite par le serveur : indisponible dans cette démonstration. L’import CSV, lui, fonctionne.", 503);
+      case '/api/employees/modele.xlsx':
+      case '/api/employees/import-fiches':
+        return err("Le classeur Excel des fiches est construit et relu par le serveur : indisponible dans cette démonstration hors ligne. Sur votre installation, le bouton télécharge un modèle prérempli avec vos fiches.", 503);
       case '/api/sync': return err("Aucune pointeuse joignable depuis cette démonstration.", 503);
       case '/api/logout': return ok();
       default:

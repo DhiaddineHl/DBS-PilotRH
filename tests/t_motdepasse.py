@@ -86,6 +86,42 @@ A.ensure_tokens_persist()
 e=A.get_meta()['employees'][0]
 t("le code a 4 chiffres est conserve", e['pin'], '1234')
 t("le jeton existant est conserve", e['token'], 'JETON-V2')
+A.ensure_tokens_persist(); A.ensure_tokens_persist()
+e=A.get_meta()['employees'][0]
+tv("plusieurs redemarrages ne regenerent rien",
+   e['pin']=='1234' and e['token']=='JETON-V2')
+
+print("\n--- une carte QR deja distribuee ouvre encore l'espace salarie ---")
+# C'est LE test qui compte pour les 97 cartes deja en circulation : le jeton de la
+# carte et le code a 4 chiffres doivent suffire, sans reimpression.
+A.set_meta({'employees':[{'id':'E001','matricule':'195','prenom':'A','nom':'Aa',
+                          'token':'JETON-V2','pin':'1234','sexe':'F','categorie':'Ouvrier'}],
+            'settings':A.default_settings()})
+class ReqMe:
+    client=type('c',(),{'host':'10.9.9.9'})()
+    def __init__(self,b): self._b=b; self.cookies={}; self.headers={}
+    async def json(self): return self._b
+def me(body):
+    A._PIN_FAILS.clear()
+    return asyncio.get_event_loop().run_until_complete(A.api_me_post(ReqMe(body)))
+rep=me({'t':'JETON-V2','pin':'1234'})
+tv("carte v2 + code a 4 chiffres : acces accorde", isinstance(rep,dict) and bool(rep.get('matricule')),
+   getattr(rep,'status_code',rep))
+t("c'est bien la bonne salariee", rep.get('matricule') if isinstance(rep,dict) else None, '195')
+t("mauvais code refuse", getattr(me({'t':'JETON-V2','pin':'9999'}),'status_code',None), 401)
+t("jeton inconnu refuse", getattr(me({'t':'JETON-INEXISTANT','pin':'1234'}),'status_code',None), 401)
+t("sans code : on demande le code", getattr(me({'t':'JETON-V2'}),'status_code',None), 401)
+rep2=me({'t':'JETON-V2','pin':'1234'})
+tv("le refus precedent ne bloque pas la vraie salariee", isinstance(rep2,dict) and bool(rep2.get('matricule')))
+# ancienne forme GET, encore appelee par une page mise en cache sur un telephone
+g=A.api_me(t='JETON-V2', pin='1234')
+t("l'ancien appel GET repond sans casser", getattr(g,'status_code',None), 401)
+tv("il demande simplement de repasser en POST", (getattr(g,'content',{}) or {}).get('post') is True)
+src=open(os.path.join(os.path.dirname(ICI),'app.py'),encoding='utf-8').read()
+tv("l'adresse imprimee sur les cartes est inchangee (/moi?t=JETON)", '"%s/moi?t=%s"' in src)
+moi=open(os.path.join(os.path.dirname(ICI),'static','moi.html'),encoding='utf-8').read()
+tv("le jeton est encore lu depuis l'adresse (le QR fonctionne)", "params.get('t')" in moi)
+tv("le champ de code accepte 4 chiffres", 'maxlength="6"' in moi and 'minlength' not in moi)
 
 print("\n=========================")
 print("  %d réussis · %d échoués"%(ok,ko))

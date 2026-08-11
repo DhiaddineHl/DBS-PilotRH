@@ -272,6 +272,29 @@ tv("/api/me/flag public", A._est_public('/api/me/flag'))
 tv("/photos n'est plus public", not A._est_public('/photos/E001.jpg'))
 tv("/assets/ public", A._est_public('/assets/pilotrh-core.js'))
 tv("/api/health public et minimal", A._est_public('/api/health') and A.health()=={'ok':True})
+tv("/sw.js public (l'espace salarie doit s'installer sans connexion RH)", A._est_public('/sw.js'))
+tv("/manifest.webmanifest public", A._est_public('/manifest.webmanifest'))
+
+print("\n--- application installable : portee du service worker ---")
+# Un service worker servi depuis /assets/ n'a autorite que sur /assets/ : il
+# n'interceptait donc jamais /moi. Il doit etre servi depuis la racine.
+rep = A.service_worker()
+tv("le service worker est servi depuis la racine", getattr(rep,'status_code',200)==200)
+tv("en-tete Service-Worker-Allowed presente", getattr(rep,'headers',{}).get('Service-Worker-Allowed')=='/')
+tv("le manifeste est servi depuis la racine", getattr(A.web_manifest(),'status_code',200)==200)
+sw = open(os.path.join(os.path.dirname(ICI),'static','assets','sw.js'),encoding='utf-8').read()
+tv("le service worker ne met jamais /api/ en cache", "startsWith('/api/')" in sw)
+moi = open(os.path.join(os.path.dirname(ICI),'static','moi.html'),encoding='utf-8').read()
+tv("moi.html enregistre /sw.js et non /assets/sw.js", "register('/sw.js'" in moi)
+tv("l'ancien enregistrement sous /assets/ est supprime", "unregister()" in moi)
+tv("le manifeste est reference depuis la racine", 'href="/manifest.webmanifest"' in moi)
+man = json.loads(open(os.path.join(os.path.dirname(ICI),'static','assets','manifest.webmanifest'),encoding='utf-8').read())
+t("portee du manifeste", man['scope'], '/')
+t("demarrage sur l'espace salarie", man['start_url'], '/moi')
+t("affichage plein ecran", man['display'], 'standalone')
+tv("icones 192 et 512 fournies (exigence Android)",
+   {i.get('sizes') for i in man['icons']} >= {'192x192','512x512'})
+tv("icone maskable fournie", any('maskable' in (i.get('purpose') or '') for i in man['icons']))
 tv("/api/health/detail protege", not A._est_public('/api/health/detail'))
 
 print("\n--- statistiques d'absenteisme reelles ---")
@@ -283,6 +306,82 @@ A.write_pointages(rows)
 stats=A.api_stats_abs(mois=1)
 t("taux calcule sur les donnees", stats[-1]['taux'], 20.0)
 t("nombre de jours pris en compte", stats[-1]['jours'], 10)
+
+print("\n--- modèle et import des fiches du personnel ---")
+A.set_state({'employees':[{'id':'E001','matricule':'101','nom':'Nom1','prenom':'A',
+                           'categorie':'Ouvrier','sexe':'F'}],
+             'settings':A.default_settings(),'pointages':{}},remplacer=True)
+A.write_pointages([A._rec_row('2026-08-03','E001',
+                              {'statut':'present','entree':'07:30','sortie':'16:30'},'T','import')])
+
+class ReqS(Req):
+    """Requête authentifiée en administrateur."""
+    def __init__(self): super().__init__({'pilotrh_sess':tok})
+
+class ReqLect(Req):
+    """Requête d'un compte en lecture seule."""
+    def __init__(self):
+        super().__init__({'pilotrh_sess':A._sign_session(
+            {'login':'obs','role':'lecture','nom':'Observateur'})})
+
+rep=A.api_modele_fiches(ReqS(), actuels=0)
+tv("le modèle est un classeur xlsx", getattr(rep,'content',b'')[:2]==b'PK')
+tv("nom de fichier proposé",
+   'PilotRH_modele_fiches.xlsx' in str(getattr(rep,'headers',{})))
+rep2=A.api_modele_fiches(ReqS(), actuels=1)
+tv("le classeur prérempli est produit", len(getattr(rep2,'content',b''))>2000)
+t("modèle refusé à un compte en lecture seule",
+  getattr(A.api_modele_fiches(ReqLect()),'status_code',None), 403)
+
+class Up:
+    """Doublure d'UploadFile : renvoie le contenu en un seul morceau."""
+    def __init__(self,nom,data): self.filename=nom; self._d=data; self._lu=False
+    async def read(self,n=None):
+        if self._lu: return b''
+        self._lu=True; return self._d
+
+CSV_FICHES=('Matricule;Nom;Prénom;Salaire mensuel (TND)\r\n'
+            '101;Nom1;A;600\r\n'
+            '777;Nouvelle;Ouvriere;500\r\n'
+            ';Sans matricule;;\r\n').encode('utf-8')
+
+async def _apercu():
+    return await A.api_import_fiches(ReqS(), Up('f.csv',CSV_FICHES), 0)
+rap=asyncio.get_event_loop().run_until_complete(_apercu())
+t("aperçu : 1 création, 1 mise à jour, 1 erreur",
+  [rap['resume']['creation'],rap['resume']['maj'],rap['resume']['erreur']], [1,1,1])
+t("l'aperçu n'écrit rien", len(A.get_meta()['employees']), 1)
+
+async def _appliquer():
+    return await A.api_import_fiches(ReqS(), Up('f.csv',CSV_FICHES), 1)
+rap=asyncio.get_event_loop().run_until_complete(_appliquer())
+t("application : 1 créée, 1 mise à jour",
+  [rap['applique']['crees'],rap['applique']['majs']], [1,1])
+emps={e['matricule']:e for e in A.get_meta()['employees']}
+t("effectif après import", sorted(emps), ['101','777'])
+t("salaire mis à jour", emps['101']['salaire'], 600)
+t("nom conservé (cellule non vide, valeur identique)", emps['101']['nom'], 'Nom1')
+tv("la nouvelle fiche reçoit un accès QR",
+   bool(emps['777'].get('token')) and bool(emps['777'].get('pin')))
+t("les pointages existants sont intacts",
+  A.get_pointages('2026-08-03','2026-08-03')['2026-08-03']['E001']['entree'], '07:30')
+tv("l'import est journalisé",
+   any('Import de fiches' in r['action'] for r in A.api_audit(limit=20)))
+
+async def _refus():
+    return await A.api_import_fiches(ReqLect(), Up('f.csv',CSV_FICHES), 1)
+t("import refusé à un compte en lecture seule",
+  getattr(asyncio.get_event_loop().run_until_complete(_refus()),'status_code',None), 403)
+
+async def _vide():
+    return await A.api_import_fiches(ReqS(), Up('f.csv',b'Matricule;Nom\r\n'), 0)
+t("fichier sans ligne de données refusé proprement",
+  getattr(asyncio.get_event_loop().run_until_complete(_vide()),'status_code',None), 400)
+
+async def _illisible():
+    return await A.api_import_fiches(ReqS(), Up('f.csv',b'Colonne A;Colonne B\r\n1;2\r\n'), 0)
+t("fichier sans colonne Matricule refusé",
+  getattr(asyncio.get_event_loop().run_until_complete(_illisible()),'status_code',None), 400)
 
 print("\n=========================")
 print("  %d réussis · %d échoués" % (ok,ko))

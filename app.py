@@ -28,12 +28,33 @@ from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 import httpx
 import mdb_import
+import fiches_import
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("pilotrh")
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.environ.get("PILOTRH_DATA", os.path.join(BASE, "data"))
+
+
+def _dossier_donnees():
+    """Où écrire la base, les photos, les documents et les sauvegardes.
+
+    Ordre de priorité :
+      1. PILOTRH_DATA, si vous l'avez réglée vous-même ;
+      2. RAILWAY_VOLUME_MOUNT_PATH — le chemin où Railway monte réellement le
+         volume. Sans cette ligne, un volume monté ailleurs que sur /app/data
+         était ignoré : l'application écrivait dans le conteneur et TOUT était
+         perdu au redéploiement suivant, sans le moindre avertissement ;
+      3. ./data, à côté du code (installation locale sur PC).
+    """
+    for cle in ("PILOTRH_DATA", "RAILWAY_VOLUME_MOUNT_PATH"):
+        v = (os.environ.get(cle) or "").strip()
+        if v:
+            return v
+    return os.path.join(BASE, "data")
+
+
+DATA_DIR = _dossier_donnees()
 PHOTO_DIR = os.path.join(DATA_DIR, "photos")
 DOC_DIR   = os.path.join(DATA_DIR, "docs")
 BACKUP_DIR = os.path.join(DATA_DIR, "backups")
@@ -54,8 +75,67 @@ MAX_UPLOAD_MB = int(os.environ.get("PILOTRH_MAX_UPLOAD_MB", "40"))
 BACKUP_KEEP   = int(os.environ.get("PILOTRH_BACKUP_KEEP", "30"))
 BACKUP_HOURS  = float(os.environ.get("PILOTRH_BACKUP_HOURS", "24"))
 
-for d in (DATA_DIR, PHOTO_DIR, DOC_DIR, BACKUP_DIR):
-    os.makedirs(d, exist_ok=True)
+def _preparer_dossiers():
+    """Crée les dossiers de données et vérifie qu'on peut vraiment y écrire.
+
+    Sur Railway, le volume est monté AU DÉMARRAGE, par-dessus le dossier que
+    l'image avait préparé — et il appartient à root. Un conteneur qui tourne en
+    utilisateur non privilégié se heurtait alors à « Permission denied » au
+    premier import du module, avec une trace Python de trente lignes qui ne dit
+    pas quoi faire. On échoue toujours (mieux vaut ça qu'écrire dans un dossier
+    éphémère et perdre les données en silence), mais en expliquant précisément.
+    """
+    for d in (DATA_DIR, PHOTO_DIR, DOC_DIR, BACKUP_DIR):
+        try:
+            os.makedirs(d, exist_ok=True)
+        except PermissionError:
+            raise RuntimeError(_message_droits(d, "créer le dossier"))
+        except OSError as e:
+            raise RuntimeError("Impossible de créer %s : %s" % (d, e))
+    temoin = os.path.join(DATA_DIR, ".ecriture_test")
+    try:
+        with open(temoin, "w") as f:
+            f.write("ok")
+        os.remove(temoin)
+    except OSError:
+        raise RuntimeError(_message_droits(DATA_DIR, "écrire dans le dossier"))
+
+
+def _message_droits(chemin, quoi):
+    par = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH") or ""
+    lignes = [
+        "",
+        "PilotRH ne peut pas %s de données : %s" % (quoi, chemin),
+        "",
+        "Le dossier existe mais n'appartient pas à l'utilisateur qui fait tourner",
+        "l'application. Sur Railway, c'est le cas classique : le volume est monté au",
+        "démarrage, il appartient à root, et il recouvre le dossier préparé par l'image.",
+        "",
+        "Ce qu'il faut vérifier, dans l'ordre :",
+        "",
+        "  1. Le point de montage du volume (Railway → votre service → Volume) :",
+        "     il doit être exactement  /app/data",
+    ]
+    if par and os.path.normpath(par) != os.path.normpath(DATA_DIR):
+        lignes += [
+            "     Railway annonce le volume sur : %s" % par,
+            "     et PilotRH écrit dans        : %s" % DATA_DIR,
+            "     → retirez la variable PILOTRH_DATA, ou donnez-lui la même valeur.",
+        ]
+    lignes += [
+        "  2. Que vous utilisez bien le Dockerfile de cette version : son script de",
+        "     démarrage (docker-entrypoint.sh) donne les droits sur le volume avant",
+        "     de lâcher les privilèges. Une image construite depuis l'ancienne version",
+        "     échoue ici, c'est attendu — reconstruisez.",
+        "  3. En dépannage immédiat : réglez la variable  PILOTRH_ROOT=1  pour laisser",
+        "     l'application tourner en root. Cela débloque tout de suite, mais c'est",
+        "     moins sûr : à n'utiliser que le temps de corriger le point 2.",
+        "",
+    ]
+    return "\n".join(lignes)
+
+
+_preparer_dossiers()
 
 try:
     from zoneinfo import ZoneInfo
@@ -170,7 +250,9 @@ def default_settings():
     return {"modeHS": "fin", "jours": jours, "periodes": [],
             "arrondi": 0, "arrondiSens": "proche", "arrondiPortee": "jour",
             "feriesActifs": True, "feriesFixes": mdb_import.FERIES_FIXES,
-            "feries": [], "clotures": []}
+            "feries": [], "clotures": [],
+            # taux par défaut de la convention : repli quand la fiche n'en a pas
+            "tauxHoraireDefaut": 0, "tauxJourDefaut": 0}
 
 mdb_import.default_settings = default_settings
 
@@ -586,7 +668,12 @@ def _ip(request):
             or (request.client.host if request.client else ""))
 
 PUBLIC_EXACT = {"/moi", "/moi.html", "/login", "/login.html", "/api/login",
-                "/api/logout", "/api/me", "/api/me/flag", "/api/health", "/favicon.ico"}
+                "/api/logout", "/api/me", "/api/me/flag", "/api/health", "/favicon.ico",
+                # le service worker et le manifeste doivent être servis à la RACINE :
+                # un service worker déposé sous /assets/ n'a autorité que sur /assets/,
+                # donc il n'interceptait jamais /moi — l'espace salarié n'était en
+                # réalité ni installable ni utilisable hors ligne.
+                "/sw.js", "/manifest.webmanifest"}
 PUBLIC_PREFIXES = ("/assets/",)
 ADMIN_ONLY = ("/api/users",)
 RH_PLUS = ("/api/employee/delete", "/api/import-mdb", "/api/punches", "/api/sync",
@@ -713,6 +800,76 @@ async def api_employee_delete(req: Request):
     audit(qui, "Employée supprimée (démission) · %s %s [badge %s]"
           % (target.get("prenom", ""), target.get("nom", ""), badge or "?"), role, _ip(req))
     return {"ok": True, "exclus": sorted(exclus)}
+
+# ---------------------------------------------------------------------------
+# Fiches du personnel — modèle à remplir et import en masse
+# ---------------------------------------------------------------------------
+@app.get("/api/employees/modele.xlsx")
+def api_modele_fiches(request: Request, actuels: int = 0):
+    """Classeur à remplir. actuels=1 : préremplit avec les fiches existantes,
+    pour corriger en masse plutôt que tout retaper."""
+    u = _current_user(request)
+    if not u or u.get("role") not in ("admin", "rh"):
+        return erreur("Réservé aux RH", 403)
+    emps = get_meta()["employees"] if actuels else None
+    try:
+        data = fiches_import.modele_xlsx(emps)
+    except Exception as e:
+        log.exception("modèle de fiches")
+        return erreur("Génération du modèle impossible : %s" % e, 500)
+    nom = "PilotRH_fiches_actuelles.xlsx" if actuels else "PilotRH_modele_fiches.xlsx"
+    return Response(content=data,
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": 'attachment; filename="%s"' % nom})
+
+
+@app.post("/api/employees/import-fiches")
+async def api_import_fiches(req: Request,
+                            file: UploadFile = File(...),
+                            appliquer: int = Form(0)):
+    """Deux temps : appliquer=0 renvoie l'aperçu ligne par ligne sans rien
+    écrire, appliquer=1 écrit. Aucun pointage n'est touché, aucune fiche
+    supprimée."""
+    u = _current_user(req)
+    if not u or u.get("role") not in ("admin", "rh"):
+        return erreur("Réservé aux RH", 403)
+    try:
+        data = await _lire_upload(file, max_mo=12)
+    except ValueError as e:
+        return erreur(str(e), 413)
+    qui, role = _acteur(req)
+
+    def _travail():
+        lignes, inconnues = fiches_import.lire(file.filename or "", data)
+        if not lignes:
+            raise ValueError("Aucune ligne à traiter dans ce fichier.")
+        if appliquer:
+            with _WLOCK:
+                m = get_meta()
+                rap = fiches_import.analyser(m, lignes)
+                res = fiches_import.appliquer(m, rap)
+                set_meta({"employees": m["employees"]})
+            ensure_tokens_persist()      # les fiches créées reçoivent leur accès QR
+            rap["applique"] = res
+        else:
+            rap = fiches_import.analyser(get_meta(), lignes)
+        rap["inconnues"] = inconnues
+        rap["fichier"] = file.filename or ""
+        return rap
+
+    try:
+        rap = await run_in_threadpool(_travail)
+    except ValueError as e:
+        return erreur(str(e))
+    except Exception as e:
+        log.exception("import de fiches")
+        return erreur("Lecture impossible : %s" % e)
+    if appliquer:
+        a = rap.get("applique") or {}
+        audit(qui, "Import de fiches (%d créée(s), %d mise(s) à jour) depuis %s"
+              % (a.get("crees", 0), a.get("majs", 0), rap.get("fichier") or "?"), role, _ip(req))
+    return rap
+
 
 # ---------------------------------------------------------------------------
 # Pointages
@@ -1349,6 +1506,27 @@ async def api_me_flag(req: Request):
 @app.get("/moi")
 def page_salarie():
     return FileResponse(os.path.join(BASE, "static", "moi.html"))
+
+
+# ---------------------------------------------------------------------------
+# Application installable : le service worker doit être servi depuis la racine
+# ---------------------------------------------------------------------------
+# La portée d'un service worker est limitée au dossier d'où il est servi. Déposé
+# sous /assets/, il ne contrôlait que /assets/ : la navigation vers /moi n'était
+# jamais interceptée, l'espace salarié ne démarrait pas hors ligne et Android
+# refusait souvent de proposer « Ajouter à l'écran d'accueil ». On le sert donc
+# depuis / (et on garde l'en-tête Service-Worker-Allowed par sécurité).
+@app.get("/sw.js")
+def service_worker():
+    return FileResponse(os.path.join(ASSETS, "sw.js"), media_type="text/javascript",
+                        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"})
+
+
+@app.get("/manifest.webmanifest")
+def web_manifest():
+    return FileResponse(os.path.join(ASSETS, "manifest.webmanifest"),
+                        media_type="application/manifest+json",
+                        headers={"Cache-Control": "no-cache"})
 
 PUBLIC_URL = os.environ.get("PILOTRH_PUBLIC_URL", "").rstrip("/")
 

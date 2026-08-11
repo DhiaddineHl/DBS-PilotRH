@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Pas de barre de titre : l'espace salarié occupe tout l'écran, comme une
+         application native. Le menu est accessible par le bouton ⋯. -->
+    <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:colorPrimary">#1a1d29</item>
+        <item name="android:colorPrimaryDark">#1a1d29</item>
+        <item name="android:colorAccent">#a3822f</item>
+        <item name="android:statusBarColor">#1a1d29</item>
+        <item name="android:windowBackground">#faf8f3</item>
+    </style>
+</resources>

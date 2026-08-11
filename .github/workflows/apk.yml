@@ -1,0 +1,77 @@
+# Construit l'application Android et met le fichier .apk à télécharger.
+#
+# À utiliser ainsi : sur GitHub, onglet « Actions » → « Application Android (APK) »
+# → bouton « Run workflow ». Renseignez le domaine de votre serveur, lancez, et
+# récupérez l'APK dans les « Artifacts » au bas de la page, 3 à 5 minutes plus tard.
+#
+# Aucune installation sur votre PC : les machines de GitHub ont déjà le SDK Android.
+name: Application Android (APK)
+
+on:
+  workflow_dispatch:
+    inputs:
+      domaine:
+        description: "Domaine du serveur PilotRH, sans https:// (ex. pilotrh-dbs.up.railway.app). Permet au scan de la carte QR d'ouvrir l'application."
+        required: false
+        default: ""
+      version:
+        description: "Nom de version affiché dans les réglages du téléphone"
+        required: false
+        default: "3.0"
+  push:
+    paths:
+      - 'android/**'
+      - '.github/workflows/apk.yml'
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Renseigner le domaine du serveur
+        if: inputs.domaine != ''
+        run: |
+          f=android/app/src/main/res/values/strings.xml
+          python3 - "$f" "${{ inputs.domaine }}" <<'PY'
+          import re, sys
+          chemin, domaine = sys.argv[1], sys.argv[2].strip().replace('https://','').replace('http://','').strip('/')
+          s = open(chemin, encoding='utf-8').read()
+          s = re.sub(r'(<string name="app_host">)[^<]*(</string>)', r'\g<1>%s\g<2>' % domaine, s)
+          open(chemin, 'w', encoding='utf-8').write(s)
+          print('domaine =', domaine)
+          PY
+
+      - name: Nom de version
+        if: inputs.version != ''
+        run: sed -i 's/versionName "[^"]*"/versionName "${{ inputs.version }}"/' android/app/build.gradle
+
+      - name: Compiler l'APK (debug, signé pour installation directe)
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Compiler l'APK non signé (pour publication)
+        working-directory: android
+        run: ./gradlew --no-daemon assembleRelease
+        continue-on-error: true
+
+      - name: Renommer proprement
+        run: |
+          mkdir -p sortie
+          cp android/app/build/outputs/apk/debug/app-debug.apk "sortie/PilotRH-$(date +%Y%m%d).apk"
+          cp android/app/build/outputs/apk/release/app-release-unsigned.apk \
+             "sortie/PilotRH-$(date +%Y%m%d)-a-signer.apk" 2>/dev/null || true
+          ls -la sortie
+
+      - name: Publier le fichier à télécharger
+        uses: actions/upload-artifact@v4
+        with:
+          name: PilotRH-APK
+          path: sortie/*.apk
+          retention-days: 90

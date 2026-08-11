@@ -106,18 +106,39 @@ http.createServer((req,res)=>{
       if(p==='/api/me/vote')return json(res,{ok:true,resultats:[13,30]});
       if(p==='/api/state-meta'||p==='/api/pointage'||p==='/api/day'||p==='/api/pointages/bulk')
         return json(res,{ok:true});
+      /* import de fiches : aperçu puis application, comme le vrai serveur */
+      if(p==='/api/employees/import-fiches'){
+        const app=/appliquer"?\r?\n?\r?\n?1/.test(body)||/name="appliquer"[\s\S]{0,40}?1/.test(body);
+        const rap={fichier:'fiches.xlsx',inconnues:['Colonne bidon'],
+          resume:{total:3,creation:1,maj:1,inchange:0,erreur:1,absents:4},
+          lignes:[
+            {n:6,matricule:'101',nom:'Prenom1 Nom1',action:'maj',champs:['tauxHoraire','cnss'],erreurs:[],avis:[]},
+            {n:7,matricule:'999',nom:'Nouvelle Ouvriere',action:'creation',champs:['nom','matricule'],erreurs:[],avis:[]},
+            {n:8,matricule:'',nom:'',action:'erreur',champs:[],erreurs:['matricule manquant'],avis:[]}]};
+        if(app)rap.applique={crees:1,majs:1};
+        return json(res,rap);
+      }
+      if(p==='/api/employees/modele.xlsx'){
+        res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+        return res.end('PK stub');
+      }
       if(p==='/api/report/pdf'){res.writeHead(200,{'Content-Type':'application/pdf'});return res.end('%PDF-1.4 stub')}
       return json(res,{ok:true});
     });
     return;
   }
-  let f=p==='/'?'/index.html':(p==='/moi'?'/moi.html':(p==='/login'?'/login.html':p));
+  /* le service worker et le manifeste sont servis depuis la RACINE, comme le
+     vrai serveur : sans cela leur portée se limiterait à /assets/ */
+  let f=p==='/'?'/index.html':(p==='/moi'?'/moi.html':(p==='/login'?'/login.html':
+        (p==='/sw.js'?'/assets/sw.js':(p==='/manifest.webmanifest'?'/assets/manifest.webmanifest':p))));
   const full=path.join(ROOT,f.replace(/^\/+/,''));
   if(!full.startsWith(ROOT)||!fs.existsSync(full)){res.writeHead(404);return res.end('404')}
   const ext=path.extname(full);
+  const entetes={};
+  if(p==='/sw.js')entetes['Service-Worker-Allowed']='/';
   const ct={'.html':'text/html;charset=utf-8','.js':'text/javascript;charset=utf-8',
     '.css':'text/css;charset=utf-8','.svg':'image/svg+xml','.png':'image/png',
     '.webmanifest':'application/manifest+json'}[ext]||'application/octet-stream';
-  res.writeHead(200,{'Content-Type':ct});res.end(fs.readFileSync(full));
+  res.writeHead(200,Object.assign({'Content-Type':ct},entetes));res.end(fs.readFileSync(full));
 }).listen(8777,()=>console.log('mock sur 8777'));
 process.on('SIGTERM',()=>{console.log('APPELS:'+LOG.length);process.exit(0)});

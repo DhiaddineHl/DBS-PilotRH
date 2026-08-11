@@ -1,0 +1,15 @@
+// Projet racine. Volontairement minimal : une seule application, aucune
+// bibliothèque externe, pour que la compilation reste rapide et reproductible.
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.5.2'
+    }
+}
+
+tasks.register('clean', Delete) {
+    delete rootProject.buildDir
+}

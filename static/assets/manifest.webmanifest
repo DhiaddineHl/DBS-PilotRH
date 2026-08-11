@@ -1,4 +1,5 @@
 {
+  "id": "/moi",
   "name": "PilotRH — DBS Fashion",
   "short_name": "PilotRH",
   "description": "Pointage, présences et paie — DBS Fashion",
@@ -11,8 +12,23 @@
   "background_color": "#faf8f3",
   "theme_color": "#1a1d29",
   "icons": [
-    { "src": "/assets/icone.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-    { "src": "/assets/icone-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "/assets/icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    {
+      "src": "/assets/icone.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/icone-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/icone-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
   ]
 }

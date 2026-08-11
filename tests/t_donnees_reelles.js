@@ -19,13 +19,26 @@ const { chromium } = require('playwright');
     (await p.locator('#demoBar').innerText()).includes('VOS DONNÉES RÉELLES'));
   t('effectif chargé', +(await p.locator('.kpi .val').first().innerText())>0,
     await p.locator('.kpi .val').first().innerText());
-  await p.click('[data-v="presences"]'); await p.waitForSelector('#presBody tr');
-  t('feuille de pointage remplie', await p.locator('#presBody tr').count()>90);
+  /* on se place sur la DERNIÈRE journée présente dans la sauvegarde, et non sur
+     aujourd'hui : la sauvegarde s'arrête à sa date d'export, donc le test cassait
+     tout seul le lendemain. */
+  const dernier = await p.evaluate(()=>Object.keys(DB.pointages).sort().pop());
+  t('la sauvegarde contient des journées', /^\d{4}-\d{2}-\d{2}$/.test(dernier||''), dernier);
+  await p.evaluate(d=>setDay(d), dernier);
+  await p.waitForSelector('#presBody tr',{timeout:15000});
+  t('feuille de pointage remplie', await p.locator('#presBody tr').count()>90,
+    'journée '+dernier+' : '+(await p.locator('#presBody tr').count())+' lignes');
   t('journées à vérifier signalées', await p.locator('.banner-warn').count()>=1);
   await p.click('[data-v="rapports"]'); await p.waitForSelector('#repBody tr');
   const tot=await p.locator('.rep-tot').innerText();
   console.log('  TOTAL du mois affiché :', tot.replace(/\s+/g,' '));
   t('total de paie calculé', tot.includes('h'));
+  t('colonnes Taux et Montant présentes sur vos données',
+    /taux/i.test(await p.locator('.tablecard thead').innerText()) &&
+    /montant/i.test(await p.locator('.tablecard thead').innerText()));
+  t('les 97 fiches sont payées à l’heure (aucun taux saisi pour l’instant)',
+    (await p.locator('#repBody tr:first-child').innerText()).includes('à saisir'),
+    (await p.locator('#repBody tr:first-child').innerText()).slice(-60));
   await p.click('[data-v="dashboard"]'); await p.waitForSelector('#cAbs svg');
   t('courbe absentéisme sur données réelles', await p.locator('#cAbs svg polyline').count()===1);
   await p.click('button[aria-label="Alertes"]').catch(()=>{});

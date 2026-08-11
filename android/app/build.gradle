@@ -1,0 +1,43 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'tn.dbsfashion.pilotrh'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "tn.dbsfashion.pilotrh"
+        // API 23 = Android 6.0 : couvre en pratique tout le parc de téléphones
+        // encore en service dans l'atelier, sans renoncer aux permissions modernes.
+        minSdk 23
+        targetSdk 34
+        versionCode 3
+        versionName "3.0"
+        resConfigs "fr"
+    }
+
+    // Aucune bibliothèque externe : pas d'AndroidX, pas de Kotlin. Le .apk pèse
+    // quelques dizaines de kilo-octets et se compile sans réseau une fois le SDK
+    // installé.
+    buildTypes {
+        debug {
+            // Signé automatiquement par la clé de débogage : installable
+            // directement sur les téléphones, sans passer par le Play Store.
+            applicationIdSuffix ""
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled false
+            // Pour publier : renseignez une clé dans signingConfigs (voir
+            // ANDROID_ET_PWA.md, § « Signer l'application »).
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+    }
+}

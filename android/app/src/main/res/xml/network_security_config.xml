@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Le HTTP en clair est autorisé, à dessein : une installation dans l'atelier fait
+  tourner PilotRH sur l'ordinateur du bureau, en http sur une adresse privée
+  (par exemple http://192.168.1.20:8000). Android ne permet pas de n'autoriser
+  qu'une plage d'adresses privées : il faudrait énumérer chaque adresse, ce qui
+  n'est pas tenable.
+
+  Conséquence à connaître : si votre serveur est exposé sur Internet, mettez-le
+  OBLIGATOIREMENT en https (c'est le cas par défaut sur Railway). L'application
+  refuse par ailleurs tout contenu mixte (une page https ne peut pas charger de
+  ressource http), et ne se connecte qu'à l'adresse configurée.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

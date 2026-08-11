@@ -214,6 +214,17 @@ tr.revue-row td{background:#fffaf0}
 .alert-row .txt b{font-weight:600;font-size:13.5px}
 .alert-row .txt small{display:block;color:var(--muted);font-size:12px;margin-top:1px}
 .alert-row .when{margin-left:auto;font-size:11.5px;color:var(--faint);font-family:var(--mono);white-space:nowrap}
+/* Alerte cliquable : elle mène directement à l'anomalie à corriger. */
+.alert-clic{cursor:pointer;transition:background .12s}
+.alert-clic:hover,.alert-clic:focus-visible{background:var(--surface-2)}
+.alert-clic:focus-visible{outline:2px solid var(--gold-ink);outline-offset:-2px}
+.alert-clic .when{margin-left:auto}
+.alert-go{flex:none;font-size:11.5px;font-weight:600;color:var(--gold-ink);white-space:nowrap;opacity:0;transition:opacity .12s}
+.alert-clic:hover .alert-go,.alert-clic:focus-visible .alert-go{opacity:1}
+@media(max-width:760px){.alert-go{display:none}}
+/* Ligne visée par une alerte : surlignée le temps qu'on la repère. */
+tr.focus-row>td{background:var(--late-bg)!important;box-shadow:inset 0 0 0 1px var(--late)}
+
 
 .dropzone{border:2px dashed var(--gold-line);border-radius:16px;background:var(--surface-2);padding:40px;text-align:center;transition:.18s}
 .dropzone.drag{background:var(--gold-soft);border-color:var(--gold)}

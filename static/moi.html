@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#1a1d29">
 <meta name="robots" content="noindex, nofollow">
 <title>Mon pointage — DBS Fashion</title>
-<link rel="manifest" href="/assets/manifest.webmanifest">
+<link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/assets/icone.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/assets/icone-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -93,6 +93,11 @@ textarea:focus,select:focus{border-color:var(--gold)}
 .install .t{flex:1;font-size:13px}
 .install button{background:var(--gold);color:#fff;border:none;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer}
 .install .c{background:none;color:#aeb4c6;padding:6px}
+.offline{position:fixed;left:0;right:0;top:0;z-index:9;background:var(--absent);color:#fff;
+  font-size:12.5px;font-weight:600;text-align:center;padding:7px 12px;display:none;
+  padding-top:calc(7px + env(safe-area-inset-top))}
+.offline.on{display:block}
+.aide-ios{font-size:12.5px;color:var(--muted);margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -103,10 +108,11 @@ textarea:focus,select:focus{border-color:var(--gold)}
   <div class="sub">Pointage, congés, notes de service</div>
 </div></header>
 
+<div class="offline" id="hors" role="status">Pas de réseau — les données affichées peuvent être anciennes</div>
 <div class="wrap" id="app"><div class="card center muted">Chargement…</div></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="install" id="install">
-  <div class="t"><b>Installer l’application</b><br><span style="color:#c7cad3">Vous n’aurez plus besoin de rescanner votre QR code.</span></div>
+  <div class="t"><b>Installer l’application</b><br><span style="color:#c7cad3" id="installTxt">Vous n’aurez plus besoin de rescanner votre QR code.</span></div>
   <button id="btnInstall">Installer</button>
   <button class="c" id="btnInstallX" aria-label="Fermer">✕</button>
 </div>
@@ -399,11 +405,52 @@ document.getElementById('btnInstallX').onclick=()=>{
   document.getElementById('install').classList.remove('on');
   try{localStorage.setItem('pilotrh_noinstall','1')}catch(e){}
 };
-if('serviceWorker' in navigator){navigator.serviceWorker.register('/assets/sw.js').catch(()=>{})}
+/* Le service worker est enregistré depuis la RACINE : déposé sous /assets/, sa
+   portée se limitait à /assets/ et il n'interceptait donc jamais /moi — ni
+   démarrage hors ligne, ni installation proposée de façon fiable. On supprime
+   au passage l'ancien enregistrement resté sur les téléphones déjà équipés. */
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.getRegistrations().then(rs=>{
+    rs.forEach(r=>{ if(r.scope.indexOf('/assets/')>=0) r.unregister().catch(()=>{}) });
+  }).catch(()=>{});
+  navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(()=>{
+    /* repli pour les serveurs anciens qui ne servent pas encore /sw.js */
+    navigator.serviceWorker.register('/assets/sw.js').catch(()=>{});
+  });
+}
+
+/* ------------------------------------------------------- réseau intermittent */
+/* Dans l'atelier, le réseau tombe régulièrement. Plutôt qu'un message d'erreur
+   sec, on signale l'état et on recharge tout seul dès que la connexion revient. */
+const banHors=document.getElementById('hors');
+function majReseau(){
+  banHors.classList.toggle('on', navigator.onLine===false);
+}
+window.addEventListener('online',()=>{
+  majReseau();
+  /* si la première ouverture avait échoué, on retente ; sinon on rafraîchit le mois */
+  if(DATA) loadMonth(DATA.mois); else init();
+});
+window.addEventListener('offline',majReseau);
+
+/* iOS ne déclenche jamais beforeinstallprompt : on explique le geste à faire,
+   au lieu de laisser croire que l'installation n'existe pas sur iPhone. */
+function aideInstalliOS(){
+  const iOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+  const deja=window.navigator.standalone===true||
+             (window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches);
+  if(!iOS||deja)return;
+  try{ if(localStorage.getItem('pilotrh_noinstall'))return; }catch(x){}
+  const t=document.getElementById('installTxt');
+  if(t)t.textContent='Sur iPhone : bouton Partager, puis « Sur l’écran d’accueil ».';
+  const b=document.getElementById('btnInstall');
+  if(b)b.style.display='none';
+  document.getElementById('install').classList.add('on');
+}
 
 Object.assign(window,{loadMonth,setOnglet,voter});
 
-(async function init(){
+async function init(){
   if(!TOKEN){
     app.innerHTML='<div class="card err">Lien invalide. Scannez votre QR code personnel, '+
       'ou demandez-le au service RH.</div>';
@@ -417,7 +464,10 @@ Object.assign(window,{loadMonth,setOnglet,voter});
     try{localStorage.removeItem('pilotrh_t')}catch(e){}
     app.innerHTML='<div class="card err">Lien invalide ou expiré. Demandez un nouveau QR code au service RH.</div>';
   }
-})();
+}
+majReseau();
+aideInstalliOS();
+init();
 </script>
 </body>
 </html>

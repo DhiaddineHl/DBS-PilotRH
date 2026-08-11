@@ -7,14 +7,17 @@
    un solde de congés ou un résultat de sondage périmé serait pire qu'une erreur
    franche. Seuls la coquille et les fichiers statiques sont mis en cache.
 */
-const CACHE = 'pilotrh-v3';
+/* Ce fichier est servi depuis la RACINE (/sw.js) : c'est indispensable, la
+   portée d'un service worker se limite au dossier d'où il est téléchargé. */
+const CACHE = 'pilotrh-v3-2';
 const STATIQUES = [
   '/moi',
   '/assets/pilotrh-core.js',
   '/assets/pilotrh-ui.css',
   '/assets/icone.svg',
   '/assets/icone-192.png',
-  '/assets/manifest.webmanifest',
+  '/assets/icone-512.png',
+  '/manifest.webmanifest',
 ];
 
 self.addEventListener('install', e => {

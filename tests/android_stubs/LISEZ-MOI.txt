@@ -1,0 +1,7 @@
+Doublures minimales des classes Android utilisées par android/app/.../MainActivity.java.
+
+Elles servent uniquement à vérifier, sans installer le SDK Android, que le code
+de l'application compile et que la normalisation de l'adresse du serveur est
+correcte (voir tests/t_android.py). Ne les déployez pas, ne les modifiez pas
+pour « faire passer » un test : elles doivent rester fidèles aux signatures
+réelles du SDK.

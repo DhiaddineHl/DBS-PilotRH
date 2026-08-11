@@ -83,8 +83,16 @@ def separer_ids(emps, pts):
                 "jours": n_jours,
             })
             f["id"] = neuf
-            f.pop("token", None)      # l'accès est régénéré, l'ancien QR pointait
-            f.pop("pin", None)        # vers l'historique de l'autre personne
+        # L'ACCÈS EST RÉVOQUÉ SUR LES DEUX FICHES, pas seulement sur celle qui
+        # est déplacée. Les deux personnes ne partageaient qu'UNE fiche, donc
+        # qu'UNE carte QR a été imprimée — et rien ne dit laquelle des deux la
+        # détient physiquement. Laisser le jeton à la fiche conservée ferait
+        # courir le risque qu'une ouvrière ouvre l'espace personnel de l'autre
+        # et y lise ses heures et son salaire. Deux cartes à réimprimer valent
+        # mieux qu'une fuite : le serveur attribue un accès neuf au démarrage.
+        for f in fiches:
+            f.pop("token", None)
+            f.pop("pin", None)
     return rapport, emps
 
 
@@ -107,6 +115,14 @@ def migrer_settings(s):
         s["feriesActifs"] = True; ajouts.append("prise en compte des jours fériés activée")
     if not isinstance(s.get("clotures"), list):
         s["clotures"] = []; ajouts.append("liste vide des mois clôturés")
+    # taux de rémunération par défaut : à zéro, donc sans effet tant que vous ne
+    # les saisissez pas — la paie reste exprimée en heures et en jours comme avant
+    if s.get("tauxHoraireDefaut") is None:
+        s["tauxHoraireDefaut"] = 0
+        ajouts.append("prix de l'heure par défaut = 0 (à renseigner dans les paramètres)")
+    if s.get("tauxJourDefaut") is None:
+        s["tauxJourDefaut"] = 0
+        ajouts.append("prix de la journée par défaut = 0 (à renseigner dans les paramètres)")
 
     # plage de pause : déduite du milieu de journée, à corriger par les RH
     def tomin(t):
@@ -284,9 +300,15 @@ def main():
         print("  Après restauration, réimportez votre .mdb : le rapprochement se fait sur")
         print("  le MATRICULE, donc l'historique de la fiche déplacée sera reconstruit")
         print("  correctement sous son nouvel identifiant.")
-        print("  Son accès espace salarié a été retiré : régénérez-lui un QR code")
-        print("  (sa fiche → Régénérer le QR et le code), l'ancien pointait vers")
-        print("  l'historique de l'autre personne.")
+        print()
+        print("  IMPORTANT — CARTES QR : l'accès a été retiré aux DEUX fiches concernées.")
+        print("  Les deux personnes ne partageaient qu'une fiche, donc une seule carte QR")
+        print("  a été imprimée, et rien ne dit laquelle des deux la détient. La laisser")
+        print("  active ferait courir le risque qu'une ouvrière ouvre l'espace personnel")
+        print("  de l'autre. Réimprimez donc DEUX cartes (Sécurité & accès → Cartes QR),")
+        print("  et relevez leurs nouveaux codes dans la liste confidentielle.")
+        print("  Toutes les AUTRES cartes déjà distribuées continuent de fonctionner")
+        print("  telles quelles, avec leur code actuel : rien à réimprimer pour elles.")
     else:
         print("  Aucun doublon : bien.")
 

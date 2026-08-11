@@ -460,7 +460,15 @@ window.matOf=matOf;
 function statutTag(st,sexe){
   return '<span class="tag '+C.statutClass(st)+'">'+esc(C.statutLabel(st,sexe))+'</span>';
 }
-function catTag(c){return '<span class="cat-tag '+(c==='Cadre'?'cat-cad':'cat-ouv')+'">'+(c==='Cadre'?'Cadre · jour':'Ouvrier · heure')+'</span>'}
+/* La base de paie n'est PLUS déduite de la seule catégorie : chaque fiche porte
+   son mode (à l'heure ou à la journée). Sans l'employée, on n'affiche que la
+   catégorie plutôt qu'une base de paie possiblement fausse. */
+function catTag(c,e){
+  const cls=(c==='Cadre'?'cat-cad':'cat-ouv');
+  let lbl=c||'—';
+  if(e){lbl=(c||'—')+(C.modePaie(e)==='journalier'?' · jour':' · heure')}
+  return '<span class="cat-tag '+cls+'">'+esc(lbl)+'</span>';
+}
 function kpi(l,v,s,ic,col,bg){return '<div class="kpi"><div class="ic" style="background:'+bg+';color:'+col+'">'+ic+
   '</div><div class="lab">'+esc(l)+'</div><div class="val">'+esc(String(v))+'</div><div class="sub">'+esc(s||'')+'</div></div>'}
 function miniKpi(l,v,col){return '<div class="kpi"><div class="lab" style="color:'+col+'"><span class="dotmark" style="background:'+col+
@@ -572,12 +580,33 @@ function openRevue(a,b){
       '<td class="mono">'+esc(((x.rec.punches||[x.rec.entree,x.rec.sortie]).filter(Boolean)).join(' · '))+'</td>'+
       '<td style="color:var(--muted);font-size:12px">'+esc(x.m.motifRevue)+'</td>'+
       '<td>'+(x.m.heures?hLabel(x.m.heures):'<b style="color:var(--absent)">0 h</b>')+'</td>'+
-      '<td><button class="linkish" onclick="closeModal();allerAuJour(\''+x.ds+'\')">Corriger →</button></td></tr>').join('')
+      '<td><button class="linkish" onclick="closeModal();allerAuJour(\''+x.ds+'\',\''+escJs(x.e.id)+'\')" '+
+        'title="Ouvre la feuille du '+fmtDate(x.ds)+' avec la ligne de '+esc(empName(x.e.id))+' en évidence">Corriger →</button>'+
+      (can('edit')?'<br><button class="linkish" style="font-size:11.5px" onclick="closeModal();openCorrection(\''+escJs(x.e.id)+'\',\''+x.ds+'\',\''+x.ds+'\')">Saisir les heures</button>':'')+
+      '</td></tr>').join('')
      ||'<tr><td colspan="6"><div class="empty">Rien à vérifier</div></td></tr>')+
     '</tbody></table></div></div>','wide');
 }
-async function allerAuJour(ds){ PRES_DATE=ds; await go('presences'); }
-Object.assign(window,{bandeauRevue,openRevue,allerAuJour});
+/* Cible d'une alerte : la ligne est surlignée et amenée à l'écran après le
+   rendu, pour que « corriger » désigne une ligne précise et pas une page. */
+let FOCUS_EMP='';
+async function allerAuJour(ds,id){
+  PRES_DATE=ds; FOCUS_EMP=id||'';
+  await go('presences');
+  cadrerFocus();
+}
+function cadrerFocus(){
+  if(!FOCUS_EMP)return;
+  const tr=document.querySelector('tr[data-emp="'+FOCUS_EMP.replace(/"/g,'')+'"]');
+  FOCUS_EMP='';
+  if(!tr)return;
+  tr.classList.add('focus-row');
+  if(tr.scrollIntoView)tr.scrollIntoView({block:'center',behavior:'smooth'});
+  const ch=tr.querySelector('input,select');
+  if(ch)setTimeout(()=>{try{ch.focus()}catch(e){}},250);
+  setTimeout(()=>tr.classList.remove('focus-row'),4000);
+}
+Object.assign(window,{bandeauRevue,openRevue,allerAuJour,cadrerFocus});
 
 /* ============================================================================
    TABLEAU DE BORD
@@ -767,7 +796,7 @@ function fillPres(){
         (m.manuelHS?' <span title="Saisie manuelle" style="color:var(--gold-ink)">&#9998;</span>':'')
       : (m.hs?'<b style="color:var(--mission)">'+hLabel(m.hs)+'</b>':'—');
     const cls=m.revue?' class="revue-row"':(m.ferie?' class="ferie-row"':'');
-    return '<tr'+cls+'><td class="mono">'+esc(matOf(e))+'</td><td>'+empCell(e.id)+'</td><td>'+catTag(e.categorie)+'</td>'+
+    return '<tr'+cls+' data-emp="'+esc(e.id)+'"><td class="mono">'+esc(matOf(e))+'</td><td>'+empCell(e.id)+'</td><td>'+catTag(e.categorie,e)+'</td>'+
       '<td><label class="sr-only" for="st_'+esc(e.id)+'">Statut de '+esc(empName(e.id))+'</label>'+
         '<select class="ssel" id="st_'+esc(e.id)+'" onchange="editPres(\''+escJs(e.id)+'\',\'statut\',this.value)"'+dis+'>'+
         opts.map(o=>'<option value="'+o+'"'+(rec.statut===o?' selected':'')+'>'+optLab[o]+'</option>').join('')+

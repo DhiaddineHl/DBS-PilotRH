@@ -103,10 +103,45 @@ Après le redéploiement, si l'écran ne change pas : rafraîchissez avec **Ctrl
 
 ## F. En cas de problème
 
+### « PermissionError: [Errno 13] Permission denied: /app/data/backups »
+
+Le déploiement démarre, puis échoue en boucle avec une longue trace Python qui
+finit sur cette ligne. **C'est corrigé dans cette version** : reconstruisez et
+redéployez, il n'y a rien à régler dans l'interface Railway.
+
+Ce qui se passait : Railway monte le volume **au démarrage**, par-dessus le
+dossier `/app/data` que l'image avait préparé, et **ce volume appartient à
+root**. Le serveur, lui, tourne volontairement en utilisateur non privilégié :
+il ne pouvait donc plus créer ses sous-dossiers. Le `chown` fait à la
+construction de l'image était recouvert par le montage.
+
+Le correctif : le conteneur démarre en root, un script d'entrée
+(`docker-entrypoint.sh`) donne les droits sur le volume, **puis** lâche les
+privilèges pour lancer uvicorn. Le serveur ne tourne toujours pas en root.
+
+Si l'erreur persiste malgré la reconstruction :
+
+1. Vérifiez le **Mount Path** du volume : il doit être exactement `/app/data`.
+   Si vous l'avez monté ailleurs, l'application suit désormais automatiquement
+   le chemin annoncé par Railway (`RAILWAY_VOLUME_MOUNT_PATH`) — mais alors
+   **supprimez la variable `PILOTRH_DATA`**, sinon elle a la priorité et
+   l'application écrit à côté du volume : les données seraient perdues au
+   redéploiement suivant.
+2. Vérifiez que Railway construit bien avec le **Dockerfile** (Settings →
+   Builder), et non avec Nixpacks : le script d'entrée ne serait pas utilisé.
+3. **Dépannage immédiat**, le temps de comprendre : ajoutez la variable
+   `PILOTRH_ROOT` = `1`. Le serveur démarre alors en root, ce qui débloque tout
+   de suite. C'est moins sûr — retirez-la dès que le point 1 ou 2 est réglé.
+
+Le message d'erreur affiché dans les logs indique désormais lui-même ces trois
+points, au lieu d'une trace Python.
+
 - **« Application failed to respond »** : c'est le port. Le `Dockerfile` fourni utilise
   déjà le port de Railway — assurez-vous d'avoir bien redéployé la dernière version.
 - **Données perdues après un redéploiement** : le volume n'est pas monté, ou pas sur
-  `/app/data`. Vérifiez le Mount Path.
+  `/app/data`. Vérifiez le Mount Path. Vérifiez aussi qu'une variable `PILOTRH_DATA`
+  ne pointe pas ailleurs que le volume — c'est la cause la plus sournoise, parce que
+  tout fonctionne parfaitement jusqu'au redéploiement suivant.
 - **La date ou une correction n'apparaît pas** : ancienne version en cache → Ctrl + Maj + R ;
   ou vérifiez que Railway déploie bien la **bonne branche** (Settings → trigger branch).
 - **La pointeuse n'envoie plus** : l'agent d'usine utilise le compte admin ; si vous

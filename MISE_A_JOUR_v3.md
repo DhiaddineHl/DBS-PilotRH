@@ -49,8 +49,10 @@ Il fait trois choses au fichier :
    export les écrivait en clair sur le disque ; quiconque obtenait le fichier pouvait
    fabriquer un cookie administrateur ;
 2. **sépare les identifiants d'employées attribués deux fois** (voir §1.7) ;
-3. **complète les réglages** — jours fériés, portée de l'arrondi, plage de pause —
-   **sans modifier aucune de vos valeurs existantes**.
+3. **complète les réglages** — jours fériés, portée de l'arrondi, plage de pause,
+   taux de rémunération à zéro — **sans modifier aucune de vos valeurs existantes** ;
+4. **conserve les jetons et les codes des cartes QR** : sur vos 97 fiches, 95 cartes
+   restent utilisables sans réimpression (voir §0 ter).
 
 > **Important :** la restauration de la v3 remet aussi **les pointages**. L'ancienne
 > version les ignorait en silence lors d'un import de sauvegarde : on restaurait les
@@ -69,8 +71,50 @@ L'outil de migration sépare les fiches et attribue un identifiant neuf à la se
 L'historique ne peut pas être démêlé après coup, mais il n'est pas perdu : le
 rapprochement à l'import se fait sur le **matricule**, donc **réimportez votre `.mdb`
 après la restauration** et l'historique de la fiche déplacée sera reconstruit
-correctement. Son accès à l'espace salarié est retiré au passage (l'ancien QR pointait
-vers l'historique de l'autre personne) : régénérez-lui un QR depuis sa fiche.
+correctement.
+
+**L'accès à l'espace salarié est retiré aux DEUX fiches concernées**, pas seulement à
+celle qui est déplacée. La raison : les deux personnes ne partageaient qu'une fiche,
+donc **une seule carte QR a été imprimée**, et rien ne dit laquelle des deux la
+détient physiquement. Laisser le jeton à la fiche conservée ferait courir le risque
+qu'une ouvrière ouvre l'espace personnel de l'autre et y lise ses heures et son
+salaire. Deux cartes à réimprimer valent mieux qu'une fuite. Toutes les **autres**
+cartes continuent de fonctionner telles quelles.
+
+---
+
+## 0 ter. Les cartes QR déjà distribuées continuent-elles de fonctionner ?
+
+**Oui.** C'est vérifié sur votre sauvegarde réelle : sur 97 fiches, **95 cartes
+fonctionnent sans rien changer**, avec leur code actuel. Les 2 seules à réimprimer
+sont les deux fiches de l'identifiant dupliqué (§1.7), et c'est pour une raison de
+confidentialité, pas de compatibilité.
+
+Ce qui garantit cette continuité :
+
+- **Le jeton de la carte n'est jamais régénéré.** Au démarrage, le serveur n'attribue
+  un jeton et un code qu'aux fiches **qui n'en ont pas**. Une fiche déjà pourvue est
+  laissée telle quelle.
+- **L'adresse encodée dans le QR est inchangée** : `https://votre-serveur/moi?t=JETON`.
+  Les cartes imprimées restent lisibles à l'identique.
+- **Les codes à 4 chiffres déjà distribués restent valides.** Les nouveaux codes créés
+  sont à 6 chiffres, mais rien n'impose de longueur à la saisie : vos 97 codes actuels
+  sont tous à 4 chiffres et fonctionnent. Inutile de redistribuer quoi que ce soit en
+  main propre.
+- **L'ancienne forme d'appel est conservée.** Un téléphone qui a gardé en mémoire
+  l'ancienne page continue de fonctionner : l'ancien appel `GET /api/me?t=…` répond en
+  demandant simplement de repasser par la nouvelle forme, et la page s'en charge.
+- **L'export puis la restauration d'une sauvegarde conservent jetons et codes** : la
+  migration ne les touche pas, sauf dans le cas du doublon ci-dessus.
+
+Ce qui change côté téléphone, sans casser l'existant : le jeton **n'apparaît plus dans
+l'adresse** (il est retiré de l'URL dès la première ouverture et mémorisé sur
+l'appareil), et le code passe dans le corps de la requête au lieu de la barre
+d'adresse. Il ne finit donc plus dans les journaux du serveur ni dans l'historique
+d'un téléphone partagé.
+
+Un seul cas où une carte cesse de fonctionner de votre plein gré : si vous cliquez
+**Régénérer le QR et le code** sur une fiche (fait pour une carte perdue).
 
 ---
 
@@ -173,6 +217,35 @@ Variables à définir sur Railway :
 | `PILOTRH_TRUSTED_PROXY` | l'IP de l'edge Railway, ou `127.0.0.1` | n'accepter `X-Forwarded-*` que du proxy |
 | `PILOTRH_RESET_ADMIN` | temporaire | réinitialise le mot de passe `admin` puis **à retirer** |
 
+### 1.4 bis Déploiement Railway : les droits sur le volume
+
+Si votre déploiement échoue en boucle sur
+`PermissionError: [Errno 13] Permission denied: /app/data/backups`, **c'est corrigé
+dans cette version** : reconstruisez, il n'y a rien à régler dans l'interface.
+
+La cause : Railway monte le volume **au démarrage**, par-dessus le `/app/data` que
+l'image avait préparé, et ce volume **appartient à root**. Le serveur tournant
+volontairement en utilisateur non privilégié, il ne pouvait plus créer ses
+sous-dossiers ; le `chown` fait à la construction de l'image était recouvert par le
+montage. C'est un piège classique des volumes, et il ne se voyait pas en local.
+
+Trois changements :
+
+1. un script d'entrée (`docker-entrypoint.sh`) démarre en root, donne les droits sur
+   le volume, **puis lâche les privilèges** pour lancer uvicorn — le serveur ne tourne
+   toujours pas en root ;
+2. l'application suit désormais **le chemin réellement annoncé par Railway**
+   (`RAILWAY_VOLUME_MOUNT_PATH`) si `PILOTRH_DATA` n'est pas réglée. Un volume monté
+   ailleurs que `/app/data` était auparavant ignoré : l'application écrivait dans le
+   conteneur et **tout disparaissait au redéploiement suivant, sans le moindre
+   avertissement** ;
+3. l'erreur, si elle survient encore, affiche **quoi vérifier** (point de montage,
+   builder Docker, variable de dépannage `PILOTRH_ROOT=1`) au lieu d'une trace Python.
+
+Le démarrage vérifie aussi qu'il peut **réellement écrire** dans le dossier, et non
+seulement qu'il existe. Il échoue franchement si ce n'est pas le cas : mieux vaut un
+refus de démarrer qu'une application qui tourne en écrivant dans un dossier éphémère.
+
 ### 1.4 Vérifier que le volume est bien monté
 
 Le volume Railway **doit** être monté sur `/app/data`. Sinon tout est perdu à chaque
@@ -264,6 +337,107 @@ octobre change des heures déjà payées en janvier. Réouverture possible, et t
 
 Accessible aussi depuis la liste des absences et depuis un signalement de salarié.
 
+### Les alertes mènent à la correction
+
+Chaque ligne de la page *Notifications* — et des quatre alertes du tableau de bord —
+est désormais **cliquable** et ouvre directement l'endroit où corriger :
+
+| Alerte | Un clic ouvre |
+|---|---|
+| Pointage à vérifier | la liste des journées incomplètes ; chaque ligne propose *Corriger* (feuille du jour, **ligne de la personne surlignée**) et *Saisir les heures* (correction sur la plage du jour) |
+| Signalements salariés | l'écran *Sécurité & accès*, positionné sur le tableau des signalements |
+| Fiches incomplètes | la liste du personnel, **filtre « à compléter » déjà appliqué** |
+| Document manquant / Fin de période / Anniversaire | la fiche de la personne concernée |
+| Absence injustifiée | la feuille de pointage du jour, sur la ligne de la personne |
+
+Le libellé de l'action apparaît à droite au survol, la ligne est atteignable au
+clavier (`Tab` puis `Entrée`), et la ligne visée reste surlignée quelques secondes
+le temps qu'on la repère dans le tableau.
+
+Avant, une alerte décrivait le problème mais laissait retrouver soi-même la personne
+et la date.
+
+---
+
+## 3 bis. Rémunération : à l'heure ou à la journée, fiche par fiche
+
+Les ouvrières sont payées **à l'heure** suivant la convention, les cadres **à la
+journée travaillée**. Jusqu'ici l'application déduisait cette base de la seule
+*catégorie*, sans jamais permettre de saisir un prix : `salaire` n'entrait dans
+aucun calcul.
+
+**Ce qui est ajouté sur chaque fiche** (bloc *Rémunération*, en création comme en
+modification) :
+
+- **Payé(e)** : `À l'heure` ou `À la journée`. Laissé tel quel, le mode continue
+  d'être déduit de la catégorie (Cadre → journée) : rien ne change pour les fiches
+  existantes.
+- **Prix d'une heure (TND)** et **Prix d'une journée (TND)** — seul celui qui
+  correspond au mode est utilisé, l'autre est grisé.
+- **Salaire mensuel de référence** : information de dossier, n'entre dans aucun calcul.
+
+**Taux par défaut** (Paramètres horaires → *Rémunération*) : un prix de l'heure et un
+prix de la journée qui s'appliquent aux fiches sans taux propre. On saisit le taux de
+la convention une fois, pas 97 fois. Une fiche avec son propre taux l'emporte toujours.
+
+**Comment la quantité est calculée sur la période affichée :**
+
+| Mode | Quantité | Montant estimé |
+|---|---|---|
+| À l'heure | heures normales **+** heures supplémentaires | quantité × prix de l'heure |
+| À la journée | jours travaillés **+** jours fériés travaillés | quantité × prix de la journée |
+
+Les colonnes **Taux** et **Montant estimé** apparaissent dans *Rapports & paie*
+(triables, avec un total en bas), dans le **PDF de paie**, dans le **CSV de paie**
+(avec le mode et la quantité) et dans l'export CSV du personnel. La fiche affiche
+l'estimation du mois en cours.
+
+> **Ce sont des montants indicatifs** : quantité constatée × taux. Aucune majoration
+> légale des heures supplémentaires (+25 / +50 / +75 %), aucune retenue, aucune prime.
+> Voir §6 : ce n'est pas encore un bulletin de paie.
+
+---
+
+## 3 ter. Créer et corriger les fiches en masse (modèle Excel)
+
+Saisir 97 fiches une par une dans l'interface prend des heures. Personnel →
+**Importer des fiches** ouvre un parcours en trois temps.
+
+**1. Prendre le modèle.** Deux boutons :
+
+- *Modèle vierge* — le classeur avec les 24 colonnes, une ligne d'exemple grisée,
+  des **listes déroulantes** (poste, catégorie, service, atelier, contrat, situation,
+  niveau, sexe, mode de paie) et un onglet **Notice** qui explique chaque champ.
+- *Mes N fiches actuelles* — le même classeur **déjà rempli avec vos fiches**. C'est
+  le plus pratique : on complète dans Excel les colonnes qui manquent (mode de paie,
+  prix de l'heure, CNSS, dates de naissance…) au lieu de tout retaper.
+
+**2. Renvoyer le fichier rempli** (`.xlsx` ou `.csv`, glisser-déposer accepté).
+
+**3. Lire l'aperçu, puis appliquer.** L'application affiche, **avant toute écriture**,
+un tableau ligne par ligne : *à créer*, *à mettre à jour* (avec les champs concernés
+nommés en français), *inchangée*, *erreur* (avec le motif). Les lignes en erreur
+remontent en tête. Rien n'est écrit tant que vous n'avez pas validé.
+
+**Les trois règles à retenir :**
+
+1. Le **matricule** est la clé de rapprochement — celui du badge sur la pointeuse.
+   Déjà connu → la fiche est mise à jour. Inconnu → une fiche est créée, avec son
+   accès QR et son code.
+2. Une cellule **vide ne change rien**. On peut donc ne remplir qu'une colonne sur
+   tout l'effectif. Pour *effacer* un champ, on écrit `-` dans la cellule.
+3. **Rien d'autre n'est touché** : aucun pointage, aucun congé, aucun accès QR
+   existant, et **aucune fiche n'est supprimée** — les personnes absentes du fichier
+   sont laissées telles quelles (elles sont simplement comptées dans l'aperçu).
+
+Détails de tolérance : dates en `JJ/MM/AAAA` ou vraies dates Excel, virgule ou point
+décimal, en-têtes acceptés sans tenir compte de la casse, des accents ni de la
+ponctuation (`N° CNSS`, `n cnss`, `NCNSS`), synonymes courants reconnus
+(`Badge` → Matricule, `GSM` → Téléphone, `Fonction` → Poste), colonnes inconnues
+signalées et ignorées, doublons de matricule dans le fichier refusés en nommant la
+première ligne fautive, matricule d'une personne démissionnaire signalé avant
+recréation. Réservé aux comptes **administrateur** et **RH**.
+
 ---
 
 ## 4. Notes de service, sondages, application installable
@@ -293,9 +467,55 @@ Le jeton **n'apparaît plus dans l'adresse** : il est retiré de l'URL dès la p
 ouverture, et le code passe désormais dans le corps de la requête. Il ne finit donc
 plus dans les journaux du serveur ni dans l'historique d'un téléphone partagé.
 
-Une vraie application **native** (APK sur le Play Store, notifications push,
-lecteur QR intégré, mode hors ligne complet) reste un projet distinct — comptez
-2 à 3 semaines. À faire seulement si vous voulez les notifications push.
+**Un bogue corrigé au passage, et il n'était pas mineur.** Le service worker — le
+composant qui rend l'application installable et permet le démarrage hors ligne —
+était servi depuis `/assets/sw.js`. Or la portée d'un service worker est limitée au
+dossier d'où il est téléchargé : depuis `/assets/`, il n'avait **aucune autorité sur
+`/moi`**. L'espace salarié ne démarrait donc pas sans réseau, alors que c'était
+annoncé, et Android refusait souvent de proposer « Ajouter à l'écran d'accueil ».
+Il est désormais servi depuis la racine (`/sw.js`, en-tête `Service-Worker-Allowed: /`),
+le manifeste depuis `/manifest.webmanifest`, et l'ancien enregistrement resté sur les
+téléphones déjà équipés est supprimé automatiquement à la première ouverture.
+
+Deux ajouts pour le réseau de l'atelier, qui tombe régulièrement : un **bandeau
+rouge « Pas de réseau »** en haut de l'écran, et le rechargement automatique dès que
+la connexion revient. Sur **iPhone**, le geste à faire est expliqué (Partager → « Sur
+l'écran d'accueil »), parce qu'iOS ne propose jamais l'installation de lui-même.
+
+### Fichier APK — projet livré, prêt à compiler
+
+Un vrai projet Android accompagne maintenant cette version, dans `android/`. C'est
+une coquille autour de `/moi` : **aucune bibliothèque externe** (pas d'AndroidX, pas
+de Kotlin), un fichier de quelques dizaines de kilo-octets, deux permissions
+seulement (Internet, état du réseau) — ni caméra, ni contacts, ni position. Android 6
+et plus, soit tout le parc encore en service.
+
+Ce que l'APK apporte par rapport à la PWA :
+
+- **le scan de la carte QR ouvre directement l'application**, qui mémorise le jeton ;
+- une icône installée par un fichier que vous distribuez vous-même (WhatsApp,
+  Bluetooth, clé USB), sans que l'ouvrière ait à trouver un menu de navigateur ;
+- un écran d'erreur en français qui distingue « pas de réseau » de « le serveur ne
+  répond pas », avec un bouton *Réessayer* ;
+- un menu ⋯ discret : Rafraîchir · Changer l'adresse du serveur · Ouvrir l'espace RH ·
+  **Effacer mon accès** (quand un téléphone change de main) ;
+- il fonctionne sur une installation **locale en http**, là où une PWA ne s'installe
+  pas (un service worker exige https).
+
+L'adresse du serveur est demandée **une seule fois** au premier démarrage : la même
+application sert pour une installation hébergée et pour l'ordinateur de l'atelier.
+
+**Le fichier `.apk` lui-même n'est pas fourni** : sa compilation exige le SDK Android
+de Google (plus d'un gigaoctet). Le projet est livré prêt à compiler, avec une recette
+GitHub Actions (`.github/workflows/apk.yml`) qui le construit **dans le cloud,
+gratuitement, en 3 à 5 minutes**, sans rien installer sur votre PC — vous renseignez
+votre domaine au lancement et vous téléchargez le fichier. Android Studio marche aussi.
+Tout est détaillé dans **ANDROID_ET_PWA.md**, y compris la signature pour le Play Store.
+
+Ce qui reste hors périmètre : les **notifications push** (elles demandent un service
+de messagerie Firebase et une décision sur ce qu'on notifie) et un **lecteur QR
+intégré** à l'application — inutile ici, puisque le scan avec l'appareil photo ouvre
+déjà l'application.
 
 ---
 
@@ -406,27 +626,34 @@ règles à appliquer.
 2. **Travail de nuit** (21 h – 6 h) : non tracé, et le shift de nuit reste incalculable
    (les badges sont triés en minutes de journée, une prise de poste à 20:00 pour une
    sortie à 04:00 est lue à l'envers).
-3. **Aucun calcul monétaire.** `salaire` n'est utilisé dans aucun rapport : pas de
-   taux horaire, brut, net, retenue pour absence ou retard, IRPP/CSS, primes
-   (présence, transport, panier, rendement), acomptes, ni bulletin de paie.
+3. **Le calcul monétaire s'arrête à « quantité × taux ».** Le prix de l'heure et
+   celui de la journée sont maintenant saisissables et un montant estimé figure dans
+   les rapports (voir §3 bis), mais il n'y a toujours ni majoration légale des heures
+   supplémentaires, ni retenue pour absence ou retard, ni IRPP/CSS, ni primes
+   (présence, transport, panier, rendement), ni acomptes, ni bulletin de paie.
 4. **CNSS** : le champ numéro d'affiliation existe maintenant sur la fiche, mais il
    n'y a ni déclaration trimestrielle ni état des salaires bruts.
 5. **Solde de congés** : `congesDu / congesAu / congesCoef` n'alimentent que l'espace
    salarié. Pas d'état « acquis / pris / restants » côté RH, ni de modélisation du
    droit légal tunisien.
-6. **Export XLSX** : seul le CSV existe.
+6. **Export XLSX** : les exports de rapports restent en CSV. Le format XLSX n'est
+   utilisé que dans un sens, pour le modèle de fiches du personnel (§3 ter).
 
 ---
 
 ## 7. Structure des fichiers
 
 ```
+android/                        projet Android prêt à compiler (voir ANDROID_ET_PWA.md)
+.github/workflows/apk.yml       fabrique le fichier .apk sur GitHub, gratuitement
 demo/                           deux fichiers HTML autonomes (voir §0)
 outils/faire_demo.py            régénère ces fichiers depuis le code réel
 outils/integrer_sauvegarde.py   reprend une sauvegarde de l'ancienne version
 app.py                          serveur (FastAPI + SQLite)
+docker-entrypoint.sh            droits du volume puis abandon des privilèges root
 reinit_admin.py                 dépannage : réinitialise un mot de passe hors ligne
 mdb_import.py                   lecture .mdb + calendrier (fériés, repos, clôture)
+fiches_import.py                modèle Excel des fiches + relecture (création / mise à jour)
 static/index.html               coquille de l'interface RH
 static/moi.html                 espace salarié (installable)
 static/login.html               connexion
@@ -437,7 +664,7 @@ static/assets/
   pilotrh-views.js              rapports, personnel, absences, congés, RSE, IA
   pilotrh-saisie.js             saisie rapide, correction par plage, import, réglages
   pilotrh-coms.js               notes de service et sondages
-  sw.js, manifest.webmanifest   application installable
+  sw.js, manifest.webmanifest   application installable (servis depuis / , voir §4)
 ```
 
 Le calcul des heures était **dupliqué** entre l'interface RH et l'espace salarié, et
@@ -449,17 +676,22 @@ dans `pilotrh-core.js`.
 
 ## 8. Tests
 
-**346 tests automatisés** accompagnent cette version :
+**668 tests automatisés** accompagnent cette version :
 
 | Suite | Nombre | Ce qu'elle vérifie |
 |---|---|---|
-| Moteur de calcul (`node`) | 57 | pause partielle, fériés, repos travaillé, badge unique, `hM`/`hsM`, arrondi cumul vs jour, Ramadan, échappement |
-| Import et calendrier (`python`) | 29 | correction du sexe, protections anti-écrasement, fériés, mois clos, collision d'identifiants, démissions |
-| Serveur (`python`) | 92 | fuite de `_secret`, élévation de privilèges, écritures concurrentes, sauvegardes, sondages, anti-force brute, SSRF, audit |
-| Interface (navigateur réel) | 84 | XSS avec un nom hostile, filtres et tri, saisie rapide, correction par plage, graphiques sans CDN, menu mobile, parcours complet de l'espace salarié |
-| Données réelles (`file://`) | 11 | reprise d'une sauvegarde de l'ancienne version : effectif, réglages, périodes, plages de pause, totaux de paie |
-| Démonstration hors ligne (`file://`) | 51 | ouverture sans serveur, modification réelle des données, saisie rapide, correction par plage, messagerie, export CSV, mobile, espace salarié |
-| Mots de passe et dépannage (`python`) | 22 | compatibilité des empreintes de la v2, renforcement transparent, réinitialisation par variable et par script, conservation des codes à 4 chiffres |
+| Moteur de calcul (`node`) | 72 | pause partielle, fériés, repos travaillé, badge unique, `hM`/`hsM`, arrondi cumul vs jour, Ramadan, échappement, **mode de paie et taux (heure / journée, repli sur le taux par défaut)** |
+| Import et calendrier (`python`) | 28 | correction du sexe, protections anti-écrasement, fériés, mois clos, collision d'identifiants, démissions |
+| Serveur (`python`) | 123 | fuite de `_secret`, élévation de privilèges, écritures concurrentes, sauvegardes, sondages, anti-force brute, SSRF, audit, **modèle de fiches et import en masse (aperçu sans écriture, droits, pointages intacts)** |
+| Import de fiches (`python`) | 82 | en-têtes tolérants, dates et nombres, listes de référence, doublons, cellule vide sans effet, `-` qui efface, aller-retour du classeur prérempli sans aucun changement, 120 fiches |
+| Interface (navigateur réel) | 129 | XSS avec un nom hostile, filtres et tri, saisie rapide, correction par plage, graphiques sans CDN, menu mobile, espace salarié, **alertes cliquables jusqu'à la ligne surlignée, saisie du taux, colonnes Taux / Montant, parcours complet d'import de fiches** |
+| Données réelles (`file://`) | 14 | reprise d'une sauvegarde de l'ancienne version : effectif, réglages, périodes, plages de pause, totaux de paie |
+| Démonstration hors ligne (`file://`) | 57 | ouverture sans serveur, modification réelle des données, saisie rapide, correction par plage, messagerie, export CSV, mobile, espace salarié, **alertes cliquables** |
+| Arrondi (`node`) | 18 | écart entre arrondi par jour et arrondi sur le cumul, sur des arrivées réalistes |
+| Application Android (`python` + `javac`) | 49 | le projet compile réellement, aucune permission superflue, aucune adresse codée en dur, normalisation de l'adresse du serveur (domaine → https, adresse locale → http, port, barre finale, saisie absurde) |
+| Reprise d'une sauvegarde (`python`) | 26 | séparation des identifiants dupliqués, **révocation des accès des deux fiches concernées et conservation de toutes les autres cartes**, réglages complétés sans être modifiés |
+| Déploiement en conteneur (`python` + `sh`) | 36 | résolution du dossier de données, message d'erreur utile sur un volume non accessible, **le script d'entrée est réellement lancé** : droits du volume ajustés puis privilèges lâchés, uvicorn en utilisateur non root |
+| Mots de passe et dépannage (`python`) | 34 | compatibilité des empreintes de la v2, renforcement transparent, réinitialisation par variable et par script, **une carte QR de la v2 avec son code à 4 chiffres ouvre encore l'espace salarié**, ancien appel `GET` toléré |
 
 Points vérifiés qui méritent d'être signalés : un nom d'employée contenant
 `<img src=x onerror=...>` — cas réaliste, le nom vient d'un champ libre sur la

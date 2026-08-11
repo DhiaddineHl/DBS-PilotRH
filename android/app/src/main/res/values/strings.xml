@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PilotRH</string>
+
+    <!-- Domaine de votre serveur, SANS https:// ni barre finale.
+         Il sert au filtre d'intention : quand une salariée scanne sa carte QR,
+         Android ouvre alors PilotRH au lieu du navigateur.
+         Remplacez cette valeur par la vôtre (ex. pilotrh-dbs.up.railway.app).
+         Laissée telle quelle, l'application fonctionne mais le scan de carte
+         continuera d'ouvrir le navigateur. -->
+    <string name="app_host">exemple.invalid</string>
+
+    <string name="reglage_titre">Adresse de PilotRH</string>
+    <string name="reglage_aide">Saisissez l\'adresse indiquée par le service RH. Elle n\'est demandée qu\'une seule fois.</string>
+    <string name="reglage_exemple">pilotrh-dbs.up.railway.app</string>
+    <string name="reglage_valider">Continuer</string>
+    <string name="reglage_invalide">Adresse incompréhensible. Exemple : pilotrh-dbs.up.railway.app ou 192.168.1.20:8000</string>
+    <string name="reglage_note">Sur le réseau de l\'usine, l\'adresse est celle de l\'ordinateur qui fait tourner PilotRH (par exemple 192.168.1.20:8000).</string>
+
+    <string name="err_reseau_titre">Pas de réseau</string>
+    <string name="err_reseau_aide">Le téléphone n\'est connecté ni au Wi-Fi ni aux données mobiles. Reconnectez-vous puis réessayez.</string>
+    <string name="err_serveur_titre">PilotRH ne répond pas</string>
+    <string name="err_serveur_aide">Le serveur n\'est pas joignable. Vérifiez que vous êtes sur le bon réseau, ou que l\'adresse ci-dessous est la bonne.</string>
+    <string name="reessayer">Réessayer</string>
+    <string name="changer_adresse">Changer l\'adresse</string>
+
+    <string name="menu">Menu</string>
+    <string name="m_rafraichir">Rafraîchir</string>
+    <string name="m_adresse">Changer l\'adresse du serveur</string>
+    <string name="m_rh">Ouvrir l\'espace RH (navigateur)</string>
+    <string name="m_oublier">Effacer mon accès</string>
+    <string name="oublier_confirme">Votre accès personnel sera effacé de ce téléphone. Il faudra rescanner votre carte QR pour revenir. Continuer ?</string>
+    <string name="effacer">Effacer</string>
+    <string name="oublie">Accès effacé de ce téléphone</string>
+    <string name="annuler">Annuler</string>
+    <string name="fermer">Fermer</string>
+    <string name="aucun_navigateur">Aucun navigateur installé sur ce téléphone</string>
+</resources>
