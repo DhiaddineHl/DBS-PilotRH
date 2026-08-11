@@ -148,9 +148,29 @@ const ENGINE = C.makeEngine(()=>(DATA?DATA.settings:{}));
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');
   clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),2600)}
 
+/* Les messages techniques du serveur ne veulent rien dire pour une ouvrière :
+   « non_connecte » s'affichait tel quel dans un bandeau. On les traduit. */
+const MESSAGES = {
+  non_connecte: 'Votre accès n’a pas été reconnu. Rescannez votre carte QR, ou demandez-en une nouvelle au service RH.',
+  invalide: 'Votre accès n’a pas été reconnu. Rescannez votre carte QR.',
+};
+function lisible(err){
+  const brut = String((err && err.message) || '');
+  if (MESSAGES[brut]) return MESSAGES[brut];
+  if (err && err.reseau) return 'Pas de réseau. Réessayez quand la connexion revient.';
+  if (/^erreur 5\d\d$/.test(brut)) return 'Le serveur a rencontré un problème. Réessayez dans un instant.';
+  if (brut === 'erreur 404') return 'Cette fonction n’est pas disponible sur ce serveur. Prévenez le service RH.';
+  return brut || 'Action impossible pour le moment';
+}
+
 async function post(url,body){
-  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(Object.assign({t:TOKEN},body||{}))});
+  let r;
+  try{
+    r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(Object.assign({t:TOKEN},body||{}))});
+  }catch(x){
+    const e=new Error('Pas de réseau');e.reseau=true;throw e;
+  }
   const txt=await r.text();
   let d=null;try{d=txt?JSON.parse(txt):null}catch(e){}
   if(!r.ok){const e=new Error((d&&d.error)||('erreur '+r.status));e.status=r.status;e.data=d;throw e}
@@ -330,7 +350,7 @@ function brancherSignalement(){
     try{await post('/api/me/flag',{date,message});
       toast('Signalement envoyé au service RH');
       document.getElementById('fmsg').value='';
-    }catch(e){toast(e.message||'Échec de l’envoi')}
+    }catch(e){toast(lisible(e))}
     b.disabled=false;b.textContent='Signaler au service RH';
   };
 }
@@ -387,7 +407,7 @@ async function voter(id,choix){
     const d=await post('/api/me/vote',{id,choix});
     v.vote=true;v.resultats=d.resultats;v.monChoix=choix;
     render();toast('Merci, votre réponse est enregistrée');
-  }catch(e){toast(e.message||'Échec');}
+  }catch(e){toast(lisible(e));}
 }
 
 /* ------------------------------------------------------------- installation */

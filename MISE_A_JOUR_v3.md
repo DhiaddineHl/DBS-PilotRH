@@ -454,6 +454,38 @@ Même écran, onglet **Sondages**. Question + 2 à 8 réponses, ciblage identiqu
 mode anonyme (totaux seulement) ou nominatif. Un seul vote par personne, résultats
 en direct, clôture manuelle, export CSV.
 
+### Un vote de salariée ne partait pas — corrigé
+
+**Symptôme :** une ouvrière répond à un sondage depuis son espace, un message
+« non connecté » s'affiche, et la réponse n'arrive jamais côté RH.
+
+**Cause :** les deux endpoints de l'espace salarié `/api/me/vote` (répondre à un
+sondage) et `/api/me/lu` (accusé de lecture d'une note) n'avaient pas été ajoutés à
+la liste des chemins publics. Le portier d'authentification les bloquait donc avant
+même d'atteindre le code, avec un `401 non_connecte` — alors que ces deux endpoints
+vérifient eux-mêmes le jeton de la carte QR et n'ont pas besoin de session RH.
+
+Les **accusés de lecture des notes de service** étaient touchés par le même oubli :
+la colonne « lu par » restait donc vide quoi qu'il arrive.
+
+**Pourquoi les tests ne l'avaient pas vu :** ils appelaient les fonctions
+directement, sans traverser le portier. Trois garde-fous ont été ajoutés, en plus du
+correctif :
+
+1. un test **énumère les routes réellement déclarées** et refuse tout `/api/me/...`
+   absent de la liste publique — l'oubli ne peut plus se reproduire pour un futur
+   endpoint ;
+2. le **portier lui-même est maintenant exercé** dans les tests (18 cas : ce qui doit
+   passer sans session, ce qui doit rester fermé, ce qu'un compte en lecture seule
+   peut faire) ;
+3. le faux serveur des tests de navigateur applique **la même règle publique** que le
+   vrai : il répondait « ok » à tout, ce qui masquait le problème.
+
+Et côté ouvrière, les messages techniques sont désormais **traduits** : `non_connecte`
+devenait un bandeau incompréhensible ; elle lit maintenant « Votre accès n'a pas été
+reconnu. Rescannez votre carte QR… », et une coupure réseau dit « Pas de réseau »
+au lieu d'une erreur brute.
+
 ### Application installable (le « Android » sans passer par le Play Store)
 L'espace salarié est maintenant une application installable. La salariée scanne son
 QR **une fois**, une invitation « Installer l'application » s'affiche, et elle obtient
@@ -676,15 +708,15 @@ dans `pilotrh-core.js`.
 
 ## 8. Tests
 
-**668 tests automatisés** accompagnent cette version :
+**709 tests automatisés** accompagnent cette version :
 
 | Suite | Nombre | Ce qu'elle vérifie |
 |---|---|---|
 | Moteur de calcul (`node`) | 72 | pause partielle, fériés, repos travaillé, badge unique, `hM`/`hsM`, arrondi cumul vs jour, Ramadan, échappement, **mode de paie et taux (heure / journée, repli sur le taux par défaut)** |
 | Import et calendrier (`python`) | 28 | correction du sexe, protections anti-écrasement, fériés, mois clos, collision d'identifiants, démissions |
-| Serveur (`python`) | 123 | fuite de `_secret`, élévation de privilèges, écritures concurrentes, sauvegardes, sondages, anti-force brute, SSRF, audit, **modèle de fiches et import en masse (aperçu sans écriture, droits, pointages intacts)** |
+| Serveur (`python`) | 158 | fuite de `_secret`, élévation de privilèges, écritures concurrentes, sauvegardes, sondages, anti-force brute, SSRF, audit, modèle de fiches et import en masse, **le portier d'authentification exercé pour de vrai** (tout endpoint de l'espace salarié doit passer sans session, tout le reste doit rester fermé) |
 | Import de fiches (`python`) | 82 | en-têtes tolérants, dates et nombres, listes de référence, doublons, cellule vide sans effet, `-` qui efface, aller-retour du classeur prérempli sans aucun changement, 120 fiches |
-| Interface (navigateur réel) | 129 | XSS avec un nom hostile, filtres et tri, saisie rapide, correction par plage, graphiques sans CDN, menu mobile, espace salarié, **alertes cliquables jusqu'à la ligne surlignée, saisie du taux, colonnes Taux / Montant, parcours complet d'import de fiches** |
+| Interface (navigateur réel) | 135 | XSS avec un nom hostile, filtres et tri, saisie rapide, correction par plage, graphiques sans CDN, menu mobile, espace salarié, alertes cliquables jusqu'à la ligne surlignée, saisie du taux, colonnes Taux / Montant, import de fiches, **vote d'une salariée suivi jusqu'à la réponse HTTP et jusqu'à sa remontée côté RH** |
 | Données réelles (`file://`) | 14 | reprise d'une sauvegarde de l'ancienne version : effectif, réglages, périodes, plages de pause, totaux de paie |
 | Démonstration hors ligne (`file://`) | 57 | ouverture sans serveur, modification réelle des données, saisie rapide, correction par plage, messagerie, export CSV, mobile, espace salarié, **alertes cliquables** |
 | Arrondi (`node`) | 18 | écart entre arrondi par jour et arrondi sur le cumul, sur des arrivées réalistes |

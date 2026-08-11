@@ -211,6 +211,30 @@ t("premier vote compte", a['resultats'], [0,1])
 t("second vote de la meme personne refuse", getattr(b,'status_code',None), 409)
 t("vote d'une autre personne compte", c['resultats'], [0,2])
 
+# le vote doit REMONTER cote RH : c'est ce que l'utilisateur constatait absent
+vu_rh = A.api_coms()
+vote_rh = vu_rh['votes'][0]
+t("cote RH : les resultats du sondage sont a jour", vote_rh['resultats'], [0,2])
+t("cote RH : le nombre de votantes est connu", len(vote_rh.get('votants') or []), 2)
+tv("cote RH : le sondage anonyme ne dit pas qui a vote quoi",
+   not vote_rh.get('detail'))
+# meme chose sur un sondage nomme
+async def vote_nomme():
+    class R(Req):
+        def __init__(self,body,sess=False):
+            super().__init__({'pilotrh_sess':tok} if sess else {}); self._b=body
+        async def json(self): return self._b
+    await A.api_coms_vote(R({'question':'Heure de la pause ?','options':['12:00','12:30'],
+                             'cible':{},'anonyme':False}, sess=True))
+    vid=[v for v in A._coms()[1] if v['question'].startswith('Heure')][0]['id']
+    await A.api_me_vote(R({'t':'TOK1','id':vid,'choix':0}))
+    return [v for v in A.api_coms()['votes'] if v['question'].startswith('Heure')][0]
+vn=asyncio.get_event_loop().run_until_complete(vote_nomme())
+t("cote RH : sondage nomme, le resultat est compte", vn['resultats'], [1,0])
+t("cote RH : sondage nomme, on sait qui a repondu quoi", vn.get('detail'), {'E001':0})
+tv("les sondages ne fuient pas dans /api/state (endpoint dedie)",
+   'votes' not in A.get_state(prive=False) and 'notes' not in A.get_state(prive=False))
+
 async def lire():
     class R(Req):
         def __init__(self,body): super().__init__(); self._b=body
@@ -273,7 +297,91 @@ tv("/photos n'est plus public", not A._est_public('/photos/E001.jpg'))
 tv("/assets/ public", A._est_public('/assets/pilotrh-core.js'))
 tv("/api/health public et minimal", A._est_public('/api/health') and A.health()=={'ok':True})
 tv("/sw.js public (l'espace salarie doit s'installer sans connexion RH)", A._est_public('/sw.js'))
+tv("/api/me/lu public : l'accuse de lecture ne passe pas par une session RH",
+   A._est_public('/api/me/lu'))
+tv("/api/me/vote public : une ouvriere doit pouvoir repondre a un sondage",
+   A._est_public('/api/me/vote'))
+
+print("\n--- garde-fou : TOUT endpoint de l'espace salarie doit etre public ---")
+# Le bug reel : /api/me/vote et /api/me/lu n'etaient pas dans la liste publique.
+# Le portier renvoyait « non_connecte » et le vote de l'ouvriere etait perdu. Les
+# tests ne le voyaient pas parce qu'ils appelaient la fonction directement, sans
+# traverser le portier. On enumere donc les routes REELLEMENT declarees.
+routes_me = sorted({p for (m, p, f) in A.app.routes if p.startswith('/api/me')})
+tv("les routes de l'espace salarie sont bien declarees", len(routes_me) >= 4, str(routes_me))
+for chemin in routes_me:
+    tv("route de l'espace salarie accessible sans session : %s" % chemin,
+       A._est_public(chemin))
+manquantes = [p for p in routes_me if p not in A.PUBLIC_SALARIE]
+t("aucune route /api/me oubliee dans PUBLIC_SALARIE", manquantes, [])
+inutiles = [p for p in A.PUBLIC_SALARIE if p not in routes_me]
+t("aucun chemin declare public sans route correspondante", inutiles, [])
+# et l'inverse : rien d'autre ne doit devenir public par megarde
+attendus_publics = {'/moi', '/moi.html', '/login', '/login.html', '/api/login',
+                    '/api/logout', '/api/health', '/favicon.ico', '/sw.js',
+                    '/manifest.webmanifest'} | set(A.PUBLIC_SALARIE)
+t("la liste publique ne contient rien d'inattendu",
+  sorted(A.PUBLIC_EXACT - attendus_publics), [])
+tv("les donnees RH restent protegees",
+   not any(A._est_public(x) for x in ('/api/state', '/api/coms', '/api/pointage',
+                                      '/api/audit', '/api/users', '/api/employees/modele.xlsx',
+                                      '/api/employees/import-fiches')))
 tv("/manifest.webmanifest public", A._est_public('/manifest.webmanifest'))
+
+print("\n--- le portier d'authentification, exerce pour de vrai ---")
+# La couche qui manquait : les tests appelaient les endpoints en direct, donc le
+# portier n'etait jamais traverse. C'est lui qui renvoyait « non_connecte » sur le
+# vote d'une ouvriere. On le fait donc tourner ici, tel quel.
+class ReqGate:
+    def __init__(self, chemin, methode="POST", cookies=None):
+        self.method = methode
+        self.cookies = cookies or {}
+        self.headers = {}
+        self.url = type("u", (), {"path": chemin})()
+        self.client = type("c", (), {"host": "10.0.0.9"})()
+
+async def _passe(chemin, methode="POST", cookies=None):
+    """Renvoie ('PASSE', None) si le portier laisse aller l'appel jusqu'a
+    l'endpoint, sinon ('BLOQUE', code)."""
+    marqueur = {}
+    async def call_next(req):
+        marqueur["vu"] = True
+        return type("r", (), {"headers": {}, "status_code": 200})()
+    rep = await A.auth_gate(ReqGate(chemin, methode, cookies), call_next)
+    if marqueur.get("vu"):
+        return ("PASSE", None)
+    return ("BLOQUE", getattr(rep, "status_code", None))
+
+def passe(chemin, methode="POST", cookies=None):
+    return asyncio.get_event_loop().run_until_complete(_passe(chemin, methode, cookies))
+
+# sans aucune session : c'est le cas d'une ouvriere sur son telephone
+for chemin in ("/api/me", "/api/me/flag", "/api/me/lu", "/api/me/vote"):
+    t("sans session, le portier laisse passer %s" % chemin, passe(chemin), ("PASSE", None))
+t("le vote d'une ouvriere n'est plus refuse (c'etait le bug)",
+  passe("/api/me/vote"), ("PASSE", None))
+t("l'accuse de lecture d'une note passe aussi", passe("/api/me/lu"), ("PASSE", None))
+t("l'espace salarie lui-meme est servi", passe("/moi", "GET"), ("PASSE", None))
+t("le service worker est servi sans session", passe("/sw.js", "GET"), ("PASSE", None))
+
+# et le reste demeure ferme
+t("sans session, les donnees RH sont refusees", passe("/api/state", "GET"), ("BLOQUE", 401))
+t("sans session, la messagerie RH est refusee", passe("/api/coms", "GET"), ("BLOQUE", 401))
+t("sans session, publier une note est refuse", passe("/api/coms/vote"), ("BLOQUE", 401))
+t("sans session, le modele de fiches est refuse",
+  passe("/api/employees/modele.xlsx", "GET"), ("BLOQUE", 401))
+t("sans session, une page RH renvoie vers la connexion", passe("/", "GET"), ("BLOQUE", 302))
+
+# avec une session en lecture seule
+lect = A._sign_session({"login": "obs", "role": "lecture", "nom": "Observateur"})
+ck = {"pilotrh_sess": lect}
+t("lecture seule : consulter est permis", passe("/api/state", "GET", ck), ("PASSE", None))
+t("lecture seule : ecrire un pointage est refuse", passe("/api/pointage", "POST", ck), ("BLOQUE", 403))
+t("lecture seule : gerer les comptes est refuse", passe("/api/users", "POST", ck), ("BLOQUE", 403))
+t("lecture seule : importer des fiches est refuse",
+  passe("/api/employees/import-fiches", "POST", ck), ("BLOQUE", 403))
+ckadmin = {"pilotrh_sess": tok}
+t("administrateur : tout passe", passe("/api/users", "POST", ckadmin), ("PASSE", None))
 
 print("\n--- application installable : portee du service worker ---")
 # Un service worker servi depuis /assets/ n'a autorite que sur /assets/ : il

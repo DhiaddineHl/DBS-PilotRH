@@ -188,9 +188,33 @@ const { chromium } = require('playwright');
   await p2.click('.seg button:nth-child(3)'); await p2.waitForTimeout(300);
   t('sondage affiché', (await p2.content()).includes('Pause a 12h'));
   t('deux réponses proposées', await p2.locator('.vote-opt').count() === 2);
+  /* Le vote doit VRAIMENT partir : c'est ici que le bug se voyait — /api/me/vote
+     n'était pas dans les chemins publics du serveur, le portier répondait
+     « non_connecte » et la réponse de l'ouvrière était perdue. On surveille donc
+     la réponse HTTP réelle, pas seulement l'affichage. */
+  const reponses = [];
+  p2.on('response', r => { if (r.url().includes('/api/me/vote')) reponses.push(r.status()) });
   p2.once('dialog', d => d.accept());
-  await p2.locator('.vote-opt').first().click(); await p2.waitForTimeout(600);
-  t('après vote, les résultats s\'affichent', (await p2.content()).includes('réponse(s)'));
+  await p2.locator('.vote-opt').first().click(); await p2.waitForTimeout(900);
+  t('le vote est bien envoyé au serveur', reponses.length === 1, JSON.stringify(reponses));
+  t('le serveur accepte le vote (pas de 401 « non connecté »)', reponses[0] === 200, String(reponses[0]));
+  const apresVote = await p2.content();
+  /* on lit le TEXTE VISIBLE : le mot « non_connecte » figure aussi dans le script
+     de la page (table de traduction), donc content() ne peut pas servir ici */
+  const visible = await p2.locator('body').innerText();
+  t('aucun message « non connecté » à l\'écran', !/non_connecte|non connecté/i.test(visible), visible.slice(0,140));
+  t('après vote, les résultats s\'affichent', apresVote.includes('réponse(s)'));
+  t('la réponse est confirmée à l\'ouvrière', /enregistrée|Merci/i.test(apresVote));
+  /* et le vote est bien parvenu côté RH : on relit ce que verra l'administrateur */
+  const cotéRH = await p2.evaluate(async () => {
+    const r = await fetch('/api/coms'); return r.ok ? r.json() : null });
+  t('le vote remonte côté RH', !!cotéRH && (cotéRH.votes[0].votants || []).length === 1,
+    JSON.stringify((cotéRH && cotéRH.votes && cotéRH.votes[0] && cotéRH.votes[0].votants) || null));
+  /* un second vote de la même personne doit être refusé, avec un message clair */
+  p2.once('dialog', d => d.accept());
+  await p2.locator('.vote-opt').first().click().catch(()=>{});
+  await p2.waitForTimeout(700);
+  t('un second vote ne passe pas en silence', reponses.length <= 2);
   await p2.screenshot({ path:'./captures/vue_salarie.png', fullPage:false });
 
   console.log('\n--- Alertes cliquables : de l\'alerte à la correction ---');

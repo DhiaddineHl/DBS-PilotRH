@@ -667,13 +667,25 @@ def _ip(request):
     return (request.headers.get("x-forwarded-for", "").split(",")[0].strip()
             or (request.client.host if request.client else ""))
 
-PUBLIC_EXACT = {"/moi", "/moi.html", "/login", "/login.html", "/api/login",
-                "/api/logout", "/api/me", "/api/me/flag", "/api/health", "/favicon.ico",
-                # le service worker et le manifeste doivent être servis à la RACINE :
-                # un service worker déposé sous /assets/ n'a autorité que sur /assets/,
-                # donc il n'interceptait jamais /moi — l'espace salarié n'était en
-                # réalité ni installable ni utilisable hors ligne.
-                "/sw.js", "/manifest.webmanifest"}
+# L'espace salarié n'a pas de session : chaque appel porte le jeton de la carte QR
+# et l'endpoint vérifie lui-même ce jeton (_find_by_token). Ces chemins doivent
+# donc échapper au portier d'authentification — sinon la salariée reçoit
+# « non_connecte » et l'action est perdue.
+#
+# TOUT nouvel endpoint /api/me/... doit être ajouté ici. L'oubli est passé
+# inaperçu pour /api/me/lu et /api/me/vote : les tests appelaient la fonction
+# directement, donc sans traverser le portier. Un test énumère désormais les
+# routes déclarées et refuse tout /api/me/... absent de cette liste.
+PUBLIC_SALARIE = ("/api/me", "/api/me/flag", "/api/me/lu", "/api/me/vote")
+
+PUBLIC_EXACT = set(PUBLIC_SALARIE) | {
+    "/moi", "/moi.html", "/login", "/login.html", "/api/login",
+    "/api/logout", "/api/health", "/favicon.ico",
+    # le service worker et le manifeste doivent être servis à la RACINE :
+    # un service worker déposé sous /assets/ n'a autorité que sur /assets/,
+    # donc il n'interceptait jamais /moi — l'espace salarié n'était en
+    # réalité ni installable ni utilisable hors ligne.
+    "/sw.js", "/manifest.webmanifest"}
 PUBLIC_PREFIXES = ("/assets/",)
 ADMIN_ONLY = ("/api/users",)
 RH_PLUS = ("/api/employee/delete", "/api/import-mdb", "/api/punches", "/api/sync",

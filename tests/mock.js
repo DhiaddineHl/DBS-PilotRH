@@ -55,6 +55,8 @@ const votes=[{id:'V1',question:'Pause a 12h ou 12h30 ?',options:['12:00','12:30'
 const audit=[{ts:new Date().toISOString(),qui:'Système',role:'admin',ip:'10.0.0.1',action:'Amorçage'},
              {ts:new Date().toISOString(),qui:'<img src=x onerror="window.__XSS3=1">',role:'rh',ip:'10.0.0.2',action:'<b>test</b>'}];
 const WIN=70;
+/* copie de PUBLIC_SALARIE dans app.py : tout endpoint de l'espace salarie */
+const PUBLIC_SALARIE=['/api/me','/api/me/flag','/api/me/lu','/api/me/vote'];
 function json(res,o,code){res.writeHead(code||200,{'Content-Type':'application/json'});res.end(JSON.stringify(o))}
 const LOG=[];
 http.createServer((req,res)=>{
@@ -102,8 +104,24 @@ http.createServer((req,res)=>{
           votes:[{id:'V1',question:'Pause a 12h ou 12h30 ?',options:['12:00','12:30'],
                   ferme:false,vote:false,resultats:null,monChoix:null}]});
       }
+      /* Le faux serveur applique la MEME regle publique que le vrai : seuls les
+         chemins de l'espace salarie passent sans session. C'est ce qui manquait
+         quand /api/me/vote a ete oublie de la liste publique cote serveur — le
+         faux serveur repondait « ok » et le test ne voyait rien. */
+      if(p.startsWith('/api/me')&&PUBLIC_SALARIE.indexOf(p)<0)
+        return json(res,{error:'non_connecte'},401);
       if(p==='/api/me/lu'||p==='/api/me/flag')return json(res,{ok:true});
-      if(p==='/api/me/vote')return json(res,{ok:true,resultats:[13,30]});
+      if(p==='/api/me/vote'){
+        let b={};try{b=JSON.parse(body||'{}')}catch(e){}
+        if(!b.t)return json(res,{error:'invalide'},401);
+        const v=votes.find(x=>x.id===b.id);
+        if(!v)return json(res,{error:'Sondage introuvable'},404);
+        if(v.votants&&v.votants.indexOf('E001')>=0)return json(res,{error:'Vous avez déjà répondu'},409);
+        v.resultats=v.resultats||v.options.map(()=>0);
+        v.resultats[b.choix]=(v.resultats[b.choix]||0)+1;
+        v.votants=(v.votants||[]).concat(['E001']);
+        return json(res,{ok:true,resultats:v.resultats});
+      }
       if(p==='/api/state-meta'||p==='/api/pointage'||p==='/api/day'||p==='/api/pointages/bulk')
         return json(res,{ok:true});
       /* import de fiches : aperçu puis application, comme le vrai serveur */
