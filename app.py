@@ -155,6 +155,12 @@ def ts():
 
 SYNC = {"source": MDB_PATH, "last": None, "mtime": None, "error": None, "employees": 0}
 
+# Dernier contact avec la pointeuse, quelle qu'en soit la voie (agent d'usine,
+# lecture réseau directe, import d'un .mdb à la main). Conservé côté serveur pour
+# pouvoir alerter quand PLUS RIEN n'arrive : c'est le défaut qui a laissé passer
+# des journées entières sans heure de sortie sans que personne ne s'en aperçoive.
+POINTEUSE_META = "pointeuse"        # clé du blob meta (réservée au serveur)
+
 # ---------------------------------------------------------------------------
 # Base de données : un seul verrou d'écriture, WAL, migration au démarrage
 # ---------------------------------------------------------------------------
@@ -263,7 +269,7 @@ mdb_import.default_settings = default_settings
 # volontairement PLUS : sans cela, n'importe quel compte pouvait se nommer
 # administrateur ou choisir la clé de signature des sessions.
 CLIENT_META_KEYS = ("employees", "settings", "documents", "conges", "absences", "signalements", "exclus")
-SERVER_META_KEYS = ("users", "_secret")
+SERVER_META_KEYS = ("users", "_secret", "pointeuse")
 # retirés de la réponse envoyée au navigateur : les comptes et la clé de signature
 # ne doivent jamais en sortir ; les notes et sondages ont leur propre endpoint
 SECRETES = set(SERVER_META_KEYS) | {"notes", "votes"}
@@ -323,6 +329,56 @@ def set_meta(partial, cles=CLIENT_META_KEYS):
 
 def set_meta_serveur(partial):
     return set_meta(partial, cles=CLIENT_META_KEYS + SERVER_META_KEYS)
+
+
+POINTEUSE_DEFAUT = {"ip": "192.168.1.201", "port": 4370, "motdepasse": 0,
+                    "intervalle": 30, "alerte_h": 24, "note": ""}
+
+
+def pointeuse_reglages():
+    r = dict(POINTEUSE_DEFAUT)
+    r.update((get_meta().get(POINTEUSE_META) or {}).get("reglages") or {})
+    return r
+
+
+def pointeuse_etat():
+    p = get_meta().get(POINTEUSE_META) or {}
+    return p.get("etat") or {}
+
+
+def _note_contact(voie, pointages=0, jours=0, employees=0, erreur_msg=None, qui=""):
+    """Enregistre le dernier contact avec la pointeuse. Appelé par TOUTES les voies
+    d'entrée : sans cela, l'application ne peut pas savoir qu'elle ne reçoit plus
+    rien — et un silence de trois jours ne se voit qu'au moment de la paie."""
+    with _WLOCK:
+        m = get_meta()
+        p = dict(m.get(POINTEUSE_META) or {})
+        etat = dict(p.get("etat") or {})
+        if erreur_msg:
+            etat["derniere_erreur"] = {"ts": ts(), "voie": voie, "message": str(erreur_msg)[:300]}
+        else:
+            etat.update({"ts": ts(), "voie": voie, "pointages": int(pointages or 0),
+                         "jours": int(jours or 0), "employees": int(employees or 0),
+                         "par": qui or ""})
+            etat["derniere_erreur"] = None
+        p["etat"] = etat
+        set_meta_serveur({POINTEUSE_META: p})
+    return etat
+
+
+def pointeuse_silence_h():
+    """Heures écoulées depuis le dernier pointage reçu (None si jamais rien reçu)."""
+    e = pointeuse_etat()
+    if not e.get("ts"):
+        return None
+    try:
+        t = datetime.datetime.fromisoformat(str(e["ts"]))
+        maintenant = now()
+        if t.tzinfo is None and maintenant.tzinfo is not None:
+            maintenant = maintenant.replace(tzinfo=None)
+        return max(0.0, (maintenant - t).total_seconds() / 3600.0)
+    except Exception:
+        return None
 
 def _rec_from_row(row):
     d, emp, st, e, s, p, hm, hsm, man, src = row
@@ -480,6 +536,8 @@ def do_sync(force=False):
         ensure_tokens_persist()
         SYNC.update(mtime=mt, error=None, employees=len(s["employees"]), last=ts())
         audit("Système", "Synchronisation pointeuse (%d employées)" % SYNC["employees"])
+        _note_contact("dossier surveillé", jours=len(s["pointages"]),
+                      employees=len(s["employees"]), qui="Système")
         log.info("[sync] %s", SYNC["last"])
     except Exception as e:
         SYNC["error"] = str(e)
@@ -748,20 +806,35 @@ def _mois_clos(dates):
 # ---------------------------------------------------------------------------
 # État
 # ---------------------------------------------------------------------------
+def _resume_pointeuse():
+    """Résumé non confidentiel de la liaison, joint à l'état pour que l'alerte
+    « pointeuse muette » puisse s'afficher sans appel supplémentaire. Les réglages
+    complets (adresse, mot de passe de communication) restent sur /api/pointeuse."""
+    h = pointeuse_silence_h()
+    seuil = +pointeuse_reglages().get("alerte_h", 24) or 24
+    return {"silence_h": (round(h, 2) if h is not None else None),
+            "muet": (h is None or h > seuil), "seuil_h": seuil,
+            "voie": (pointeuse_etat() or {}).get("voie", "")}
+
+
 @app.get("/api/state")
 def api_state(pointages: str = Query("fenetre", pattern="^(fenetre|tout|aucun)$")):
     """Renvoie l'état SANS les comptes ni la clé de signature, et par défaut avec
     seulement une fenêtre récente de pointages (le reste via /api/pointages)."""
     if pointages == "tout":
-        return get_state(prive=False)
+        m = get_state(prive=False)
+        m["pointeuse"] = _resume_pointeuse()
+        return m
     if pointages == "aucun":
         m = get_meta(prive=False); m["pointages"] = {}; m["fenetre"] = None
+        m["pointeuse"] = _resume_pointeuse()
         return m
     to = today()
     frm = to - datetime.timedelta(days=STATE_WINDOW_DAYS)
     m = get_meta(prive=False)
     m["pointages"] = get_pointages(frm.isoformat(), to.isoformat())
     m["fenetre"] = {"du": frm.isoformat(), "au": to.isoformat()}
+    m["pointeuse"] = _resume_pointeuse()
     return m
 
 @app.post("/api/state")
@@ -1041,6 +1114,7 @@ async def api_import_mdb(req: Request,
         s = await run_in_threadpool(_travail)
         audit(qui, "Import .mdb (%d employées, %d jours)" % (len(s["employees"]), len(s["pointages"])),
               role, _ip(req))
+        _note_contact("fichier", jours=len(s["pointages"]), employees=len(s["employees"]), qui=qui)
         # on ne renvoie plus l'état complet (il contenait les hashes et le secret) :
         # un résumé suffit, le client recharge ce dont il a besoin
         return {"ok": True, "employees": len(s["employees"]), "jours": len(s["pointages"])}
@@ -1072,9 +1146,12 @@ async def api_punches(req: Request):
         s = await run_in_threadpool(_travail)
         audit("Pointeuse", "Import direct pointeuse · %d pointages, %d employées"
               % (len(punches), len(s["employees"])), role, _ip(req))
+        _note_contact("agent", pointages=len(punches), jours=len(s["pointages"]),
+                      employees=len(s["employees"]), qui=qui)
         return {"ok": True, "employees": len(s["employees"]), "jours": len(s["pointages"])}
     except Exception as e:
         log.exception("échec import direct")
+        _note_contact("agent", erreur_msg=e, qui=qui)
         return erreur("Import impossible : %s" % e)
 
 @app.post("/api/sync")
@@ -1082,6 +1159,130 @@ def api_sync():
     return do_sync(force=True)
 
 DEVICE_ALLOW = [x.strip() for x in os.environ.get("PILOTRH_DEVICE_ALLOWLIST", "").split(",") if x.strip()]
+
+
+# ---------------------------------------------------------------------------
+# Pointeuse : réglages réseau et surveillance du dernier contact
+# ---------------------------------------------------------------------------
+@app.get("/api/pointeuse")
+def api_pointeuse(request: Request):
+    """Réglages + état de la liaison, pour l'écran de configuration."""
+    u = _current_user(request) or {}
+    rh = (u.get("role") in ("admin", "rh"))
+    if not rh:
+        # un chef d'atelier a besoin de savoir si la liaison est muette, pas de
+        # connaître l'adresse ni le mot de passe de communication de l'appareil
+        return {"reglages": {}, "etat": pointeuse_etat(),
+                "silence_h": pointeuse_silence_h(), "peut_modifier": False,
+                "lecture_directe_possible": False, "pyzk": False,
+                "mdb_path": "", "sync": {}, "url_publique": "",
+                "compte_agent_existe": True}
+    return {"reglages": pointeuse_reglages(),
+            "etat": pointeuse_etat(),
+            "silence_h": pointeuse_silence_h(),
+            # ce que le serveur peut faire lui-même dépend de son emplacement :
+            # sur un hébergeur public, il ne peut pas joindre une IP privée
+            "lecture_directe_possible": bool(DEVICE_ALLOW) or not bool(
+                os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID")),
+            "pyzk": _pyzk_present(),
+            "mdb_path": MDB_PATH,
+            "sync": SYNC,
+            "url_publique": PUBLIC_URL,
+            "peut_modifier": True,
+            "compte_agent_existe": any(x.get("login") == "agent" for x in (get_meta().get("users") or []))}
+
+
+def _pyzk_present():
+    try:
+        import zk  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+@app.post("/api/pointeuse")
+async def api_pointeuse_set(req: Request):
+    u = _current_user(req) or {}
+    if u.get("role") not in ("admin", "rh"):
+        return erreur("Réservé aux RH", 403)
+    b = await req.json()
+    r = pointeuse_reglages()
+    ip = str(b.get("ip") or r["ip"]).strip()
+    if ip and not _ip_valide(ip):
+        return erreur("Adresse IP invalide : « %s ». Exemple attendu : 192.168.1.201" % ip)
+    try:
+        port = int(b.get("port") or r["port"])
+        mdp = int(b.get("motdepasse") or 0)
+        inter = int(b.get("intervalle") or r["intervalle"])
+        alerte = int(b.get("alerte_h") or r["alerte_h"])
+    except (TypeError, ValueError):
+        return erreur("Port, mot de passe, intervalle et délai d'alerte doivent être des nombres.")
+    if port not in (4370, 4371):
+        return erreur("Port inattendu pour une pointeuse ZKTeco (4370 par défaut).")
+    if not (5 <= inter <= 1440):
+        return erreur("L'intervalle doit être compris entre 5 minutes et 24 heures.")
+    if not (1 <= alerte <= 240):
+        return erreur("Le délai d'alerte doit être compris entre 1 et 240 heures.")
+    with _WLOCK:
+        m = get_meta()
+        p = dict(m.get(POINTEUSE_META) or {})
+        p["reglages"] = {"ip": ip, "port": port, "motdepasse": mdp, "intervalle": inter,
+                         "alerte_h": alerte, "note": str(b.get("note") or "")[:200]}
+        set_meta_serveur({POINTEUSE_META: p})
+    qui, role = _acteur(req)
+    audit(qui, "Réglages de la pointeuse modifiés (%s:%d, toutes les %d min)" % (ip, port, inter),
+          role, _ip(req))
+    return {"ok": True, "reglages": pointeuse_reglages()}
+
+
+def _ip_valide(ip):
+    try:
+        import ipaddress
+        ipaddress.ip_address(ip)
+        return True
+    except Exception:
+        return False
+
+
+@app.get("/api/pointeuse/agent.txt")
+def api_agent_config(request: Request):
+    """Fichier de configuration prêt à coller à côté de l'agent d'usine. Évite de
+    faire modifier un fichier Python à la main sur le PC de l'atelier."""
+    u = _current_user(request) or {}
+    if u.get("role") not in ("admin", "rh"):
+        return erreur("Réservé aux RH", 403)
+    r = pointeuse_reglages()
+    base = PUBLIC_URL or "https://VOTRE-APP.up.railway.app"
+    txt = "\n".join([
+        "REM  ---------------------------------------------------------------",
+        "REM  PilotRH — configuration de l'agent d'usine",
+        "REM  Placez ce fichier a cote de pilotrh_agent.py, sous le nom",
+        "REM  lancer_agent.bat, et double-cliquez dessus.",
+        "REM",
+        "REM  Le mot de passe ci-dessous est celui du compte de service 'agent'",
+        "REM  (Securite & acces). Ne mettez JAMAIS le mot de passe administrateur",
+        "REM  sur un PC d'atelier.",
+        "REM  ---------------------------------------------------------------",
+        "@echo off",
+        "chcp 65001 >nul",
+        'set "PILOTRH_URL=%s"' % base,
+        'set "PILOTRH_LOGIN=agent"',
+        'set "PILOTRH_PASSWORD=A_REMPLACER_PAR_LE_MOT_DE_PASSE_DU_COMPTE_AGENT"',
+        'set "PILOTRH_METHODE=pointeuse"',
+        'set "PILOTRH_DEVICE_IP=%s"' % r["ip"],
+        'set "PILOTRH_DEVICE_PORT=%d"' % r["port"],
+        'set "PILOTRH_DEVICE_PW=%d"' % r["motdepasse"],
+        'set "PILOTRH_INTERVAL_MIN=%d"' % r["intervalle"],
+        "",
+        "REM  Methode fichier .mdb : mettez PILOTRH_METHODE=fichier et decommentez",
+        'REM  set "PILOTRH_MDB=C:\\ZKTeco\\attBackup.mdb"',
+        "",
+        "python pilotrh_agent.py",
+        "pause",
+        "",
+    ])
+    return Response(content=txt.encode("utf-8"), media_type="text/plain; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="lancer_agent.bat"'})
 
 def _ip_privee(ip):
     try:
@@ -1095,9 +1296,12 @@ def _ip_privee(ip):
 async def api_pull_device(req: Request):
     """Se connecte directement à la pointeuse ZKTeco (réseau) et importe les pointages."""
     b = await req.json()
-    ip = str(b.get("ip") or "192.168.1.201").strip()
-    port = int(b.get("port") or 4370)
-    pw = int(b.get("password") or 0)
+    # à défaut de valeurs dans la requête, on prend les réglages enregistrés :
+    # l'adresse de la pointeuse se saisit une fois pour toutes dans l'application
+    reg = pointeuse_reglages()
+    ip = str(b.get("ip") or reg["ip"]).strip()
+    port = int(b.get("port") or reg["port"])
+    pw = int(b.get("password") or reg["motdepasse"] or 0)
     # la pointeuse est forcément sur le réseau local : on refuse de faire sonder
     # une adresse publique ou un service interne d'hébergeur par le serveur
     if DEVICE_ALLOW and ip not in DEVICE_ALLOW:
@@ -1130,10 +1334,13 @@ async def api_pull_device(req: Request):
         s = await run_in_threadpool(_travail)
         audit("Pointeuse", "Import réseau direct · %d pointages, %d employées"
               % (len(prows), len(s["employees"])), role, _ip(req))
+        _note_contact("reseau", pointages=len(prows), jours=len(s["pointages"]),
+                      employees=len(s["employees"]), qui=qui)
         return {"ok": True, "employees": len(s["employees"]), "jours": len(s["pointages"]),
                 "pointages": len(prows)}
     except Exception as e:
         log.exception("échec connexion pointeuse")
+        _note_contact("reseau", erreur_msg=e, qui=qui)
         return erreur("Connexion à la pointeuse impossible : %s" % e)
     finally:
         try:

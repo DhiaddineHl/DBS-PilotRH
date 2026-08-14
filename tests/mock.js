@@ -55,6 +55,11 @@ const votes=[{id:'V1',question:'Pause a 12h ou 12h30 ?',options:['12:00','12:30'
 const audit=[{ts:new Date().toISOString(),qui:'Système',role:'admin',ip:'10.0.0.1',action:'Amorçage'},
              {ts:new Date().toISOString(),qui:'<img src=x onerror="window.__XSS3=1">',role:'rh',ip:'10.0.0.2',action:'<b>test</b>'}];
 const WIN=70;
+/* liaison pointeuse : muette depuis 30 h, pour que l'alerte s'affiche */
+const SILENCE=30;
+const pointeuse={ip:'192.168.1.201',port:4370,motdepasse:0,intervalle:30,alerte_h:12,note:''};
+const ptzEtat={ts:new Date(Date.now()-SILENCE*3600e3).toISOString(),voie:'agent',
+  pointages:1180,jours:3,employees:96,par:'agent',derniere_erreur:null};
 /* copie de PUBLIC_SALARIE dans app.py : tout endpoint de l'espace salarie */
 const PUBLIC_SALARIE=['/api/me','/api/me/flag','/api/me/lu','/api/me/vote'];
 function json(res,o,code){res.writeHead(code||200,{'Content-Type':'application/json'});res.end(JSON.stringify(o))}
@@ -70,7 +75,9 @@ http.createServer((req,res)=>{
         const from=d(-WIN);const sub={};
         for(const k in pointages)if(k>=from)sub[k]=pointages[k];
         return json(res,{employees,settings,documents,conges,absences,signalements,
-          pointages:sub,fenetre:{du:from,au:TODAY}});
+          pointages:sub,fenetre:{du:from,au:TODAY},
+          pointeuse:{silence_h:SILENCE,muet:SILENCE>pointeuse.alerte_h,
+                     seuil_h:pointeuse.alerte_h,voie:'agent'}});
       }
       if(p==='/api/pointages'){
         const a=u.searchParams.get('frm'),b=u.searchParams.get('to');
@@ -135,6 +142,30 @@ http.createServer((req,res)=>{
             {n:8,matricule:'',nom:'',action:'erreur',champs:[],erreurs:['matricule manquant'],avis:[]}]};
         if(app)rap.applique={crees:1,majs:1};
         return json(res,rap);
+      }
+      /* pointeuse : réglages, état de la liaison, fichier de lancement de l'agent */
+      if(p==='/api/pointeuse'&&req.method==='GET')
+        return json(res,{reglages:pointeuse,etat:ptzEtat,
+          silence_h:ptzEtat.ts?SILENCE:null,muet:!ptzEtat.ts||SILENCE>pointeuse.alerte_h,
+          lecture_directe_possible:false,pyzk:false,mdb_path:'',sync:{},
+          url_publique:'https://demo.up.railway.app',peut_modifier:true,
+          compte_agent_existe:false});
+      if(p==='/api/pointeuse'&&req.method==='POST'){
+        let b={};try{b=JSON.parse(body||'{}')}catch(e){}
+        if(b.ip&&!/^\d+\.\d+\.\d+\.\d+$/.test(b.ip))
+          return json(res,{error:'Adresse IP invalide : « '+b.ip+' »'},400);
+        if(b.port&&[4370,4371].indexOf(+b.port)<0)
+          return json(res,{error:'Port inattendu pour une pointeuse ZKTeco'},400);
+        Object.assign(pointeuse,{ip:b.ip||pointeuse.ip,port:+b.port||pointeuse.port,
+          motdepasse:+b.motdepasse||0,intervalle:+b.intervalle||pointeuse.intervalle,
+          alerte_h:+b.alerte_h||pointeuse.alerte_h,note:b.note||''});
+        return json(res,{ok:true,reglages:pointeuse});
+      }
+      if(p==='/api/pointeuse/agent.txt'){
+        res.writeHead(200,{'Content-Type':'text/plain; charset=utf-8',
+          'Content-Disposition':'attachment; filename="lancer_agent.bat"'});
+        return res.end('set "PILOTRH_URL=https://demo.up.railway.app"\nset "PILOTRH_DEVICE_IP='+
+                       pointeuse.ip+'"\nset "PILOTRH_LOGIN=agent"\n');
       }
       if(p==='/api/employees/modele.xlsx'){
         res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});

@@ -440,6 +440,36 @@ recréation. Réservé aux comptes **administrateur** et **RH**.
 
 ---
 
+## 3 quater. Pointeuse : réglages et surveillance dans l'application
+
+L'adresse de la pointeuse ne se réglait nulle part dans l'interface : il fallait modifier un
+fichier Python sur le PC de l'atelier, ou passer par des variables d'environnement. Un encadré
+**« Pointeuse & synchronisation »** apparaît maintenant dans *Sécurité & accès* :
+
+- adresse IP, port, mot de passe de communication, **fréquence de remontée** ;
+- **délai d'alerte** : au bout de combien d'heures sans pointage l'application vous prévient ;
+- l'**état de la liaison** — dernier pointage reçu, par quelle voie (agent d'usine, lecture
+  réseau directe, fichier importé, dossier surveillé), nombre de badges, et le message exact de
+  la dernière tentative en échec ;
+- un bouton qui **prépare le fichier de lancement de l'agent** (`lancer_agent.bat`) déjà rempli
+  avec l'adresse du serveur et ces réglages, pour ne plus éditer de Python à la main ;
+- un bouton **« Tester et importer maintenant »**, affiché **seulement** si ce serveur peut
+  réellement joindre la pointeuse — sur un hébergeur public il ne peut pas, et l'encadré
+  l'explique au lieu de proposer un bouton qui échouerait toujours.
+
+**Une nouvelle alerte « Pointeuse muette »** remonte dans les Notifications dès que rien n'est
+arrivé depuis le délai fixé, et un clic mène à l'encadré. C'est le signal qui manquait : sur les
+données réelles, des journées entières où *tout l'effectif* n'avait qu'un seul badge (87
+personnes sur 88 le 14/05/2026) sont passées inaperçues jusqu'à la paie, faute d'être averti que
+la remontée s'était arrêtée.
+
+Le dernier contact est enregistré **quelle que soit la voie d'entrée** — c'est ce qui rend
+l'alerte fiable. Un chef d'atelier voit l'état de la liaison mais ni l'adresse de l'appareil ni
+son mot de passe de communication ; seuls l'administrateur et les RH peuvent modifier les
+réglages. La lecture directe continue de refuser toute adresse non locale.
+
+---
+
 ## 4. Notes de service, sondages, application installable
 
 ### Notes de service
@@ -694,7 +724,7 @@ static/assets/
   pilotrh-ui.css                styles
   pilotrh-app.js                état, réseau fiable, chargement fenêtré, présences
   pilotrh-views.js              rapports, personnel, absences, congés, RSE, IA
-  pilotrh-saisie.js             saisie rapide, correction par plage, import, réglages
+  pilotrh-saisie.js             saisie rapide, correction par plage, import, réglages, pointeuse
   pilotrh-coms.js               notes de service et sondages
   sw.js, manifest.webmanifest   application installable (servis depuis / , voir §4)
 ```
@@ -708,15 +738,15 @@ dans `pilotrh-core.js`.
 
 ## 8. Tests
 
-**709 tests automatisés** accompagnent cette version :
+**770 tests automatisés** accompagnent cette version :
 
 | Suite | Nombre | Ce qu'elle vérifie |
 |---|---|---|
 | Moteur de calcul (`node`) | 72 | pause partielle, fériés, repos travaillé, badge unique, `hM`/`hsM`, arrondi cumul vs jour, Ramadan, échappement, **mode de paie et taux (heure / journée, repli sur le taux par défaut)** |
 | Import et calendrier (`python`) | 28 | correction du sexe, protections anti-écrasement, fériés, mois clos, collision d'identifiants, démissions |
-| Serveur (`python`) | 158 | fuite de `_secret`, élévation de privilèges, écritures concurrentes, sauvegardes, sondages, anti-force brute, SSRF, audit, modèle de fiches et import en masse, **le portier d'authentification exercé pour de vrai** (tout endpoint de l'espace salarié doit passer sans session, tout le reste doit rester fermé) |
+| Serveur (`python`) | 203 | fuite de `_secret`, élévation de privilèges, écritures concurrentes, sauvegardes, sondages, anti-force brute, SSRF, audit, modèle de fiches et import en masse, **le portier d'authentification exercé pour de vrai**, **réglages et surveillance de la pointeuse** (bornes des valeurs, rôles, silence détecté, fichier de lancement de l'agent) |
 | Import de fiches (`python`) | 82 | en-têtes tolérants, dates et nombres, listes de référence, doublons, cellule vide sans effet, `-` qui efface, aller-retour du classeur prérempli sans aucun changement, 120 fiches |
-| Interface (navigateur réel) | 135 | XSS avec un nom hostile, filtres et tri, saisie rapide, correction par plage, graphiques sans CDN, menu mobile, espace salarié, alertes cliquables jusqu'à la ligne surlignée, saisie du taux, colonnes Taux / Montant, import de fiches, **vote d'une salariée suivi jusqu'à la réponse HTTP et jusqu'à sa remontée côté RH** |
+| Interface (navigateur réel) | 151 | XSS avec un nom hostile, filtres et tri, saisie rapide, correction par plage, graphiques sans CDN, menu mobile, espace salarié, alertes cliquables jusqu'à la ligne surlignée, saisie du taux, colonnes Taux / Montant, import de fiches, vote d'une salariée suivi jusqu'à sa remontée côté RH, **panneau de la pointeuse et alerte « muette »** |
 | Données réelles (`file://`) | 14 | reprise d'une sauvegarde de l'ancienne version : effectif, réglages, périodes, plages de pause, totaux de paie |
 | Démonstration hors ligne (`file://`) | 57 | ouverture sans serveur, modification réelle des données, saisie rapide, correction par plage, messagerie, export CSV, mobile, espace salarié, **alertes cliquables** |
 | Arrondi (`node`) | 18 | écart entre arrondi par jour et arrondi sur le cumul, sur des arrivées réalistes |

@@ -973,6 +973,17 @@ function computeAlerts(){
   if(revue)al.unshift({type:'Pointage à vérifier',ic:I.warn,col:'var(--absent)',bg:'var(--absent-bg)',
     txt:revue+' journée(s) incomplètes ce mois',sub:'Sortie manquante ou badges impairs — heures faussées',when:'Avant la paie',
     act:"openRevue('"+mA+"','"+mB+"')",actLbl:'Voir et corriger la liste'});
+  /* Silence de la pointeuse. C'est l'alerte qui manquait : des journées entières
+     sans heure de sortie sont passées inaperçues jusqu'à la paie, faute d'un
+     signal disant « plus rien n'arrive ». */
+  const ptz=DB.pointeuse;
+  if(ptz && ptz.muet){
+    al.unshift({type:'Pointeuse muette',ic:I.warn,col:'var(--absent)',bg:'var(--absent-bg)',
+      txt:(ptz.silence_h==null?'Aucun pointage jamais reçu':'Aucun pointage depuis '+
+        (ptz.silence_h<48?Math.round(ptz.silence_h)+' h':Math.round(ptz.silence_h/24)+' jours')),
+      sub:'Le PC de l’atelier est peut-être éteint, ou l’agent ne tourne plus',when:'À vérifier',
+      act:"allerPointeuse()",actLbl:'Vérifier la liaison'});
+  }
   const nonTraites=(DB.signalements||[]).filter(s=>!s.traite).length;
   if(nonTraites)al.unshift({type:'Signalements salariés',ic:I.bell,col:'var(--leave)',bg:'var(--leave-bg)',
     txt:nonTraites+' signalement(s) non traité(s)',sub:'Erreurs de pointage remontées depuis l’espace salarié',when:'À traiter',
@@ -1009,7 +1020,12 @@ async function allerSignalements(){
   const t=document.getElementById('sigBody');
   if(t&&t.scrollIntoView)t.scrollIntoView({block:'center'});
 }
-Object.assign(window,{allerFichesIncompletes,allerSignalements});
+async function allerPointeuse(){
+  await go('parametres');
+  const t=document.getElementById('ptzBox');
+  if(t&&t.scrollIntoView)t.scrollIntoView({block:'center'});
+}
+Object.assign(window,{allerFichesIncompletes,allerSignalements,allerPointeuse});
 VUES.alertes = async function(main){
   const al=computeAlerts(),g={};al.forEach(a=>(g[a.type]=g[a.type]||[]).push(a));
   main.innerHTML=topbar('Notifications','Alertes ('+al.length+')')+'<div class="page view">'+

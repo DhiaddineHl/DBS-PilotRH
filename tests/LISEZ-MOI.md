@@ -28,7 +28,7 @@ changement, pointages intacts, 120 fiches d'un coup.
 ```
 cd tests && python3 t_app.py
 ```
-158 tests, dont le **portier d'authentification exercé tel quel** : tout endpoint
+203 tests, dont le **portier d'authentification exercé tel quel** : tout endpoint
 de l'espace salarié doit passer sans session (c'est l'oubli qui empêchait les votes
 de partir), tout le reste doit rester fermé, et un compte en lecture seule ne doit
 rien pouvoir écrire. Les dossiers `fastapi/`, `starlette/`, `httpx.py` et `access_parser.py`
@@ -50,11 +50,11 @@ jamais régénéré au démarrage).
 cd tests && node mock.js &        # faux serveur avec 120 salariés et 75 jours
 node t_ui.js                      # nécessite playwright
 ```
-135 tests : XSS avec un nom hostile, filtres et tri, saisie rapide, correction sur
+151 tests : XSS avec un nom hostile, filtres et tri, saisie rapide, correction sur
 plage de dates, graphiques sans CDN, menu mobile, parcours complet de l'espace salarié,
 alertes cliquables jusqu'à la ligne surlignée, saisie du prix de l'heure ou de la
 journée, colonnes Taux et Montant du rapport de paie, import de fiches de bout en bout, vote d'une salariée suivi jusqu'à la réponse HTTP
-et jusqu'à sa remontée côté RH.
+et jusqu'à sa remontée côté RH, réglages de la pointeuse et alerte « pointeuse muette ».
 
 ## Déploiement en conteneur (Railway, Docker)
 ```

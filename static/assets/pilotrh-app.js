@@ -260,6 +260,7 @@ async function charger(){
   const d = await api('/api/state');
   DB = d;
   DB.pointages = DB.pointages || {};
+  DB.pointeuse = DB.pointeuse || null;      // liaison avec la pointeuse (résumé)
   DB.settings = C.normalizeSettings(DB.settings);
   ENGINE.invalidate();
   PLAGES = [];

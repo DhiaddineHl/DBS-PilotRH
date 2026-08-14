@@ -324,6 +324,67 @@ const { chromium } = require('playwright');
   t('après application, on revient sur la liste du personnel',
     /personnel/i.test(await page.locator('.topbar').innerText()));
 
+  console.log('\n--- Pointeuse : configuration et surveillance ---');
+  /* navigation par le menu : un goto qui ne change que le fragment d'URL n'est pas
+     garanti de déclencher le rendu (voir la section captures plus bas) */
+  /* la vue précédente peut encore être en train de se rendre : on laisse les
+     chargements asynchrones se poser, puis on redemande le panneau si besoin */
+  await page.evaluate(()=>go('parametres'));
+  await page.waitForTimeout(1200);
+  for (let essai = 0; essai < 5 && !(await page.locator('#ptzIp').count()); essai++) {
+    await page.evaluate(()=>{ if (window.VIEW !== 'parametres') return go('parametres');
+                              return loadPointeuse(); });
+    await page.waitForTimeout(900);
+  }
+  await page.waitForSelector('#ptzIp',{timeout:15000});
+  const ptz = await page.evaluate(()=>document.getElementById('ptzBox').innerText);
+  t('le panneau de la pointeuse est présent', /pointeuse/i.test(await page.locator('.chartcard h3', { hasText:'Pointeuse' }).innerText()));
+  t('l\'adresse IP est modifiable', (await page.locator('#ptzIp').inputValue()) === '192.168.1.201');
+  t('le port est affiché', (await page.locator('#ptzPort').inputValue()) === '4370');
+  t('la fréquence de remontée est réglable', await page.locator('#ptzInt').count() === 1);
+  t('le délai d\'alerte est réglable', await page.locator('#ptzAl').count() === 1);
+  t('le silence est signalé', /depuis/i.test(ptz) && /30/.test(ptz), ptz.slice(0,160));
+  t('la voie de remontée est nommée', /agent/i.test(ptz));
+  t('un serveur en ligne explique qu\'il ne peut pas joindre le réseau privé',
+    /n’entre pas sur votre réseau local|ne peut pas joindre/i.test(ptz), ptz.slice(-300));
+  t('le bouton de lecture directe est masqué quand elle est impossible',
+    await page.locator('#ptzBox button:has-text("Tester")').count() === 0);
+  t('le fichier de lancement de l\'agent est proposé',
+    await page.locator('#ptzBox button:has-text("agent")').count() === 1);
+  t('il rappelle de créer le compte de service', /compte de service/i.test(ptz));
+
+  await page.fill('#ptzIp','192.168.1.55');
+  await page.fill('#ptzInt','15');
+  await page.click('#ptzBox button:has-text("Enregistrer")');
+  await page.waitForTimeout(700);
+  t('les réglages sont enregistrés et relus',
+    (await page.locator('#ptzIp').inputValue()) === '192.168.1.55',
+    await page.locator('#ptzIp').inputValue());
+  await page.fill('#ptzIp','pas-une-adresse');
+  await page.click('#ptzBox button:has-text("Enregistrer")');
+  /* le message apparaît de façon asynchrone : on l'attend au lieu de deviner un délai */
+  let ts2 = '';
+  for (let essai = 0; essai < 12 && !/invalide/i.test(ts2); essai++) {
+    await page.waitForTimeout(250);
+    ts2 = await page.locator('#toasts').innerText().catch(()=>'');
+  }
+  t('une adresse invalide est refusée avec un message', /invalide/i.test(ts2), ts2.slice(0,120));
+
+  /* l'alerte qui manquait : une pointeuse muette doit remonter dans les notifications */
+  await page.evaluate(()=>go('alertes'));
+  await page.waitForSelector('.alert-row',{timeout:15000});
+  const alTxt = await page.locator('#main').innerText();
+  t('« Pointeuse muette » figure dans les alertes', /pointeuse muette/i.test(alTxt), alTxt.slice(0,200));
+  const alPtz = page.locator('.alert-clic', { hasText:'Pointeuse muette' }).first();
+  t('l\'alerte est cliquable', await alPtz.count() === 1);
+  await alPtz.click();
+  await page.waitForSelector('#ptzBox',{timeout:8000});
+  await page.waitForTimeout(800);
+  t('elle conduit au panneau de la pointeuse',
+    (await page.evaluate(()=>window.VIEW)) === 'parametres' &&
+    await page.locator('#ptzBox').count() === 1,
+    'vue='+(await page.evaluate(()=>window.VIEW)));
+
   console.log('\n--- Application installable (PWA) ---');
   const p3 = await browser.newPage({ viewport:{width:390,height:844} });
   const err3=[]; p3.on('pageerror',e=>err3.push(e.message));

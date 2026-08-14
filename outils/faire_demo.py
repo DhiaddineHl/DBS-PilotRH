@@ -243,9 +243,16 @@ def construire(nb=86, jours=95):
                           "Connexion réussie",
                           "Mise à jour des données de référence (employees, settings)",
                       ])})
+    # liaison avec la pointeuse : en démonstration, elle vient de répondre
+    pointeuse = {"ip": "192.168.1.201", "port": 4370, "motdepasse": 0,
+                 "intervalle": 30, "alerte_h": 24, "note": "atelier A"}
+    ptzEtat = {"ts": (datetime.datetime.now() - datetime.timedelta(hours=2, minutes=24)).isoformat(),
+               "voie": "agent", "pointages": 1180, "jours": 3, "employees": len(employees),
+               "par": "agent", "derniere_erreur": None}
     return dict(employees=employees, settings=settings, pointages=pointages,
                 documents=documents, conges=conges, absences=absences,
-                signalements=signalements, notes=notes, votes=votes, audit=audit)
+                signalements=signalements, notes=notes, votes=votes, audit=audit,
+                pointeuse=pointeuse, ptzEtat=ptzEtat)
 
 # ---------------------------------------------------------------------------
 # Simulateur réseau embarqué (remplace fetch)
@@ -288,7 +295,8 @@ FAUX_RESEAU = r"""
         for(const k in D.pointages) if(k>=from) sub[k]=D.pointages[k];
         return ok({employees:D.employees, settings:D.settings, documents:D.documents,
                    conges:D.conges, absences:D.absences, signalements:D.signalements,
-                   pointages:sub, fenetre:{du:from, au:TODAY}});
+                   pointages:sub, fenetre:{du:from, au:TODAY},
+                   pointeuse:{silence_h:2.4, muet:false, seuil_h:24, voie:'agent'}});
       }
       case '/api/pointages': {
         const a=q.get('frm'), b=q.get('to');
@@ -423,6 +431,14 @@ FAUX_RESEAU = r"""
         return err("L’assistant IA et la lecture de documents passent par le serveur : indisponibles dans cette démonstration.", 503);
       case '/api/import-mdb':
         return err("La lecture d’un fichier .mdb est faite par le serveur : indisponible dans cette démonstration. L’import CSV, lui, fonctionne.", 503);
+      case '/api/pointeuse':
+        if(m==='POST'){ Object.assign(D.pointeuse, corps||{}); return ok({ok:true, reglages:D.pointeuse}) }
+        return ok({reglages:D.pointeuse, etat:D.ptzEtat,
+          silence_h:2.4, muet:false, lecture_directe_possible:false, pyzk:false,
+          mdb_path:'', sync:{}, url_publique:'https://demonstration.exemple',
+          peut_modifier:true, compte_agent_existe:true});
+      case '/api/pointeuse/agent.txt':
+        return err("Le fichier de lancement de l’agent est préparé par le serveur : indisponible dans cette démonstration.", 503);
       case '/api/employees/modele.xlsx':
       case '/api/employees/import-fiches':
         return err("Le classeur Excel des fiches est construit et relu par le serveur : indisponible dans cette démonstration hors ligne. Sur votre installation, le bouton télécharge un modèle prérempli avec vos fiches.", 503);

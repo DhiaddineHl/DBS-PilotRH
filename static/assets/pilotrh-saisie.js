@@ -838,6 +838,10 @@ VUES.parametres = async function(main){
       'Chaque salarié les voit dans son espace QR ; vous suivez les lectures et les réponses.</div>'+
       (can('edit')?'<button class="btn btn-gold" style="width:100%;justify-content:center;margin-top:12px" onclick="openComs()">'+
         I.send+' Ouvrir la messagerie</button>':'')+'</div>'+
+    '<div class="card chartcard" style="margin-bottom:16px"><h3>Pointeuse &amp; synchronisation</h3>'+
+      '<div class="csub" style="margin-top:6px">Adresse de la pointeuse, fréquence de remontée, '+
+      'et surveillance : l’application prévient si elle ne reçoit plus rien.</div>'+
+      '<div id="ptzBox" style="margin-top:12px"><div class="skel"></div></div></div>'+
     '<div class="card chartcard" style="margin-bottom:16px"><h3>Sauvegardes</h3>'+
       '<div class="csub" style="margin-top:6px" id="bkInfo">Chargement…</div>'+
       '<div style="display:flex;gap:10px;margin-top:12px">'+
@@ -856,7 +860,7 @@ VUES.parametres = async function(main){
       '<span class="mono">ANTHROPIC_API_KEY</span>. Elle ne transite jamais par le navigateur.</div>'+
       '<div class="hint" style="margin-top:10px">Le champ de saisie de clé a été retiré : il stockait une clé secrète en clair dans le navigateur sans jamais la relire.</div></div>'+
   '</div></div></div>';
-  loadAudit();loadUsers();loadSignalements();loadBackups();
+  loadAudit();loadUsers();loadSignalements();loadBackups();loadPointeuse();
 };
 function usersCard(){
   if(!can('users'))return '<div class="card tablecard" style="margin-bottom:16px"><div class="table-head">'+I.shield+
@@ -1202,4 +1206,116 @@ async function appliquerFiches(){
   }
 }
 Object.assign(window,{openImportFiches,telechargerModele,dropFiches,lireFiches,afficherRapFiches,appliquerFiches,nomChamp});
+
+/* ============================================================================
+   POINTEUSE — réglages réseau, remontée automatique, surveillance
+   Deux situations, et c'est l'emplacement du serveur qui décide :
+     · serveur DANS l'usine  → il joint la pointeuse lui-même (lecture directe) ;
+     · serveur en ligne      → Internet ne peut pas entrer sur votre réseau privé,
+                               c'est l'agent installé sur un PC de l'atelier qui
+                               pousse les pointages.
+   ============================================================================ */
+let PTZ = null;
+async function loadPointeuse(){
+  const box = $('#ptzBox'); if(!box) return;
+  try{ PTZ = await api('/api/pointeuse'); }
+  catch(e){ box.innerHTML = '<div class="hint" style="color:var(--absent)">'+esc(e.message)+'</div>'; return }
+  renderPointeuse();
+}
+function ptzDelai(h){
+  if(h==null) return 'jamais';
+  if(h < 1) return 'il y a '+Math.max(1,Math.round(h*60))+' min';
+  if(h < 48) return 'il y a '+h.toFixed(1).replace('.',',')+' h';
+  return 'il y a '+Math.round(h/24)+' jours';
+}
+function renderPointeuse(){
+  const box = $('#ptzBox'); if(!box||!PTZ) return;
+  const r = PTZ.reglages||{}, e = PTZ.etat||{}, h = PTZ.silence_h;
+  const seuil = +r.alerte_h || 24;
+  const muet = (h==null) || (h > seuil);
+  const VOIES = {agent:'agent d’usine', reseau:'lecture réseau directe',
+                 fichier:'fichier .mdb importé à la main', 'dossier surveillé':'dossier surveillé'};
+  const modif = PTZ.peut_modifier;
+  box.innerHTML =
+    '<div class="banner '+(muet?'banner-warn':'banner-info')+'" style="margin:0 0 12px">'+(muet?I.warn:I.check)+
+      '<div class="grow">'+(h==null
+        ? '<b>Aucun pointage encore reçu.</b> Suivez la mise en route ci-dessous.'
+        : '<b>Dernier pointage reçu '+esc(ptzDelai(h))+'</b>'+
+          (e.voie?' · par '+esc(VOIES[e.voie]||e.voie):'')+
+          (e.pointages?' · '+e.pointages+' badges':'')+
+          (muet?'<br>Rien n’est arrivé depuis plus de '+seuil+' h : vérifiez que le PC de l’atelier est allumé et que l’agent tourne.':''))+
+      '</div></div>'+
+    (e.derniere_erreur?'<div class="banner banner-err" style="margin:0 0 12px">'+I.warn+
+      '<div class="grow"><b>Dernière tentative en échec</b> ('+esc(String(e.derniere_erreur.ts||'').replace('T',' ').slice(0,16))+
+      ') : '+esc(e.derniere_erreur.message)+'</div></div>':'')+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<div><label class="fldlab" for="ptzIp">Adresse IP de la pointeuse</label>'+
+        '<input class="fldin" id="ptzIp" value="'+esc(r.ip||'')+'"'+(modif?'':' disabled')+'></div>'+
+      '<div><label class="fldlab" for="ptzPort">Port</label>'+
+        '<input class="fldin" id="ptzPort" type="number" value="'+(+r.port||4370)+'"'+(modif?'':' disabled')+'></div>'+
+      '<div><label class="fldlab" for="ptzPw">Mot de passe de communication</label>'+
+        '<input class="fldin" id="ptzPw" type="number" value="'+(+r.motdepasse||0)+'"'+(modif?'':' disabled')+'></div>'+
+      '<div><label class="fldlab" for="ptzInt">Remontée toutes les (minutes)</label>'+
+        '<input class="fldin" id="ptzInt" type="number" min="5" max="1440" value="'+(+r.intervalle||30)+'"'+(modif?'':' disabled')+'></div>'+
+      '<div><label class="fldlab" for="ptzAl">M’alerter après (heures sans pointage)</label>'+
+        '<input class="fldin" id="ptzAl" type="number" min="1" max="240" value="'+seuil+'"'+(modif?'':' disabled')+'></div>'+
+      '<div><label class="fldlab" for="ptzNote">Repère (emplacement, modèle…)</label>'+
+        '<input class="fldin" id="ptzNote" value="'+esc(r.note||'')+'"'+(modif?'':' disabled')+'></div>'+
+    '</div>'+
+    (modif?'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'+
+      '<button class="btn btn-gold" onclick="savePointeuse()">'+I.check+' Enregistrer</button>'+
+      (PTZ.lecture_directe_possible
+        ? '<button class="btn btn-ghost" onclick="testPointeuse()">'+I.cloud+' Tester et importer maintenant</button>'
+        : '')+
+      '<button class="btn btn-ghost" onclick="telechargerAgent()">'+I.download+' Fichier de lancement de l’agent</button>'+
+    '</div>':'')+
+    '<div class="hint" style="margin-top:12px">'+
+      (PTZ.lecture_directe_possible
+        ? 'Ce serveur est sur le même réseau que la pointeuse : il peut la lire directement'+
+          (PTZ.pyzk?'' : ' — mais le module <span class="mono">pyzk</span> n’est pas installé ici '+
+            '(<span class="mono">pip install pyzk</span>), la lecture directe est donc indisponible')+'.'
+        : 'Ce serveur est <b>en ligne</b> : il ne peut pas joindre une adresse privée comme '+
+          esc(r.ip||'192.168.x.x')+' — Internet n’entre pas sur votre réseau local. La remontée '+
+          'automatique passe donc par l’<b>agent</b> installé sur un PC de l’atelier, qui envoie les '+
+          'pointages. Le bouton ci-dessus prépare son fichier de lancement avec ces réglages.')+
+      (PTZ.compte_agent_existe?'':'<br><b>À faire :</b> créez d’abord un compte de service '+
+        '<span class="mono">agent</span> (rôle Chef d’atelier) dans « Comptes &amp; rôles » ci-contre. '+
+        'N’utilisez jamais le compte administrateur sur un PC d’atelier.')+
+      '<br>Marche à suivre détaillée : fichier <span class="mono">CONNEXION_POINTEUSE.md</span>.'+
+    '</div>';
+}
+function ptzCorps(){
+  return {ip:($('#ptzIp')||{}).value, port:+($('#ptzPort')||{}).value,
+          motdepasse:+($('#ptzPw')||{}).value, intervalle:+($('#ptzInt')||{}).value,
+          alerte_h:+($('#ptzAl')||{}).value, note:($('#ptzNote')||{}).value};
+}
+async function savePointeuse(){
+  try{
+    const d = await api('/api/pointeuse',{method:'POST',body:ptzCorps()});
+    PTZ.reglages = d.reglages; renderPointeuse();
+    toast('Réglages de la pointeuse enregistrés');
+  }catch(e){ toast('Refusé : '+e.message,'err',8000) }
+}
+async function testPointeuse(){
+  const c = ptzCorps();
+  toast('Connexion à la pointeuse…');
+  try{
+    const d = await api('/api/pull-device',{method:'POST',
+      body:{ip:c.ip, port:c.port, password:c.motdepasse}});
+    await charger();
+    toast('Pointeuse lue : '+(d.pointages||0)+' badges · '+(d.employees||0)+' employées','ok',9000);
+    loadPointeuse();
+  }catch(e){ toast('Échec : '+e.message,'err',12000) }
+}
+async function telechargerAgent(){
+  try{
+    const r = await fetch('/api/pointeuse/agent.txt');
+    if(!r.ok){ let m='erreur '+r.status; try{m=(JSON.parse(await r.text()).error)||m}catch(x){} throw new Error(m) }
+    const b = await r.blob(), u = URL.createObjectURL(b);
+    const a = document.createElement('a'); a.href=u; a.download='lancer_agent.bat'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(u),4000);
+    toast('Fichier préparé — à copier sur le PC de l’atelier, à côté de pilotrh_agent.py','ok',9000);
+  }catch(e){ toast('Téléchargement impossible : '+e.message,'err',9000) }
+}
+Object.assign(window,{loadPointeuse,renderPointeuse,savePointeuse,testPointeuse,telechargerAgent,ptzDelai});
 }

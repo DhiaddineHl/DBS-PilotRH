@@ -1,4 +1,4 @@
-import sys, os, json, tempfile, threading, time, asyncio, shutil
+import sys, os, json, tempfile, threading, time, asyncio, shutil, datetime
 ICI=os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0,ICI)
 sys.path.insert(0,os.path.dirname(ICI))
@@ -322,6 +322,9 @@ attendus_publics = {'/moi', '/moi.html', '/login', '/login.html', '/api/login',
                     '/manifest.webmanifest'} | set(A.PUBLIC_SALARIE)
 t("la liste publique ne contient rien d'inattendu",
   sorted(A.PUBLIC_EXACT - attendus_publics), [])
+tv("les reglages de la pointeuse ne sont pas publics", not A._est_public('/api/pointeuse'))
+tv("le fichier de lancement de l'agent n'est pas public",
+   not A._est_public('/api/pointeuse/agent.txt'))
 tv("les donnees RH restent protegees",
    not any(A._est_public(x) for x in ('/api/state', '/api/coms', '/api/pointage',
                                       '/api/audit', '/api/users', '/api/employees/modele.xlsx',
@@ -404,6 +407,105 @@ tv("icones 192 et 512 fournies (exigence Android)",
    {i.get('sizes') for i in man['icons']} >= {'192x192','512x512'})
 tv("icone maskable fournie", any('maskable' in (i.get('purpose') or '') for i in man['icons']))
 tv("/api/health/detail protege", not A._est_public('/api/health/detail'))
+
+print("\n--- pointeuse : reglages, surveillance, silence ---")
+A.set_meta_serveur({A.POINTEUSE_META: {}})
+t("reglages par defaut", A.pointeuse_reglages()['port'], 4370)
+t("intervalle par defaut", A.pointeuse_reglages()['intervalle'], 30)
+t("aucun contact au depart : silence inconnu", A.pointeuse_silence_h(), None)
+tv("et considere comme muet", A._resume_pointeuse()['muet'])
+
+class ReqP(Req):
+    def __init__(self, body=None, admin=True):
+        super().__init__({'pilotrh_sess': tok} if admin else {})
+        self._b = body or {}
+    async def json(self): return self._b
+
+def poste(body, admin=True):
+    return asyncio.get_event_loop().run_until_complete(A.api_pointeuse_set(ReqP(body, admin)))
+
+rep = poste({'ip':'192.168.1.55','port':4370,'motdepasse':0,'intervalle':15,'alerte_h':12,'note':'atelier A'})
+t("reglages enregistres", rep['reglages']['ip'], '192.168.1.55')
+t("intervalle enregistre", A.pointeuse_reglages()['intervalle'], 15)
+t("delai d'alerte enregistre", A.pointeuse_reglages()['alerte_h'], 12)
+t("adresse IP invalide refusee",
+  getattr(poste({'ip':'pas-une-ip'}),'status_code',None), 400)
+t("port farfelu refuse", getattr(poste({'port':8080}),'status_code',None), 400)
+t("intervalle d'une minute refuse", getattr(poste({'intervalle':1}),'status_code',None), 400)
+t("intervalle de deux jours refuse", getattr(poste({'intervalle':4000}),'status_code',None), 400)
+t("delai d'alerte hors bornes refuse", getattr(poste({'alerte_h':999}),'status_code',None), 400)
+t("un compte en lecture seule ne peut pas modifier",
+  getattr(poste({'ip':'192.168.1.9'}, admin=False),'status_code',None), 403)
+t("la valeur refusee n'a rien change", A.pointeuse_reglages()['ip'], '192.168.1.55')
+
+# un contact remet le compteur a zero, quelle que soit la voie
+etat = A._note_contact("agent", pointages=1200, jours=3, employees=97, qui="agent")
+t("voie du dernier contact", etat['voie'], 'agent')
+t("badges comptes", etat['pointages'], 1200)
+tv("le silence est desormais mesure", (A.pointeuse_silence_h() or 0) < 1)
+tv("la pointeuse n'est plus muette", not A._resume_pointeuse()['muet'])
+t("le resume expose la voie", A._resume_pointeuse()['voie'], 'agent')
+
+# une erreur est conservee SANS effacer le dernier succes
+A._note_contact("agent", erreur_msg="Connexion refusee par 192.168.1.55")
+e = A.pointeuse_etat()
+tv("l'echec est conserve", 'refusee' in (e['derniere_erreur'] or {}).get('message',''))
+t("le dernier succes reste connu", e['voie'], 'agent')
+tv("un echec ne rend pas muet a lui seul", not A._resume_pointeuse()['muet'])
+
+# silence ancien : l'alerte doit se declencher
+with A._WLOCK:
+    m = A.get_meta(); p = dict(m.get(A.POINTEUSE_META) or {}); et = dict(p['etat'])
+    et['ts'] = (A.now() - datetime.timedelta(hours=30)).isoformat()
+    p['etat'] = et; A.set_meta_serveur({A.POINTEUSE_META: p})
+t("silence de 30 h mesure", round(A.pointeuse_silence_h()), 30)
+tv("30 h > seuil de 12 h : muet", A._resume_pointeuse()['muet'])
+poste({'alerte_h': 48})
+tv("seuil releve a 48 h : plus d'alerte", not A._resume_pointeuse()['muet'])
+
+# l'etat part bien avec /api/state pour que l'alerte s'affiche
+et = A.api_state()
+tv("l'etat de la pointeuse accompagne /api/state", isinstance(et.get('pointeuse'), dict))
+tv("les reglages detailles NE partent PAS dans /api/state",
+   'ip' not in (et.get('pointeuse') or {}))
+tv("la cle serveur 'pointeuse' n'est jamais exposee brute", 'pointeuse' in A.SERVER_META_KEYS
+   and A.POINTEUSE_META in A.SECRETES)
+brut = A.get_meta(prive=False)
+tv("le blob expurge ne contient pas les reglages reseau", A.POINTEUSE_META not in brut)
+
+# le fichier de lancement de l'agent
+A.PUBLIC_URL = "https://pilotrh-dbs.up.railway.app"
+rep = A.api_agent_config(ReqP())
+corps = getattr(rep, 'content', b'').decode('utf-8')
+tv("le fichier de lancement contient l'adresse du serveur",
+   "pilotrh-dbs.up.railway.app" in corps)
+tv("il reprend l'IP configuree", "192.168.1.55" in corps)
+tv("il utilise le compte de service, pas l'admin",
+   "PILOTRH_LOGIN=agent" in corps and "ADMIN" not in corps.upper().replace("ADMINISTRATEUR",""))
+tv("il ne contient aucun mot de passe en clair", "A_REMPLACER" in corps)
+t("il est propose en telechargement", 'filename="lancer_agent.bat"' in
+  str(getattr(rep,'headers',{})), True)
+t("refuse a un compte en lecture seule",
+  getattr(A.api_agent_config(ReqP(admin=False)),'status_code',None), 403)
+
+# un chef d'atelier voit l'etat, pas l'adresse de l'appareil
+class ReqLect2(Req):
+    def __init__(self):
+        super().__init__({'pilotrh_sess': A._sign_session(
+            {'login':'chef','role':'atelier','nom':'Chef'})})
+vu = A.api_pointeuse(ReqLect2())
+tv("un chef d'atelier voit si la liaison est muette", 'silence_h' in vu)
+t("mais pas l'adresse de la pointeuse", vu['reglages'], {})
+tv("ni le droit de modifier", not vu['peut_modifier'])
+vu = A.api_pointeuse(ReqP())
+t("un RH voit l'adresse", vu['reglages']['ip'], '192.168.1.55')
+tv("un RH peut modifier", vu['peut_modifier'])
+
+# lecture directe : le garde-fou SSRF reste en place
+t("les reglages servent de valeurs par defaut a la lecture directe",
+  A.pointeuse_reglages()['ip'], '192.168.1.55')
+tv("une adresse publique reste refusee", not A._ip_privee('8.8.8.8'))
+tv("une adresse locale est acceptee", A._ip_privee('192.168.1.55'))
 
 print("\n--- statistiques d'absenteisme reelles ---")
 A.set_state({'employees':[{'id':'E001'}],'settings':A.default_settings(),'pointages':{}},remplacer=True)
