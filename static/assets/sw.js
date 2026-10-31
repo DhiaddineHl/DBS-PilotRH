@@ -9,7 +9,7 @@
 */
 /* Ce fichier est servi depuis la RACINE (/sw.js) : c'est indispensable, la
    portée d'un service worker se limite au dossier d'où il est téléchargé. */
-const CACHE = 'pilotrh-v3-2';
+const CACHE = 'pilotrh-v3-3';
 const STATIQUES = [
   '/moi',
   '/assets/pilotrh-core.js',

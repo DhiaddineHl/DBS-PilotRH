@@ -1,0 +1,102 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="tn.dbsfashion.pilotrh"
+4    android:versionCode="3"
+5    android:versionName="3.0" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="23"
+9        android:targetSdkVersion="34" />
+10
+11    <uses-permission android:name="android.permission.INTERNET" />
+11-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:4:5-67
+11-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:4:22-64
+12    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+12-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:5:5-79
+12-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:5:22-76
+13
+14    <application
+14-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:7:5-42:19
+15        android:allowBackup="true"
+15-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:12:9-35
+16        android:debuggable="true"
+17        android:extractNativeLibs="false"
+18        android:icon="@mipmap/ic_launcher"
+18-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:9:9-43
+19        android:label="@string/app_name"
+19-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:8:9-41
+20        android:networkSecurityConfig="@xml/network_security_config"
+20-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:14:9-69
+21        android:roundIcon="@mipmap/ic_launcher"
+21-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:10:9-48
+22        android:supportsRtl="false"
+22-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:13:9-36
+23        android:theme="@style/AppTheme" >
+23-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:11:9-40
+24        <activity
+24-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:16:9-41:20
+25            android:name="tn.dbsfashion.pilotrh.MainActivity"
+25-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:17:13-41
+26            android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout"
+26-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:20:13-106
+27            android:exported="true"
+27-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:18:13-36
+28            android:launchMode="singleTask"
+28-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:19:13-44
+29            android:screenOrientation="portrait"
+29-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:22:13-49
+30            android:windowSoftInputMode="adjustResize" >
+30-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:21:13-55
+31            <intent-filter>
+31-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:24:13-27:29
+32                <action android:name="android.intent.action.MAIN" />
+32-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:25:17-69
+32-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:25:25-66
+33
+34                <category android:name="android.intent.category.LAUNCHER" />
+34-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:26:17-77
+34-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:26:27-74
+35            </intent-filter>
+36
+37            <!--
+38                 La carte QR de chaque salariée contient l'adresse de son espace
+39                 personnel. Sans ce filtre, le scan ouvre le navigateur ; avec lui,
+40                 Android propose (ou choisit) PilotRH, l'application mémorise le
+41                 jeton et il n'y a plus jamais besoin de rescanner la carte.
+42                 Le domaine est renseigné à la compilation via APP_HOST.
+43            -->
+44            <intent-filter android:label="@string/app_name" >
+44-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:34:13-40:29
+44-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:34:28-60
+45                <action android:name="android.intent.action.VIEW" />
+45-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:35:17-69
+45-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:35:25-66
+46
+47                <category android:name="android.intent.category.DEFAULT" />
+47-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:36:17-76
+47-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:36:27-73
+48                <category android:name="android.intent.category.BROWSABLE" />
+48-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:37:17-78
+48-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:37:27-75
+49
+50                <data
+50-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:38:17-106
+51                    android:host="@string/app_host"
+51-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:38:46-77
+52                    android:pathPrefix="/moi"
+52-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:38:78-103
+53                    android:scheme="https" />
+53-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:38:23-45
+54                <data
+54-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:38:17-106
+55                    android:host="@string/app_host"
+55-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:38:46-77
+56                    android:pathPrefix="/moi"
+56-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:38:78-103
+57                    android:scheme="http" />
+57-->C:\projects\dbs-erp-static\DBS-PilotRH\android\app\src\main\AndroidManifest.xml:38:23-45
+58            </intent-filter>
+59        </activity>
+60    </application>
+61
+62</manifest>

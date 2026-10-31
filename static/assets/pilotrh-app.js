@@ -345,7 +345,7 @@ function construireCoquille(){
   document.getElementById('app').innerHTML =
    '<aside class="side" id="side" aria-label="Navigation principale">'+
      '<div class="brand"><div class="mark"><div class="glyph">'+I.scissors+'</div>'+
-     '<div><div class="name">PilotRH</div><div class="sub">DBS Fashion</div></div></div></div>'+
+     '<div><div class="name">PilotRH</div><div class="sub">Lassanis</div></div></div></div>'+
      '<nav class="nav" id="nav"></nav>'+
      '<div class="side-foot"><div class="role-box"><div class="av" id="meAv"></div>'+
        '<div class="who" id="meWho"></div></div>'+

@@ -519,7 +519,7 @@ def faire_salarie(data):
     html = html.replace("if('serviceWorker' in navigator){navigator.serviceWorker.register('/assets/sw.js').catch(()=>{})}", "")
     # en démonstration, le jeton est fourni d'office
     html = html.replace("let TOKEN = params.get('t') || '';", "let TOKEN = 'DEMO';")
-    html = html.replace("<title>Mon pointage — DBS Fashion</title>",
+    html = html.replace("<title>Mon pointage — Lassanis</title>",
                         "<title>Mon pointage — démonstration</title>")
     aide = ("""<div style="background:#fff8e6;border:1px solid #e3cf9c;color:#5f4409;border-radius:12px;
       padding:12px 14px;font-size:12.5px;margin:14px 16px 0;max-width:600px;margin-left:auto;margin-right:auto">

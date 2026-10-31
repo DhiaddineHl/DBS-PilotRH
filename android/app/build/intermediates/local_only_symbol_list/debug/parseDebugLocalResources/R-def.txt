@@ -1,0 +1,30 @@
+R_DEF: Internal format may change without notice
+local
+mipmap ic_launcher
+string annuler
+string app_host
+string app_name
+string aucun_navigateur
+string changer_adresse
+string effacer
+string err_reseau_aide
+string err_reseau_titre
+string err_serveur_aide
+string err_serveur_titre
+string fermer
+string m_adresse
+string m_oublier
+string m_rafraichir
+string m_rh
+string menu
+string oublie
+string oublier_confirme
+string reessayer
+string reglage_aide
+string reglage_exemple
+string reglage_invalide
+string reglage_note
+string reglage_titre
+string reglage_valider
+style AppTheme
+xml network_security_config

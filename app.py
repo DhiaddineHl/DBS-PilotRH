@@ -1557,7 +1557,7 @@ async def report_pdf(req: Request):
         el.append(t); el.append(Spacer(1, 6))
     el.append(Spacer(1, 8))
     qui, _role = _acteur(req)
-    el.append(Paragraph("Édité le %s par %s — PilotRH · DBS Fashion"
+    el.append(Paragraph("Édité le %s par %s — PilotRH · Lassanis"
                         % (now().strftime("%d/%m/%Y %H:%M"), _rl(qui)),
                         ParagraphStyle("foot", parent=ss["Normal"], textColor=colors.HexColor("#7b8291"), fontSize=8)))
     doc.build(el)
@@ -1797,7 +1797,7 @@ def qr_codes_pdf(request: Request, codes: int = 0):
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=14*mm, bottomMargin=12*mm)
     head = ParagraphStyle("h", parent=ss["Title"], fontSize=15, textColor=INK)
     sub = ParagraphStyle("s", parent=ss["Normal"], fontSize=9, textColor=colors.HexColor("#5c6270"), spaceAfter=8)
-    txt = ("DBS Fashion · Chaque salariée scanne son QR puis saisit son code personnel pour consulter "
+    txt = ("Lassanis · Chaque salariée scanne son QR puis saisit son code personnel pour consulter "
            "ses présences, retards et absences du mois. Document confidentiel.")
     if codes:
         txt += " ATTENTION : cette version imprime les codes — à remettre en main propre, séparément des cartes."

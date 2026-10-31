@@ -4,7 +4,7 @@
 > service, sondages, application installable, sauvegardes réelles) sont
 > décrits dans **MISE_A_JOUR_v3.md**, qui prévaut en cas de contradiction.
 
-# PilotRH — Serveur RH · DBS Fashion
+# PilotRH — Serveur RH · Lassanis
 
 Application RH pour usine textile, **installée sur votre serveur** (pas un simple fichier HTML).
 Le serveur lit **directement** la base de la pointeuse ZKTeco (`.mdb`), stocke les données dans

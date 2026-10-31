@@ -210,7 +210,7 @@ function dailySections(ds){
 }
 function pdfDailyFor(ds){
   if(!dayRec(ds)){toast('Aucun pointage pour le '+fmtDate(ds),'warn');return}
-  downloadPDF({title:'Liste journalière des présences',subtitle:'DBS Fashion · '+fmtJour(ds),
+  downloadPDF({title:'Liste journalière des présences',subtitle:'Lassanis · '+fmtJour(ds),
     note:mentionRegime(),sections:dailySections(ds)},'liste_journaliere_'+ds+'.pdf');
 }
 function pdfDaily(){pdfDailyFor(REP_TO)}
@@ -228,7 +228,7 @@ function pdfPaie(){
   });
   data.push(['','TOTAL ('+rows.length+')','','','','','','','','','','','',fr2(Math.round(tot*1000)/1000)]);
   downloadPDF({title:'Rapport de paie',
-    subtitle:'DBS Fashion · du '+fmtDate(REP_FROM)+' au '+fmtDate(REP_TO)+' · quantité et taux propres à chaque fiche',
+    subtitle:'Lassanis · du '+fmtDate(REP_FROM)+' au '+fmtDate(REP_TO)+' · quantité et taux propres à chaque fiche',
     note:mentionRegime()+' · montants indicatifs, sans majoration légale ni retenue'+
       (l.length?' · ATTENTION : '+l.length+' journée(s) à vérifier':''),
     sections:[{title:'Synthèse de la période',
@@ -256,13 +256,13 @@ function absRetSections(a,b){
 }
 function pdfAbsRetards(){
   downloadPDF({title:'État des absences et retards',
-    subtitle:'DBS Fashion · du '+fmtDate(REP_FROM)+' au '+fmtDate(REP_TO),
+    subtitle:'Lassanis · du '+fmtDate(REP_FROM)+' au '+fmtDate(REP_TO),
     note:mentionRegime()+' · les jours fériés et de repos sont exclus',
     sections:absRetSections(REP_FROM,REP_TO)},'absences_retards_'+REP_FROM+'_'+REP_TO+'.pdf');
 }
 function csvPaie(){
   const rows=repRows();
-  const out=[['Rapport de paie — DBS Fashion'],['Période','du '+REP_FROM,'au '+REP_TO],[mentionRegime()],[],
+  const out=[['Rapport de paie — Lassanis'],['Période','du '+REP_FROM,'au '+REP_TO],[mentionRegime()],[],
     ['Matricule','Nom','Prénom','Service','Atelier','Catégorie','Mode de paie','Base de paie','Quantité paie',
      'Taux (TND)','Montant estimé (TND)',
      'Jours travaillés','Jours absents','Jours congé','Jours fériés','Heures normales','Heures sup.','Retards (min)','Nb retards','À vérifier']];
@@ -280,7 +280,7 @@ function csvPaie(){
   toast('CSV de paie exporté — prêt pour le comptable');
 }
 function csvJournalier(){
-  const out=[['Rapport journalier — DBS Fashion'],['Période','du '+REP_FROM,'au '+REP_TO],[mentionRegime()],[],
+  const out=[['Rapport journalier — Lassanis'],['Période','du '+REP_FROM,'au '+REP_TO],[mentionRegime()],[],
     ['Date','Matricule','Nom','Prénom','Service','Atelier','Catégorie','Statut','Entrée','Sortie','Badges',
      'Heures','Retard (min)','Heures sup.','Saisie manuelle','À vérifier']];
   let n=0;
@@ -353,7 +353,7 @@ function fillPers(){
   const c=$('#persCount');if(c)c.textContent=rows.length+' salarié(s) affiché(s) sur '+DB.employees.length;
 }
 function csvPersonnel(){
-  const out=[['Personnel — DBS Fashion',TODAY],[],
+  const out=[['Personnel — Lassanis',TODAY],[],
     ['Matricule','Nom','Prénom','Poste','Catégorie','Service','Atelier','Contrat','Embauche','Naissance','Âge','Ancienneté',
      'Téléphone','Email','Adresse','Mode de paie','Taux horaire','Taux jour','Salaire mensuel','CNSS','Sexe']];
   persRows().forEach(e=>out.push([matOf(e),e.nom||'',e.prenom||'',e.poste||'',e.categorie||'',e.service||'',
@@ -742,7 +742,7 @@ function fillAbs(){
 }
 function csvAbsences(){
   const d=window._absData||{now:[],range:[]};
-  const out=[['Absences — DBS Fashion'],['Période','du '+ABS_FROM,'au '+ABS_TO],[],
+  const out=[['Absences — Lassanis'],['Période','du '+ABS_FROM,'au '+ABS_TO],[],
     ['Matricule','Nom','Prénom','Service','Atelier','Jours absents sur la période','Absent depuis','Jours consécutifs','Dernière présence']];
   DB.employees.filter(absFiltre).forEach(e=>{
     const n=absInRange(e.id,ABS_FROM,ABS_TO);const st=absStreak(e.id);
@@ -790,7 +790,7 @@ VUES.retards = async function(main){
 };
 function csvRetards(){
   const [a,b]=monthBounds(TODAY.slice(0,7));
-  const out=[['Retards — DBS Fashion'],['Mois',TODAY.slice(0,7)],[mentionRegime()],[],
+  const out=[['Retards — Lassanis'],['Mois',TODAY.slice(0,7)],[mentionRegime()],[],
     ['Date','Matricule','Nom','Prénom','Service','Atelier','Entrée','Retard (min)']];
   eachDay(a,b,ds=>{
     const rec=dayRec(ds);if(!rec||!estOuvre(ds))return;
@@ -1103,7 +1103,7 @@ function exportRSE(){
   const jTot=sum.reduce((s,x)=>s+x.jT+x.jA+x.jC,0),jAbs=sum.reduce((s,x)=>s+x.jA,0);
   const avecNaiss=E.filter(e=>e.naissance),avecEmb=E.filter(e=>e.embauche);
   const cadres=E.filter(e=>e.categorie==='Cadre');
-  const out=[['Rapport RSE — DBS Fashion',TODAY],['Périmètre','mois en cours ('+TODAY.slice(0,7)+')'],[],
+  const out=[['Rapport RSE — Lassanis',TODAY],['Périmètre','mois en cours ('+TODAY.slice(0,7)+')'],[],
     ['Indicateur','Valeur','Base de calcul'],
     ['Effectif',n,'fiches actives'],
     ['Féminisation',pct(E.filter(e=>e.sexe!=='H').length,n)+'%',n+' salariés'],
@@ -1173,7 +1173,7 @@ VUES.assistant = async function(main){
     '<div class="ai-wrap"><div class="ai-stream" id="aiStream" role="log" aria-live="polite">'+
       (aiHistory.length?aiHistory.map(renderMsg).join('')
        :'<div class="ai-msg bot"><div class="b-av">'+I.spark+'</div><div class="ai-bubble">'+
-         '<p><strong>Assistant RH DBS Fashion.</strong></p><p>Posez une question sur le personnel : présences, heures, retards, paie, ancienneté. Je réponds à partir de la base.</p></div></div>')+
+         '<p><strong>Assistant RH Lassanis.</strong></p><p>Posez une question sur le personnel : présences, heures, retards, paie, ancienneté. Je réponds à partir de la base.</p></div></div>')+
     '</div>'+
     '<div class="ai-input"><label for="aiInput" class="sr-only">Votre question</label>'+
       '<textarea id="aiInput" rows="1" placeholder="Votre question…" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();askAI()}" oninput="this.style.height=\'auto\';this.style.height=this.scrollHeight+\'px\'"></textarea>'+
@@ -1203,7 +1203,7 @@ function aiContext(){
     return (e.prenom||'')+' '+(e.nom||'')+' ('+matOf(e)+'): '+C.statutLabel(m.statut,e.sexe)+
       ((r[e.id]&&r[e.id].entree)?' '+r[e.id].entree:'')}).join('\n');
   const f=ferieFor(TODAY);
-  return 'DONNÉES RH — DBS Fashion (usine textile, Nabeul). Date : '+TODAY+'.\n'+
+  return 'DONNÉES RH — Lassanis (usine textile, Nabeul). Date : '+TODAY+'.\n'+
     'Régime du jour : '+(reg.actif===false?'jour de repos':(reg.debut+'→'+reg.fin+', pause '+(+reg.pause||0)+
       'min'+(reg.pauseDe?' ('+reg.pauseDe+'→'+reg.pauseA+')':'')+', tolérance '+(+reg.tol||0)+
       'min, délai H.sup '+(+reg.grace||0)+'min'))+(f?' — JOUR FÉRIÉ : '+f.nom:'')+'.\n'+
@@ -1220,7 +1220,7 @@ async function askAI(preset){
     '</div><div class="ai-bubble"><div class="typing"><span></span><span></span><span></span></div></div></div>');
   s.scrollTop=s.scrollHeight;
   try{
-    const sys='Tu es l’assistant RH de DBS Fashion. Réponds en français, concis et factuel, uniquement '+
+    const sys='Tu es l’assistant RH de Lassanis. Réponds en français, concis et factuel, uniquement '+
       'à partir des données fournies. Si l’information manque, dis-le. Gras (**) pour les chiffres clés, listes (- ) si utile.\n\n'+aiContext();
     const d=await api('/api/ai',{method:'POST',body:{messages:aiHistory.slice(-6).map(m=>({role:m.role,content:m.content})),system:sys}});
     const el=$('#aiPending');if(el)el.remove();
