@@ -81,10 +81,28 @@ textarea:focus,select:focus{border-color:var(--gold)}
 .note-item .t{font-weight:700;font-size:14.5px}
 .note-item .m{font-size:11.5px;color:var(--faint);margin-top:2px}
 .note-item .x{font-size:13.5px;margin-top:9px;white-space:pre-wrap}
+.note-item.prive{border-color:var(--leave);background:#f7f9fe}
+.bulles{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
+.bulle{max-width:82%;margin:6px 0 0 auto;background:var(--gold-soft);border:1px solid var(--gold);
+  border-radius:14px 14px 4px 14px;padding:8px 11px;font-size:13px;white-space:pre-wrap}
+.bulle .q{display:block;font-size:10.5px;color:var(--faint);margin-top:3px;text-align:right}
+.repbox{display:flex;gap:7px;margin-top:10px}
+.repbox textarea{flex:1;border:1px solid var(--line);border-radius:12px;padding:9px 11px;
+  font:inherit;font-size:13.5px;resize:vertical;min-height:40px;background:var(--surface)}
+.repbox button{background:var(--ink);color:#fff;border:none;border-radius:12px;padding:0 15px;
+  font-weight:700;cursor:pointer;font-size:13px}
+.repbox button:disabled{opacity:.5}
 .vote-opt{display:block;width:100%;text-align:left;border:1.5px solid var(--line);border-radius:12px;
   padding:14px;margin-bottom:9px;font-size:14.5px;background:var(--surface);cursor:pointer;min-height:50px}
 .vote-opt:active{border-color:var(--gold)}
 .vote-opt.mien{border-color:var(--gold);background:var(--gold-soft);font-weight:700}
+.dates{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.dates label{min-width:0;font-size:12px;color:var(--muted)}
+.dates input{display:block;width:100%;min-width:0;margin-top:3px;border:1px solid var(--line);border-radius:11px;padding:10px 8px;font-size:15px;font-family:inherit;background:var(--surface)}
+.dates button{grid-column:1/-1;background:var(--ink);color:#fff;border:none;border-radius:11px;height:46px;font-weight:700;font-size:14px;cursor:pointer}
+.liste-ev{margin-top:12px;border-top:1px solid var(--line)}
+.liste-ev summary{cursor:pointer;font-weight:700;font-size:13px;padding:11px 0;color:var(--ink)}
+.liste-ev .ev{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:13.5px}
 .bar{height:8px;border-radius:6px;background:var(--line);overflow:hidden;margin-top:6px}
 .bar i{display:block;height:100%;background:var(--gold)}
 .install{position:fixed;left:12px;right:12px;bottom:12px;background:var(--ink);color:#fff;border-radius:14px;
@@ -135,6 +153,11 @@ try{
 }catch(e){}
 
 let DATA=null, PIN='', ONGLET='pointage';
+/* Mes absences et retards : période choisie et dernier résultat (gardé entre deux affichages) */
+let ASSI={mode:'annee',du:'',au:'',res:null,charge:false,err:''};
+/* #notes dans l'adresse : la notification de l'application Android ouvre
+   directement la conversation, pas l'écran du pointage */
+if((location.hash||'').indexOf('notes')>=0) ONGLET='notes';
 const JJ=['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
 const MOIS=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
 /* premier / dernier badge quand entree-sortie ne sont pas renseignes */
@@ -267,7 +290,7 @@ function render(){
       '<div class="ct">Matricule <b>'+esc(DATA.matricule)+'</b>'+(DATA.categorie?' · '+esc(DATA.categorie):'')+'</div></div></div></div>'+
     '<div class="seg">'+
       '<button class="'+(ONGLET==='pointage'?'on':'')+'" onclick="setOnglet(\'pointage\')">Mon pointage</button>'+
-      '<button class="'+(ONGLET==='notes'?'on':'')+'" onclick="setOnglet(\'notes\')">Notes'+
+      '<button class="'+(ONGLET==='notes'?'on':'')+'" onclick="setOnglet(\'notes\')">Messages'+
         (nonLues?'<span class="b">'+nonLues+'</span>':'')+'</button>'+
       '<button class="'+(ONGLET==='votes'?'on':'')+'" onclick="setOnglet(\'votes\')">Sondages'+
         (aVoter?'<span class="b">'+aVoter+'</span>':'')+'</button>'+
@@ -276,7 +299,7 @@ function render(){
     '<div class="foot">PilotRH · DBS Fashion — espace salarié</div>';
   document.getElementById('tab').innerHTML=
     ONGLET==='pointage'?vuePointage(moisTxt,ym):ONGLET==='notes'?vueNotes():vueVotes();
-  if(ONGLET==='pointage')brancherSignalement();
+  if(ONGLET==='pointage'){brancherSignalement(); if(!ASSI.res&&!ASSI.charge&&!ASSI.err&&ASSI.mode!=='plage')chargerAssi();}
   if(ONGLET==='notes')marquerLues();
 }
 function setOnglet(o){ONGLET=o;render()}
@@ -313,6 +336,7 @@ function vuePointage(moisTxt,ym){
       (s.revue?'<div class="err" style="margin-top:12px">'+s.revue+' journée(s) ont un pointage incomplet '+
         '(une entrée ou une sortie manque). Les heures affichées sont provisoires — signalez-le ci-dessous.</div>':'')+
     '</div>'+
+    vueAssiduite()+
     '<div class="card"><h2>Congés — période du '+fmtPer(DATA.conges.du)+' au '+fmtPer(DATA.conges.au)+'</h2>'+
       '<div class="kpis">'+
         '<div class="kpi"><div class="v">'+fr2(hDec(s.hCumul))+'<span style="font-size:13px"> h</span></div>'+
@@ -340,6 +364,78 @@ function vuePointage(moisTxt,ym){
       '<div class="note">Votre signalement est transmis au service RH avec votre nom. '+
       'Il ne modifie pas automatiquement le pointage.</div></div>';
 }
+/* ------------------------------------------- mes absences et retards (période) */
+function periodeAssi(mode){
+  const t=DATA.today;
+  if(mode==='mois') return [t.slice(0,8)+'01',t];
+  if(mode==='annee') return [t.slice(0,4)+'-01-01',t];
+  return [ASSI.du||t.slice(0,8)+'01', ASSI.au||t];
+}
+async function chargerAssi(mode){
+  if(mode) ASSI.mode=mode;
+  let [du,au]=periodeAssi(ASSI.mode);
+  if(ASSI.mode==='plage'){
+    const a=(document.getElementById('asDu')||{}).value, b=(document.getElementById('asAu')||{}).value;
+    if(a) du=a; if(b) au=b;
+    if(!du||!au){toast('Choisissez les deux dates');return}
+    if(au<du){const x=du;du=au;au=x}
+    if(au>DATA.today) au=DATA.today;
+    if(du>au){toast('La période commence après aujourd’hui');return}
+  }
+  ASSI.du=du; ASSI.au=au; ASSI.charge=true; ASSI.err='';
+  majAssi();
+  try{
+    const d=await post('/api/me/assiduite',{pin:PIN,du,au});
+    ASSI.res=Object.assign(C.bilanAssiduite(ENGINE,d.jours,d.du,d.au,d.justificatifs,d.embauche),{du:d.du,au:d.au});
+  }catch(e){ ASSI.res=null; ASSI.err=lisible(e); }
+  ASSI.charge=false; majAssi();
+}
+function assiPlage(){ASSI.mode='plage';ASSI.res=null;ASSI.err='';render()}
+function majAssi(){ const el=document.getElementById('assiBox'); if(el) el.innerHTML=corpsAssi(); }
+function corpsAssi(){
+  if(ASSI.charge) return '<div class="muted center" style="padding:18px 0">Calcul en cours…</div>';
+  if(ASSI.err) return '<div class="err">'+esc(ASSI.err)+'</div>';
+  const r=ASSI.res; if(!r) return '';
+  const nonJ=r.absences-r.absJustifiees;
+  const ev=r.evenements.slice().sort((a,b)=>a.ds<b.ds?1:-1);
+  const lib={abs:'Absence',absJ:'Absence justifiée',ret:'Retard'};
+  const cls={abs:'t-absent',absJ:'t-neutral',ret:'t-late'};
+  return '<div class="muted" style="font-size:12.5px;margin-top:12px">Du <b>'+fmtPer(r.du)+'</b> au <b>'+fmtPer(r.au)+'</b></div>'+
+    '<div class="kpis">'+
+      '<div class="kpi '+(r.absences?'bad':'good')+'"><div class="v">'+r.absences+'<span style="font-size:13px"> j</span></div>'+
+        '<div class="l">Jours d’absence'+(r.absJustifiees?' (dont '+r.absJustifiees+' justifié'+(r.absJustifiees>1?'s':'')+')':'')+'</div></div>'+
+      '<div class="kpi '+(r.retards?'warn':'good')+'"><div class="v">'+r.retards+'</div>'+
+        '<div class="l">Retards'+(r.retardMin?' ('+hLabel(r.retardMin)+' au total)':'')+'</div></div>'+
+      '<div class="kpi"><div class="v">'+r.travailles+'<span style="font-size:13px"> j</span></div><div class="l">Jours travaillés</div></div>'+
+      '<div class="kpi"><div class="v">'+r.conges+'<span style="font-size:13px"> j</span></div><div class="l">Jours de congé</div></div>'+
+    '</div>'+
+    (ev.length
+      ?'<details class="liste-ev"><summary>Voir les dates ('+ev.length+')</summary>'+
+        ev.map(v=>'<div class="ev"><span class="mono">'+JJ[new Date(v.ds+'T12:00').getDay()]+' '+fmtPer(v.ds)+'</span>'+
+          '<span><span class="tag '+cls[v.type]+'">'+lib[v.type]+'</span>'+
+          (v.type==='ret'?' <span class="mono muted">'+esc(v.heure||'')+' · +'+v.min+' min</span>':'')+'</span></div>').join('')+
+        '</details>'
+      :'<div class="ok">Aucune absence ni aucun retard sur cette période. Bravo !</div>')+
+    (r.incomplets?'<div class="note">'+r.incomplets+' journée(s) ont un pointage incomplet : le décompte peut encore changer quand le service RH les aura corrigées.</div>':'')+
+    (nonJ&&!r.absJustifiees?'<div class="note">Une absence justifiée par un certificat ou une autorisation ? Remettez le justificatif au service RH : elle sera alors comptée comme justifiée.</div>':'');
+}
+function vueAssiduite(){
+  const m=ASSI.mode, t=DATA.today;
+  return '<div class="card"><h2>Mes absences et retards</h2>'+
+    '<div class="seg" style="margin-top:0">'+
+      '<button class="'+(m==='mois'?'on':'')+'" onclick="chargerAssi(\'mois\')">Ce mois</button>'+
+      '<button class="'+(m==='annee'?'on':'')+'" onclick="chargerAssi(\'annee\')">Cette année</button>'+
+      '<button class="'+(m==='plage'?'on':'')+'" onclick="assiPlage()">Choisir les dates</button>'+
+    '</div>'+
+    (m==='plage'?'<div class="dates">'+
+      '<label>Du<input type="date" id="asDu" max="'+t+'" value="'+esc(ASSI.du||t.slice(0,8)+'01')+'"></label>'+
+      '<label>Au<input type="date" id="asAu" max="'+t+'" value="'+esc(ASSI.au||t)+'"></label>'+
+      '<button onclick="chargerAssi()">Voir cette période</button></div>':'')+
+    '<div id="assiBox">'+corpsAssi()+'</div>'+
+    '<div class="note">Les jours fériés, de repos et de congé ne comptent pas comme des absences. '+
+      'Un retard est une arrivée après l’heure de début, tolérance comprise.</div></div>';
+}
+
 function brancherSignalement(){
   const b=document.getElementById('fsend');if(!b)return;
   b.onclick=async()=>{
@@ -358,13 +454,37 @@ function brancherSignalement(){
 /* -------------------------------------------------------------------- notes */
 function vueNotes(){
   const notes=DATA.notes||[];
-  if(!notes.length)return '<div class="card center muted" style="padding:34px 18px">Aucune note de service pour le moment.</div>';
-  return notes.map(n=>'<div class="note-item'+(n.lu?'':' nouv')+'">'+
+  if(!notes.length)return '<div class="card center muted" style="padding:34px 18px">Aucun message pour le moment.</div>';
+  return notes.map(n=>'<div class="note-item'+(n.lu?'':' nouv')+(n.prive?' prive':'')+'" id="note_'+esc(n.id)+'">'+
     '<div class="t">'+esc(n.titre)+(n.important?' <span class="tag t-absent">important</span>':'')+
+      (n.prive?' <span class="tag t-leave">pour vous</span>':'')+
       (n.lu?'':' <span class="tag t-leave">nouveau</span>')+'</div>'+
     '<div class="m">'+esc(String(n.ts||'').replace('T',' ').slice(0,16))+
       (n.par?' · '+esc(n.par):'')+'</div>'+
-    '<div class="x">'+esc(n.texte)+'</div></div>').join('');
+    '<div class="x">'+esc(n.texte)+'</div>'+
+    ((n.reponses&&n.reponses.length)?'<div class="bulles">'+n.reponses.map(r=>
+      '<div class="bulle">'+esc(r.texte)+'<span class="q">Vous · '+
+      esc(String(r.ts||'').replace('T',' ').slice(0,16))+'</span></div>').join('')+'</div>':'')+
+    '<div class="repbox">'+
+      '<textarea id="rep_'+esc(n.id)+'" rows="1" placeholder="Répondre au service RH…" '+
+        'aria-label="Répondre à : '+esc(n.titre)+'"></textarea>'+
+      '<button onclick="repondre(\''+esc(n.id)+'\')">Envoyer</button>'+
+    '</div>'+
+  '</div>').join('');
+}
+/* La réponse d'une salariée n'est visible que par le service RH et par elle :
+   un message adressé à tout l'atelier ne doit pas exposer sa remarque aux autres. */
+async function repondre(id){
+  const zone=document.getElementById('rep_'+id); if(!zone)return;
+  const texte=(zone.value||'').trim();
+  if(!texte){toast('Écrivez votre message avant d’envoyer');return}
+  zone.disabled=true;
+  try{
+    const d=await post('/api/me/repondre',{id,texte});
+    const n=(DATA.notes||[]).find(x=>x.id===id);
+    if(n){ n.reponses=(n.reponses||[]).concat([{texte,ts:d.ts,moi:true}]); n.lu=true }
+    render(); toast('Message envoyé au service RH');
+  }catch(e){ zone.disabled=false; toast(lisible(e)) }
 }
 async function marquerLues(){
   const nouv=(DATA.notes||[]).filter(n=>!n.lu);
@@ -373,7 +493,7 @@ async function marquerLues(){
   }
   if(nouv.length){
     const seg=document.querySelectorAll('.seg button');
-    if(seg.length>1)seg[1].innerHTML='Notes';
+    if(seg.length>1)seg[1].innerHTML='Messages';
   }
 }
 
@@ -468,7 +588,7 @@ function aideInstalliOS(){
   document.getElementById('install').classList.add('on');
 }
 
-Object.assign(window,{loadMonth,setOnglet,voter});
+Object.assign(window,{loadMonth,setOnglet,voter,repondre,chargerAssi,assiPlage});
 
 async function init(){
   if(!TOKEN){

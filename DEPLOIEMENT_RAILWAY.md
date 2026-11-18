@@ -144,6 +144,7 @@ points, au lieu d'une trace Python.
   tout fonctionne parfaitement jusqu'au redéploiement suivant.
 - **La date ou une correction n'apparaît pas** : ancienne version en cache → Ctrl + Maj + R ;
   ou vérifiez que Railway déploie bien la **bonne branche** (Settings → trigger branch).
-- **La pointeuse n'envoie plus** : l'agent d'usine utilise le compte admin ; si vous
-  changez le mot de passe admin, mettez-le à jour dans `pilotrh_agent.py`.
+- **La pointeuse n'envoie plus** : regardez l'encadré *Pointeuse* de PilotRH (dernière panne
+  signalée par l'agent), puis lancez `DIAGNOSTIC.bat` sur le PC de l'atelier. L'agent utilise
+  sa propre clé, pas le mot de passe admin : changer ce dernier ne le coupe pas.
 - **Vérifier les logs** : cliquez sur le service → onglet *Deploy Logs* (les erreurs y apparaissent).

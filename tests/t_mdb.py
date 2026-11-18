@@ -101,6 +101,94 @@ st={'employees':[],'settings':S,'exclus':['10'],'pointages':{}}
 s=M._merge_assembled(st,users,{'10','20'},day_user)
 t("badge exclu absent de l'effectif", [e['matricule'] for e in s['employees']], ['20'])
 
+print("\n--- personnes enregistrées sur la pointeuse mais absentes de l'application ---")
+TD = datetime.date.today()
+def J(n): return (TD - datetime.timedelta(days=n)).isoformat()
+def base(emps=None, **kw):
+    s = {'employees': emps or [], 'settings': {'jours': {str(i): {'actif': True, 'debut': '07:30', 'fin': '16:30'} for i in range(7)},
+                                               'periodes': [], 'feriesActifs': False, 'feries': []},
+         'pointages': {}, 'exclus': []}
+    s.update(kw); return s
+def emp(id_, mat, nom='Nom', prenom='Prenom', **kw):
+    e = {'id': id_, 'matricule': mat, 'cin': mat, 'nom': nom, 'prenom': prenom, 'actif': True}; e.update(kw); return e
+def jour(b, n, e='07:30', s='16:30'): return [{'badge': b, 'dt': J(n) + ' ' + e + ':00'}, {'badge': b, 'dt': J(n) + ' ' + s + ':00'}]
+
+# 1. enregistrée SANS nom sur la pointeuse (seulement un numéro)
+s = M.merge_punches(base([emp('E001', '101')]), [{'badge': '101', 'name': 'Amel Ben'}, {'badge': '207', 'name': ''}],
+                    jour('101', 3) + jour('207', 3) + jour('207', 2))
+e207 = [e for e in s['employees'] if e['matricule'] == '207']
+t("sans nom sur la pointeuse : la fiche est créée (avant : ignorée en silence)", len(e207), 1)
+t("elle porte un nom provisoire lisible", (e207[0]['nom'], e207[0]['prenom']), ('Badge 207', ''))
+t("elle est marquée « à compléter »", e207[0].get('aCompleter'), True)
+t("ses pointages sont importés", s['pointages'][J(3)][e207[0]['id']]['entree'], '07:30')
+st = s['_import_stats']
+t("elle figure au rapport, signalée sans nom", [(x['badge'], x['sansNom'], x['jours']) for x in st['nouvelles']], [('207', True, 2)])
+
+# 2. nouvelle recrue qui n'a badgé qu'UN jour
+s = M.merge_punches(base([emp('E001', '101')]), [{'badge': '101', 'name': 'A B'}, {'badge': '310', 'name': 'Salma Trabelsi'}],
+                    jour('101', 5) + jour('101', 1) + jour('310', 1))
+e310 = [e for e in s['employees'] if e['matricule'] == '310']
+t("recrue d'un seul jour : fiche créée (avant : il fallait 3 jours)", [(e['prenom'], e['nom']) for e in e310], [('Trabelsi', 'Salma')])  # « NOM Prénom » sur la pointeuse, comme avant
+t("son premier jour est importé, pas perdu", s['pointages'][J(1)][e310[0]['id']]['statut'], 'present')
+t("date d'embauche = premier badge, pas la date de l'import", e310[0]['embauche'], J(1))
+t("elle n'est pas « absente » les jours d'avant son arrivée", e310[0]['id'] in s['pointages'][J(5)], False)
+t("l'ancienne, elle, reste absente le jour où elle n'a pas badgé", s['pointages'][J(1)]['E001']['statut'], 'present')
+
+# 3. fiche créée à la main AVANT que la personne ait 3 jours de badge
+s = M.merge_punches(base([emp('E001', '101'), emp('E050', '412', 'Manuelle', 'Rim', embauche=J(2))]),
+                    [{'badge': '101', 'name': 'A B'}, {'badge': '412', 'name': 'RIM M'}], jour('101', 2) + jour('412', 2))
+t("fiche saisie à la main : ses pointages arrivent dès le premier jour (avant : perdus)", s['pointages'][J(2)]['E050']['entree'], '07:30')
+t("aucune fiche en double", sum(1 for e in s['employees'] if e['matricule'] == '412'), 1)
+t("le nom saisi à la main est conservé", s['employees'][1]['nom'], 'Manuelle')
+
+# 4. zéros en tête : « 0412 » dans la fiche, « 412 » sur la pointeuse
+s = M.merge_punches(base([emp('E050', '0412', 'Zero', 'Tete')]), [{'badge': '412', 'name': 'X Y'}], jour('412', 1))
+t("« 0412 » et « 412 » sont la même personne (avant : doublon créé)", len(s['employees']), 1)
+t("et ses pointages vont sur sa fiche", s['pointages'][J(1)]['E050']['statut'], 'present')
+t("normalisation", [M.norm_badge(x) for x in ('0412', ' 412 ', '412', '0', '000', '', 'A12', None)], ['412', '412', '412', '0', '0', '', 'A12', ''])
+
+# 5. badge d'une personne sortie, redonné à une nouvelle recrue
+s = M.merge_punches(base([emp('E001', '101')], exclus=['520'], exclus_dates={'520': J(40)}),
+                    [{'badge': '101', 'name': 'A B'}, {'badge': '520', 'name': 'Nouvelle Recrue'}],
+                    jour('520', 60) + jour('520', 10) + jour('520', 9) + jour('101', 9))
+st = s['_import_stats']
+t("badge d'une sortie : jamais réimporté d'office (la démission reste respectée)", any(e['matricule'] == '520' for e in s['employees']), False)
+ig = [x for x in st['ignores'] if x['badge'] == '520']
+t("mais il est SIGNALÉ, avec la raison", [x['raison'] for x in ig], ['badge_sorti'])
+t("avec la date de sortie et les jours badgés après", (ig[0]['sortie'], ig[0]['apres']), (J(40), 2))
+s = M.merge_punches(base([emp('E001', '101')], exclus=['521'], exclus_dates={'521': J(5)}),
+                    [{'badge': '521', 'name': 'Partie'}], jour('521', 30) + jour('521', 20))
+t("badge d'une sortie sans badge après la sortie : rien à signaler", s['_import_stats']['ignores'], [])
+s = M.merge_punches(base([emp('E001', '101')], exclus=['0522']), [{'badge': '522', 'name': 'X'}], jour('522', 3))
+t("ancienne sortie sans date, qui badge encore : signalée aussi", [x['raison'] for x in s['_import_stats']['ignores']], ['badge_sorti'])
+
+# 6. badge 0, et personnes parties depuis longtemps
+s = M.merge_punches(base([emp('E001', '101')]), [{'badge': '0', 'name': 'Admin'}, {'badge': '777', 'name': 'Partie Depuis'}],
+                    jour('0', 2) + jour('777', 400) + jour('777', 380))
+st = s['_import_stats']
+t("badge 0 (test) : ignoré mais nommé dans le rapport", [x['raison'] for x in st['ignores']], ['badge_zero'])
+t("personne partie depuis plus de 5 mois, sans fiche : pas de fiche fantôme", any(e['matricule'] == '777' for e in s['employees']), False)
+t("comptée dans le rapport", st['anciens'], 1)
+
+# 7. un nom vide sur la pointeuse n'efface pas le nom de la fiche
+s = M.merge_punches(base([emp('E001', '101', 'Gharbi', 'Ines')]), [{'badge': '101', 'name': ''}], jour('101', 1))
+t("nom de la fiche conservé", (s['employees'][0]['prenom'], s['employees'][0]['nom']), ('Ines', 'Gharbi'))
+
+# 8. fichier .mdb : USERINFO avec un nom vide
+class FauxMdb:
+    def __init__(self, p): pass
+    def parse_table(self, n):
+        if n == 'USERINFO':
+            return {'USERID': [1, 2], 'Name': ['Amel Ben', None], 'Badgenumber': ['101', '208'], 'Gender': ['F', '']}
+        return {'USERID': [1, 1, 2, 2], 'CHECKTIME': [J(1) + ' 07:30:00', J(1) + ' 16:30:00', J(1) + ' 07:31:00', J(1) + ' 16:29:00']}
+vrai = M.AccessParser; M.AccessParser = FauxMdb
+try:
+    s = M.merge(base(), 'x.mdb')
+finally:
+    M.AccessParser = vrai
+t("import .mdb : la personne sans nom dans USERINFO est importée", sorted(e['matricule'] for e in s['employees']), ['101', '208'])
+t("avec ses pointages", s['pointages'][J(1)][[e for e in s['employees'] if e['matricule'] == '208'][0]['id']]['entree'], '07:31')
+
 print("\n=========================")
 print("  %d réussis · %d échoués" % (ok,ko))
 sys.exit(1 if ko else 0)

@@ -1,136 +1,121 @@
-# Connecter PilotRH à la pointeuse
+# Relier la pointeuse à PilotRH, sans import manuel
 
-## Où se règle tout cela, dans l'application
+## En deux phrases
 
-**Sécurité & accès → encadré « Pointeuse & synchronisation ».** Vous y trouvez :
+PilotRH est hébergé sur Internet (Railway), et la pointeuse est sur le réseau de l'usine. Internet
+ne peut pas entrer sur le réseau de l'usine : c'est donc un petit programme, **l'agent**, posé sur
+un PC de l'atelier, qui lit la pointeuse et envoie les badgeages à PilotRH, plusieurs fois par jour.
 
-- l'**adresse IP** de la pointeuse, son **port** (4370) et son mot de passe de communication ;
-- la **fréquence de remontée** (toutes les 30 minutes par défaut) ;
-- le délai au bout duquel l'application vous **alerte si elle ne reçoit plus rien** ;
-- l'état de la liaison : *« Dernier pointage reçu il y a 12 min · par agent d'usine · 1 180 badges »*,
-  et la dernière erreur s'il y en a eu une ;
-- un bouton **« Fichier de lancement de l'agent »** : il prépare le fichier `lancer_agent.bat`
-  déjà rempli avec l'adresse de votre serveur et ces réglages — plus besoin de modifier un
-  fichier Python à la main sur le PC de l'atelier ;
-- un bouton **« Tester et importer maintenant »**, qui n'apparaît que si ce serveur peut
-  réellement joindre la pointeuse (voir juste en dessous).
+## Mise en route — 5 minutes
 
-**Une alerte « Pointeuse muette » apparaît maintenant dans les Notifications** dès que rien
-n'est arrivé depuis le délai que vous avez fixé, et un clic dessus ouvre cet encadré. C'est le
-signal qui manquait : des journées entières sans heure de sortie sont passées inaperçues
-jusqu'à la paie faute d'être averti que la remontée s'était arrêtée.
+**Dans PilotRH** (compte Administrateur ou RH) : *Sécurité & accès → Pointeuse*.
 
----
+1. Saisissez l'**adresse IP** de la pointeuse, puis **Enregistrer**.
+   Pour la trouver, sur l'appareil : *Menu → Comm. → Ethernet* (ou *Réseau*) → « Adresse IP ».
+2. Cliquez sur **« Télécharger le kit de l'agent »**. Vous obtenez `PilotRH_Agent.zip`.
 
-## Pourquoi un « agent » ?
+**Sur le PC de l'atelier** (branché sur le même réseau que la pointeuse) :
 
-Votre application PilotRH est **en ligne** (sur Railway, sur Internet).
-Votre pointeuse est **dans l'usine**, sur votre réseau local privé.
+3. Copiez le ZIP (clé USB, e-mail…), **clic droit → « Extraire tout… »**.
+   Ne lancez rien depuis l'intérieur du ZIP.
+4. Dans le dossier extrait, double-cliquez sur **`DIAGNOSTIC.bat`**.
+   Il vérifie chaque maillon et termine par **« TOUT FONCTIONNE »** ou par la cause exacte de la panne.
+5. Double-cliquez sur **`DEMARRER.bat`**. Laissez la fenêtre ouverte (vous pouvez la réduire).
+6. Une seule fois : **`DEMARRAGE_AUTOMATIQUE.bat`**, pour que l'agent se relance à chaque
+   démarrage du PC.
 
-Internet ne peut pas aller « chercher » un appareil derrière votre box/routeur : c'est
-bloqué pour des raisons de sécurité. Il faut donc un **petit programme relais** — l'agent —
-qui tourne sur un PC de l'usine (sur le même réseau que la pointeuse) et qui **envoie**
-les pointages vers le cloud. Ce PC doit être allumé aux heures où l'on veut la mise à jour.
+C'est tout. Rien à installer, rien à remplir :
 
-Deux méthodes au choix. La méthode 1 est la plus automatique.
+- **Python** : si le PC ne l'a pas, le kit télécharge une version portable dans son propre dossier
+  (10 Mo, une seule fois, sans droits administrateur, rien n'est installé dans Windows).
+- **Aucun module à installer** : la lecture de la pointeuse est intégrée au kit (plus de `pyzk`,
+  plus de `pip install`).
+- **Aucun compte à créer ni mot de passe à recopier** : le kit contient l'adresse de votre PilotRH
+  et une **clé d'accès** qui n'autorise qu'une chose — envoyer des pointages.
+- **L'adresse de la pointeuse** n'est pas inscrite sur le PC : l'agent la redemande à PilotRH à
+  chaque remontée. Si elle change, corrigez-la dans PilotRH, sans retourner à l'atelier.
 
----
+## Ce que vous voyez dans PilotRH
 
-## Méthode 1 — Connexion directe à la pointeuse (recommandée)
+L'encadré *Pointeuse* affiche :
 
-L'agent se branche directement sur la pointeuse par le réseau (protocole ZKTeco, port 4370).
-Aucun logiciel ZKTeco nécessaire.
+- **sur quel PC tourne l'agent**, quand il a donné des nouvelles, sa version ;
+- **le modèle et le numéro de série** de la pointeuse, le nombre de badgeages en mémoire ;
+- **la dernière panne**, en clair, avec « Que faire » — vue de votre bureau, sans aller à l'atelier ;
+- **un décalage de l'horloge** de la pointeuse de plus de 5 minutes (toutes les heures d'entrée et
+  de sortie en seraient faussées d'autant).
 
-**Étapes (à faire une seule fois) :**
+Trois alertes remontent aussi dans *Alertes* : pointeuse muette, dernière remontée en échec,
+horloge décalée.
 
-1. Sur un PC de l'usine, installez **Python** depuis https://www.python.org
-   (à l'installation, cochez **« Add Python to PATH »**).
-2. Copiez le dossier de l'agent (les fichiers `pilotrh_agent.py`, `installer_agent.bat`,
-   `lancer_agent_pointeuse.bat`) sur ce PC.
-3. Double-cliquez sur **`installer_agent.bat`** (installe les modules nécessaires).
-4. Ouvrez **`pilotrh_agent.py`** avec le Bloc-notes et remplissez en haut :
-   - `URL` = l'adresse de votre app, ex. `https://dbs-pilotrh.up.railway.app`
-   - `ADMIN_PW` = le mot de passe admin du serveur (si vous en avez défini un)
-   - `POINTEUSE_IP` = l'adresse IP de la pointeuse (voir ci-dessous comment la trouver)
-   - laissez `METHODE = "pointeuse"`
-5. Double-cliquez sur **`lancer_agent_pointeuse.bat`**. L'agent envoie les pointages
-   maintenant, puis toutes les 30 minutes (modifiable via `PILOTRH_INTERVAL_MIN`).
+## Ce que fait l'agent, exactement
 
-**Trouver l'adresse IP de la pointeuse :** sur l'écran de la pointeuse, menu
-`Réseau` / `Comm` / `Ethernet` → notez l'adresse `IP` (ex. `192.168.1.201`).
-Le PC et la pointeuse doivent être sur le même réseau (mêmes 3 premiers nombres de l'IP).
+- Il **lit** la pointeuse, il n'efface jamais rien dessus et ne touche ni à ses utilisateurs ni à
+  son horloge. Pendant la lecture (quelques secondes), l'écran de la pointeuse indique qu'elle est
+  occupée ; le badgeage reprend ensuite tout seul.
+- Une fois par jour, il envoie **tout l'historique** de la pointeuse (comme l'import manuel du
+  fichier `.mdb`). Le reste du temps, il n'envoie que les **60 derniers jours**, et seulement s'il y
+  a du nouveau.
+- Vos **corrections manuelles restent protégées** : elles ne sont jamais écrasées par un envoi.
+- Une remontée qui échoue est retentée au bout de 2, puis 5, puis 10 minutes, puis au rythme normal.
+- Si deux agents sont lancés sur le même PC, le second s'arrête de lui-même.
+- Tout est écrit dans `journal_agent.txt`, à côté de lui.
 
-**Lancement automatique au démarrage de Windows :** Planificateur de tâches → Créer une
-tâche → Déclencheur « À l'ouverture de session » → Action : démarrer
-`lancer_agent_pointeuse.bat`.
+## Si ça ne marche pas
 
----
+Relancez **`DIAGNOSTIC.bat`**. Il s'arrête au premier maillon qui casse et dit quoi faire. Il
+enregistre aussi son compte rendu dans `diagnostic.txt` : c'est ce fichier à envoyer si vous demandez
+de l'aide.
 
-## Méthode 2 — Envoi du fichier `.mdb`
+| Ce que dit le diagnostic | La cause habituelle |
+|---|---|
+| « Le fichier pilotrh_agent.py est introuvable » | Lancé depuis l'intérieur du ZIP : *Extraire tout* d'abord |
+| « Impossible de trouver ou de télécharger Python » | Pas d'Internet sur ce PC ; sinon installer Python à la main en cochant *Add python.exe to PATH* |
+| « Ce PC ne trouve pas le serveur PilotRH » | Pas d'Internet à ce moment, ou adresse mal écrite |
+| « La connexion sécurisée a été refusée par ce PC » | **Date ou heure du PC fausse** (le plus fréquent), ou antivirus qui filtre le https |
+| « PilotRH refuse la clé de cet agent » | La clé a été changée dans PilotRH : retéléchargez le kit et remplacez `config.ini` |
+| « Ce serveur PilotRH ne connaît pas l'agent » | Le serveur n'a pas encore été mis à jour avec cette version |
+| « Rien ne répond à l'adresse 192.168… » | Pointeuse éteinte, câble, mauvaise adresse IP, ou PC sur un autre réseau (Wi-Fi invité…) |
+| « Un appareil répond mais refuse le port 4370 » | Ce n'est pas la pointeuse à cette adresse, ou son port a été changé |
+| « Ce n'est pas une pointeuse ZKTeco qui répond » | L'adresse est celle d'une imprimante, d'une caméra… |
+| « La pointeuse refuse le mot de passe de communication » | Une *Clé Comm.* est réglée sur l'appareil : reportez-la dans PilotRH |
+| « La pointeuse a fermé la connexion » | Un autre logiciel ZKTeco (ZKTime…) est connecté en même temps : fermez-le |
 
-Si vous préférez continuer à utiliser le logiciel ZKTeco (qui met à jour `attBackup.mdb`),
-l'agent peut simplement envoyer ce fichier.
+Pour la panne réseau, le diagnostic affiche l'adresse du PC et celle de la pointeuse : **les trois
+premiers nombres doivent être identiques** (par exemple 192.168.1.**20** et 192.168.1.**201**). Il
+propose aussi la commande `ping` à taper pour savoir si la pointeuse est joignable du tout.
 
-1. Mêmes étapes 1 à 3 que ci-dessus.
-2. Dans `pilotrh_agent.py`, mettez :
-   - `METHODE = "fichier"`
-   - `URL` et `ADMIN_PW` comme ci-dessus
-   - `MDB` = le chemin du fichier, ex. `C:\ZKTeco\attBackup.mdb`
-     (ou un dossier partagé : `\\PC-POINTEUSE\ZKTeco\attBackup.mdb`)
-3. Lancez `lancer_agent_pointeuse.bat`.
+## Remplacer le PC, ou si la clé a pu être copiée
 
----
+Dans PilotRH, *Pointeuse* → **« Changer la clé »**. L'ancienne cesse aussitôt de fonctionner.
+Retéléchargez le kit et remplacez le fichier `config.ini` sur le PC de l'atelier.
 
-## Cas particulier : le serveur est DANS l'usine
+## Méthode de secours : le fichier `attBackup.mdb`
 
-Si vous faites tourner PilotRH sur un PC de l'atelier (installation locale par
-`2_Demarrer_PilotRH.bat`) plutôt qu'en ligne, l'agent devient inutile : le serveur est déjà sur
-le même réseau que la pointeuse et peut la lire lui-même.
+Si votre pointeuse ne peut pas être lue par le réseau, mais que le logiciel ZKTeco tourne sur un PC
+et met à jour son fichier `attBackup.mdb`, l'agent peut envoyer ce fichier à la place. Dans
+`config.ini` du kit :
 
-1. Installez le module de lecture : `pip install pyzk`
-2. Dans Sécurité & accès → Pointeuse, saisissez l'adresse IP et enregistrez.
-3. Le bouton **« Tester et importer maintenant »** apparaît : il se connecte et importe.
-4. Pour l'automatiser sans agent, vous pouvez aussi laisser le logiciel ZKTeco mettre à jour
-   son `attBackup.mdb` et indiquer ce chemin au serveur par la variable d'environnement
-   `PILOTRH_MDB_PATH` : le serveur relit le fichier tout seul dès qu'il change
-   (fréquence réglée par `PILOTRH_SYNC_MINUTES`, 60 minutes par défaut).
+```
+[pointeuse]
+methode = fichier
+fichier_mdb = C:\ZKTeco\attBackup.mdb
+```
 
-L'application refuse toute adresse publique pour cette lecture directe (seules les plages
-locales `192.168.x.x`, `10.x.x.x`, `172.16-31.x.x` sont acceptées) : un serveur qui accepterait
-d'aller sonder n'importe quelle adresse sur Internet serait un outil d'attaque.
+Le fichier n'est renvoyé que s'il a changé (et une fois par jour dans tous les cas).
 
-## Vérifier que ça marche
+## Installation locale (PilotRH sur un PC de l'usine)
 
-Dans la fenêtre de l'agent, vous devez voir une ligne du type :
-`[01/07 08:15:00] OK — envoyé au cloud · 107 employées · 992 jours`
+Si PilotRH tourne lui-même sur un PC de l'usine (`2_Demarrer_PilotRH.bat`), le serveur peut lire la
+pointeuse directement : le bouton **« Tester et importer maintenant »** apparaît dans l'encadré.
+Plus besoin d'installer `pyzk` pour cela non plus. Pour une remontée automatique, installez l'agent
+comme ci-dessus.
 
-Puis, dans l'application, l'onglet **Présences** du jour se remplit tout seul, et
-l'**Historique** (Paramètres → Journal) montre une entrée « Import direct pointeuse ».
+## Ce qui n'a pas pu être vérifié avant livraison
 
-## En cas de problème
-
-- « Échec connexion pointeuse » : vérifiez l'IP, que la pointeuse est allumée et sur le
-  même réseau, et que le port 4370 n'est pas bloqué par un pare-feu.
-- « Erreur serveur 401 » : le mot de passe `ADMIN_PW` ne correspond pas à celui du serveur.
-- « Fichier introuvable » (méthode fichier) : vérifiez le chemin `MDB`.
-- **Rien n'arrive et l'alerte « Pointeuse muette » s'affiche** : dans l'ordre — le PC de
-  l'atelier est-il allumé ? la fenêtre de l'agent est-elle ouverte ? la pointeuse répond-elle
-  au `ping` depuis ce PC ? Le message d'erreur exact de la dernière tentative est affiché dans
-  l'encadré Pointeuse de l'application.
-- **Le PC de l'atelier s'éteint la nuit** : ce n'est pas grave. La pointeuse garde ses badges
-  dans sa propre mémoire ; au prochain démarrage de l'agent, tout remonte. Réglez simplement
-  le délai d'alerte plus haut que la durée d'extinction (par exemple 16 h) pour ne pas être
-  averti chaque matin.
-
----
-
-## Ce que l'automatisation ne dispense pas de faire
-
-Une remontée toutes les 30 minutes ne garantit pas des journées complètes : si l'agent envoie à
-16 h 00 et que les ouvrières sortent à 16 h 30, la journée est enregistrée sans heure de sortie
-jusqu'à l'envoi suivant. Deux précautions :
-
-1. **Laissez l'agent tourner après la fin du poste** (au moins une remontée après la dernière
-   sortie). Un intervalle de 30 minutes et un PC allumé jusqu'à 18 h suffisent.
-2. **Regardez l'alerte « Journées à vérifier »** avant de clôturer le mois : elle liste les
-   journées incomplètes, et le bouton *Corriger* mène directement à la ligne concernée.
+Le dialogue avec la pointeuse a été vérifié contre une pointeuse **simulée** qui reproduit le
+protocole ZKTeco — elle-même validée par la bibliothèque de référence `pyzk` — sur tous les formats
+de mémoire connus, les réseaux lents, les anciens modèles (UDP), le mot de passe de communication et
+les pannes. Il n'a pas pu l'être face à **votre** appareil, ni les fichiers `.bat` sur un vrai
+Windows. Si `DIAGNOSTIC.bat` s'arrête sur une erreur que ce tableau n'explique pas, envoyez
+`diagnostic.txt` : il contient tout ce qu'il faut pour corriger.

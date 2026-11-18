@@ -447,10 +447,55 @@ function estProtege(rec) {
   return false;
 }
 
+/* Bilan d'assiduité d'UNE personne sur une période — partagé par l'espace
+   salarié et la vue RH « Assiduité », pour que l'ouvrière lise exactement les
+   chiffres que voit le service RH.
+     jours   : {date: enregistrement}  (seulement les jours importés)
+     justifs : [{debut, fin}]          absences couvertes par un justificatif
+     embauche: date d'embauche si la fiche est complète, sinon ''
+   Règles : un jour sans enregistrement ne compte pas (pas encore importé) ; les
+   fériés, repos et congés ne sont pas des absences ; avant l'embauche (à défaut,
+   avant la première présence de la période) rien ne compte.                   */
+function bilanAssiduite(engine, jours, du, au, justifs, embauche) {
+  jours = jours || {}; justifs = justifs || [];
+  let debut = embauche || '';
+  if (!debut) {
+    const avecBadge = Object.keys(jours).filter(ds => ds >= du && ds <= au && engine.badges(jours[ds]).length).sort();
+    debut = avecBadge[0] || '9999-99-99';
+  }
+  const b = { attendus: 0, travailles: 0, absences: 0, absJustifiees: 0, conges: 0, retards: 0, retardMin: 0,
+              incomplets: 0, taux: 0, evenements: [] };
+  const justifie = ds => justifs.some(j => j.debut <= ds && ds <= (j.fin || j.debut));
+  const d = new Date(du + 'T12:00'), fin = new Date(au + 'T12:00');
+  for (; d <= fin; d.setDate(d.getDate() + 1)) {
+    const ds = isoOf(d), rec = jours[ds];
+    if (!rec || ds < debut) continue;
+    const m = engine.metrics(rec, ds), ouvre = engine.estOuvre(ds);
+    if (m.statut === 'absent') {
+      if (!ouvre) continue;
+      b.attendus++; b.absences++;
+      const j = justifie(ds); if (j) b.absJustifiees++;
+      b.evenements.push({ ds, type: j ? 'absJ' : 'abs' });
+    } else if (m.statut === 'leave' || m.statut === 'mission') {
+      if (ouvre) { b.attendus++; b.conges++; }
+    } else if (m.statut === 'ferie' || m.statut === 'repos') {
+      continue;
+    } else {
+      if (ouvre) b.attendus++;
+      b.travailles++;
+      if (m.late) { b.retards++; b.retardMin += m.retard;
+        b.evenements.push({ ds, type: 'ret', min: m.retard, heure: rec.entree || (rec.punches || [])[0] || '' }); }
+      if (m.revue) b.incomplets++;
+    }
+  }
+  b.taux = b.attendus ? Math.round(b.absences * 1000 / b.attendus) / 10 : 0;
+  return b;
+}
+
 root.PilotRHCore = {
   pad, isoOf, toMin, fromMin, hDec, fr2, hLabel, esc, escJs,
   normalizeSettings, normalizeDay, makeEngine,
   FERIES_FIXES_DEFAUT, STATUTS, statutLabel, statutClass, EST_ABSENCE, estProtege,
-  MODES_PAIE, MODES_PAIE_LABEL, modePaie,
+  MODES_PAIE, MODES_PAIE_LABEL, modePaie, bilanAssiduite,
 };
 })(typeof window !== 'undefined' ? window : this);

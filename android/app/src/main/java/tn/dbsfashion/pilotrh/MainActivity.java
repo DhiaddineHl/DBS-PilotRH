@@ -17,6 +17,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
+import android.webkit.ValueCallback;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -53,6 +54,8 @@ public class MainActivity extends Activity {
 
     private static final String PREFS = "pilotrh";
     private static final String CLE_SERVEUR = "serveur";
+    /** Ouvrir directement la conversation (clic sur une notification). */
+    static final String EXTRA_MESSAGES = "messages";
 
     private WebView web;
     private FrameLayout racine;
@@ -75,18 +78,43 @@ public class MainActivity extends Activity {
             prefs().edit().putString(CLE_SERVEUR, serveur).apply();
         }
 
+        Notifs.preparerCanal(this);
+        Verificateur.programmer(this);
+        demanderDroitNotification();
+
         if (serveur.isEmpty()) {
             ecranReglage(null);
+        } else if (lien != null) {
+            ecranWeb(lien.toString());
         } else {
-            ecranWeb(lien != null ? lien.toString() : serveur + "/moi");
+            // « #notes » demande à l'espace salarié d'ouvrir la conversation
+            ecranWeb(serveur + "/moi" + (ouvrirMessages(getIntent()) ? "#notes" : ""));
         }
+    }
+
+    private static boolean ouvrirMessages(Intent i) {
+        return i != null && i.getBooleanExtra(EXTRA_MESSAGES, false);
+    }
+
+    /** Android 13 et plus exigent l'accord de l'utilisatrice pour notifier. */
+    private void demanderDroitNotification() {
+        if (Build.VERSION.SDK_INT < 33) return;
+        try {
+            if (checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                    != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 11);
+            }
+        } catch (Exception e) { /* téléphone qui ne connaît pas cette permission */ }
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         Uri lien = lienEntrant(intent);
-        if (lien == null) return;
+        if (lien == null) {
+            if (ouvrirMessages(intent) && web != null) web.loadUrl(serveur + "/moi#notes");
+            return;
+        }
         serveur = origine(lien);
         prefs().edit().putString(CLE_SERVEUR, serveur).apply();
         if (web == null) ecranWeb(lien.toString());
@@ -229,6 +257,11 @@ public class MainActivity extends Activity {
                « WebResourceRequest » qui est appelée, l'ancienne ne l'est plus.
                N'en écrire qu'une laissait l'écran blanc au lieu du message. */
             @Override
+            public void onPageFinished(WebView v, String url) {
+                releverJeton(v);
+            }
+
+            @Override
             public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
                 if (r != null && r.isForMainFrame()) ecranErreur();
             }
@@ -247,6 +280,27 @@ public class MainActivity extends Activity {
 
         if (!reseauDisponible()) { ecranErreur(); return; }
         web.loadUrl(url);
+    }
+
+    /**
+     * Relève le jeton personnel que la page a mémorisé, pour que la vérification
+     * en arrière-plan puisse interroger le serveur. On le LIT depuis la page au
+     * lieu d'exposer une passerelle JavaScript vers l'application : rien de
+     * l'application n'est ainsi accessible depuis une page web.
+     */
+    private void releverJeton(WebView v) {
+        try {
+            v.evaluateJavascript("localStorage.getItem('pilotrh_t')", new ValueCallback<String>() {
+                @Override public void onReceiveValue(String val) {
+                    if (val == null) return;
+                    String j = val.trim();
+                    if (j.startsWith("\"")) j = j.substring(1, Math.max(1, j.length() - 1));
+                    if (j.isEmpty() || "null".equals(j)) return;
+                    prefs().edit().putString(Verificateur.CLE_JETON, j).apply();
+                    Notifs.effacer(MainActivity.this);   // elle vient de lire ses messages
+                }
+            });
+        } catch (Exception e) { /* sans conséquence : la notification attendra */ }
     }
 
     /** Un lien vers un autre site s'ouvre dans le navigateur, pas dans l'application. */
@@ -342,6 +396,7 @@ public class MainActivity extends Activity {
 
     private void ouvrirMenu() {
         final String[] choix = {
+                getString(R.string.m_notifications),
                 getString(R.string.m_rafraichir),
                 getString(R.string.m_adresse),
                 getString(R.string.m_rh),
@@ -352,12 +407,15 @@ public class MainActivity extends Activity {
                 .setItems(choix, (dialog, quel) -> {
                     switch (quel) {
                         case 0:
-                            if (web != null) web.reload();
+                            startActivity(new Intent(this, ReglagesActivity.class));
                             break;
                         case 1:
-                            ecranReglage(null);
+                            if (web != null) web.reload();
                             break;
                         case 2:
+                            ecranReglage(null);
+                            break;
+                        case 3:
                             try {
                                 startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(serveur + "/login")));
                             } catch (Exception e) {

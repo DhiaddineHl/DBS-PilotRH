@@ -182,6 +182,54 @@ const { chromium } = require('playwright');
   t('matricule visible', s2.includes('101'));
   t('bloc congés affiché', s2.includes('Heures de congé dues'));
   t('journées incomplètes signalées au salarié', s2.includes('pointage incomplet'));
+
+  console.log('\n--- Espace salarié : mes absences et retards ---');
+  await p2.waitForSelector('#assiBox .kpi', { timeout:8000 });
+  const assiAppels = async () => (await (await p2.request.get('http://localhost:8777/api/__assi')).json());
+  const annee = await p2.evaluate(()=>DATA.today.slice(0,4)+'-01-01');
+  const auj = await p2.evaluate(()=>DATA.today);
+  let aps = await assiAppels();
+  t('l\'année en cours est chargée d\'office', aps.length>=1 && aps[aps.length-1].du===annee && aps[aps.length-1].au===auj, JSON.stringify(aps));
+  t('le bouton « Cette année » est actif', /Cette année/.test(await p2.locator('.card:has(#assiBox) .seg button.on').innerText()));
+  const kv = async () => p2.evaluate(()=>[...document.querySelectorAll('#assiBox .kpi .v')].map(e=>parseInt(e.textContent,10)));
+  const vAn = await kv();
+  /* mêmes chiffres que la vue RH « Assiduité », calculés côté RH sur les mêmes données */
+  await page.evaluate(a=>ensureRange(a,TODAY), annee);
+  const rh = await page.evaluate(a=>{const s=calcAssiduite(a,TODAY).lignes.find(x=>x.e.id==='E001');return [s.abs,s.ret,s.pres,s.conge]}, annee);
+  t('l\'ouvrière lit exactement les chiffres du service RH (absences, retards, jours travaillés, congés)', JSON.stringify(vAn)===JSON.stringify(rh), 'salariée '+JSON.stringify(vAn)+' · RH '+JSON.stringify(rh));
+  const txtAn = await p2.locator('#assiBox').innerText();
+  t('la période est affichée', txtAn.includes(annee.split('-').reverse().join('/')));
+  t('les absences justifiées sont distinguées', /justifié/.test(txtAn), txtAn.slice(0,300));
+  await p2.click('#assiBox .liste-ev summary'); await p2.waitForTimeout(200);
+  const nEv = await p2.locator('#assiBox .ev').count();
+  t('la liste des dates correspond au total', nEv === vAn[0]+vAn[1], nEv+' dates pour '+(vAn[0]+vAn[1]));
+  t('chaque retard montre l\'heure d\'arrivée et les minutes', /Retard\s+\d\d:\d\d · \+\d+ min/.test(await p2.locator('#assiBox').innerText()));
+  await p2.click('.card:has(#assiBox) .seg button:has-text("Ce mois")'); await p2.waitForTimeout(700);
+  aps = await assiAppels();
+  t('« Ce mois » : du 1er du mois à aujourd\'hui', aps[aps.length-1].du===auj.slice(0,8)+'01' && aps[aps.length-1].au===auj, JSON.stringify(aps[aps.length-1]));
+  const vMois = await kv();
+  t('le mois ne compte pas plus que l\'année', vMois[0]<=vAn[0] && vMois[1]<=vAn[1], JSON.stringify([vMois,vAn]));
+  await p2.click('.card:has(#assiBox) .seg button:has-text("Choisir les dates")'); await p2.waitForTimeout(300);
+  t('deux dates à choisir, sans dépasser aujourd\'hui', await p2.locator('#asDu').count()===1 && (await p2.locator('#asAu').getAttribute('max'))===auj);
+  const du2 = await p2.evaluate(()=>{const d=new Date(DATA.today+'T12:00');d.setDate(d.getDate()-20);return C.isoOf(d)});
+  await p2.fill('#asDu', du2); await p2.fill('#asAu', auj);
+  await p2.click('button:has-text("Voir cette période")'); await p2.waitForTimeout(700);
+  aps = await assiAppels();
+  t('« Choisir les dates » envoie exactement la période choisie', aps[aps.length-1].du===du2 && aps[aps.length-1].au===auj, JSON.stringify(aps[aps.length-1]));
+  const rh2 = await page.evaluate(a=>{const s=calcAssiduite(a,TODAY).lignes.find(x=>x.e.id==='E001');return [s.abs,s.ret,s.pres,s.conge]}, du2);
+  t('sur une plage libre aussi, mêmes chiffres que le service RH', JSON.stringify(await kv())===JSON.stringify(rh2), JSON.stringify([await kv(), rh2]));
+  await p2.fill('#asDu', auj); await p2.fill('#asAu', du2);
+  await p2.click('button:has-text("Voir cette période")'); await p2.waitForTimeout(700);
+  aps = await assiAppels();
+  t('dates saisies à l\'envers : remises dans l\'ordre', aps[aps.length-1].du===du2 && aps[aps.length-1].au===auj);
+  await p2.click('.seg button:nth-child(3)'); await p2.waitForTimeout(300);   // Sondages (Messages marquerait la note lue)
+  await p2.click('.seg button:nth-child(1)'); await p2.waitForTimeout(400);
+  t('en revenant sur « Mon pointage », la période choisie et son résultat sont gardés',
+    await p2.locator('#asDu').count()===1 && (await p2.locator('#assiBox .kpi').count())===4);
+  const larg = await p2.evaluate(()=>{const c=document.querySelector('.card:has(#assiBox)').getBoundingClientRect();
+    return [...document.querySelectorAll('.card:has(#assiBox) *')].every(e=>e.getBoundingClientRect().right<=c.right+1)});
+  t('sur un téléphone, rien ne déborde de la carte', larg);
+  await p2.click('.seg button:nth-child(1)');
   t('onglet Notes avec compteur', await p2.locator('.seg button:nth-child(2) .b').count() === 1);
   await p2.click('.seg button:nth-child(2)'); await p2.waitForTimeout(400);
   t('note de service lisible', (await p2.content()).includes('Fermeture vendredi'));
@@ -324,6 +372,79 @@ const { chromium } = require('playwright');
   t('après application, on revient sur la liste du personnel',
     /personnel/i.test(await page.locator('.topbar').innerText()));
 
+  console.log('\n--- Messagerie : message personnel et réponse ---');
+  /* on ouvre la messagerie par la fonction exposée : cliquer sur le bouton
+     dépendrait du rendu de l'écran précédent, encore en cours */
+  await page.evaluate(()=>go('parametres'));
+  await page.waitForTimeout(1200);
+  for (let essai = 0; essai < 5 && !(await page.locator('#comsBody').count()); essai++) {
+    await page.evaluate(()=>openComs());
+    await page.waitForTimeout(900);
+  }
+  /* l'onglet retenu est celui de la dernière ouverture (les sondages, plus haut
+     dans ce fichier) : on revient explicitement sur les notes */
+  await page.evaluate(()=>comsOnglet('notes'));
+  await page.waitForSelector('#comsBody #nTitre',{timeout:15000});
+  const coms = await page.locator('#comsBody').innerText();
+  t('on peut écrire à une seule personne', await page.locator('#nEmp').count() === 1);
+  t('la liste des personnes est proposée',
+    await page.locator('#nEmp option').count() > 10,
+    String(await page.locator('#nEmp option').count()));
+  t('les réponses des salariées sont affichées', /réponse\(s\)/i.test(coms), coms.slice(0,200));
+  t('celles qui ne sont pas lues sont signalées', /non lue/i.test(coms));
+  t('le matricule accompagne la réponse', /101/.test(coms));
+  /* choisir une personne doit neutraliser les filtres de groupe, sinon on ne sait
+     plus qui reçoit le message */
+  await page.selectOption('#nEmp', { index: 1 });
+  await page.waitForTimeout(300);
+  t('choisir une personne désactive le ciblage par service',
+    await page.locator('#nServ').isDisabled());
+  await page.selectOption('#nEmp', '');
+  await page.waitForTimeout(300);
+  t('revenir au groupe réactive les filtres', !(await page.locator('#nServ').isDisabled()));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+
+  console.log('\n--- Espace salarié : la conversation ---');
+  const p4 = await browser.newPage({ viewport:{width:390,height:844} });
+  const err4=[]; p4.on('pageerror',e=>err4.push(e.message));
+  await p4.goto('http://localhost:8777/moi?t=TOK1', { waitUntil:'networkidle' });
+  await p4.waitForSelector('#pin', { timeout:8000 });
+  /* la saisie du 6e chiffre déclenche la vérification toute seule : cliquer
+     ensuite sur le bouton tomberait sur un bouton déjà désactivé */
+  await p4.fill('#pin','123456');
+  await p4.waitForTimeout(1200);
+  await p4.click('.seg button:nth-child(2)');
+  await p4.waitForTimeout(500);
+  const conv = await p4.locator('body').innerText();
+  t('l\'onglet s\'appelle Messages', /messages/i.test(await p4.locator('.seg').innerText()));
+  t('le message personnel est signalé', /pour vous/i.test(conv), conv.slice(0,220));
+  t('les réponses déjà envoyées apparaissent en bulles',
+    await p4.locator('.bulle').count() === 1);
+  t('un champ de réponse est proposé sur chaque message',
+    await p4.locator('.repbox textarea').count() === 2);
+  /* réponse vide : message d'aide, pas d'envoi */
+  await p4.locator('.repbox button').first().click();
+  await p4.waitForTimeout(500);
+  t('une réponse vide est refusée poliment',
+    /écrivez votre message/i.test(await p4.locator('#toast').innerText().catch(()=>'')));
+  const envois = [];
+  p4.on('response', r => { if (r.url().includes('/api/me/repondre')) envois.push(r.status()) });
+  await p4.locator('.repbox textarea').first().fill('Bien reçu, merci');
+  await p4.locator('.repbox button').first().click();
+  await p4.waitForTimeout(900);
+  t('la réponse part vers le serveur', envois.length === 1 && envois[0] === 200,
+    JSON.stringify(envois));
+  t('elle s\'affiche aussitôt dans la conversation',
+    (await p4.locator('body').innerText()).includes('Bien reçu, merci'));
+  t('l\'espace salarié reste sans erreur JS', err4.length === 0, err4.join(' | '));
+  /* la notification de l'application ouvre directement la conversation */
+  await p4.goto('http://localhost:8777/moi#notes', { waitUntil:'networkidle' });
+  await p4.waitForTimeout(1200);
+  t('l\'adresse #notes ouvre l\'onglet des messages',
+    /pour vous|Fermeture/i.test(await p4.locator('body').innerText()));
+  await p4.close();
+
   console.log('\n--- Pointeuse : configuration et surveillance ---');
   /* navigation par le menu : un goto qui ne change que le fragment d'URL n'est pas
      garanti de déclencher le rendu (voir la section captures plus bas) */
@@ -349,9 +470,48 @@ const { chromium } = require('playwright');
     /n’entre pas sur votre réseau local|ne peut pas joindre/i.test(ptz), ptz.slice(-300));
   t('le bouton de lecture directe est masqué quand elle est impossible',
     await page.locator('#ptzBox button:has-text("Tester")').count() === 0);
-  t('le fichier de lancement de l\'agent est proposé',
-    await page.locator('#ptzBox button:has-text("agent")').count() === 1);
-  t('il rappelle de créer le compte de service', /compte de service/i.test(ptz));
+  t('le kit de l\'agent est proposé',
+    await page.locator('#ptzBox button:has-text("kit de l")').count() === 1);
+  t('plus aucun compte de service à créer ni mot de passe à recopier', !/compte de service/i.test(ptz));
+  t('la mise en route tient en trois gestes', /Extraire tout/.test(ptz) && /DIAGNOSTIC\.bat/.test(ptz) && /DEMARRER\.bat/.test(ptz));
+  t('aucune mention d\'un module à installer', !/pyzk|pip install/i.test(ptz));
+  const ag = await page.locator('#ptzAgent').innerText();
+  t('on voit sur quel PC tourne l\'agent', /PC-ATELIER/.test(ag) && /Windows 10/.test(ag), ag.slice(0,200));
+  t('et quand il a donné des nouvelles', /vu il y a \d+ min/.test(ag), ag.slice(0,200));
+  t('le modèle et la mémoire de la pointeuse sont affichés', /F18\/ID/.test(ag) && /98500 badgeages/.test(ag));
+  t('le décalage d\'horloge de la pointeuse est signalé', /décalée de 47 min/.test(ag) && /en retard/.test(ag), ag);
+  const er = await page.locator('#ptzErr').innerText();
+  t('la dernière panne de l\'agent est lisible depuis PilotRH', /Rien ne répond à l’adresse 192\.168\.1\.201/.test(er), er);
+  t('avec la marche à suivre', /Que faire/.test(er) && /câble débranché/.test(er));
+  const rp = await page.locator('#ptzRapport').innerText();
+  t('le panneau montre la fiche créée par l\'import, signalée « sans nom sur la pointeuse »', /207/.test(rp) && /sans nom sur la pointeuse/.test(rp), rp.slice(0,300));
+  t('et le badge qui pointe sans être importé, avec la raison en clair', /520/.test(rp) && /redonné ce numéro/.test(rp));
+  t('le badge 0 de test n\'est pas présenté comme un problème', !/<td class="mono">0<\/td>/.test(await page.locator('#ptzRapport').innerHTML()) && /badge n° 0 \(test\) ignoré/.test(rp));
+  t('les anciens badges sont seulement comptés', /3 ancien\(s\) badge\(s\)/.test(rp));
+  const al0 = await page.evaluate(()=>computeAlerts().map(a=>a.type+' : '+a.txt).join(' | '));
+  t('« Badges non importés » figure dans les alertes', /Badges non importés : 1 badge\(s\) pointent/.test(al0), al0.slice(0,400));
+  t('« Nouvelles fiches à compléter » aussi', /Nouvelles fiches à compléter : 1 personne/.test(al0));
+  const anciens = page.listeners('dialog'); page.removeAllListeners('dialog');
+  let nDlg = 0; page.on('dialog', d => (nDlg++===0 ? d.accept() : d.dismiss()));   // confirmer, puis ne pas ouvrir la fiche
+  await page.click('#ptzRapport tr[data-badge="520"] button:has-text("Créer la fiche")'); await page.waitForTimeout(1200);
+  page.removeAllListeners('dialog'); anciens.forEach(f => page.on('dialog', f));
+  t('deux questions posées : confirmer, puis compléter la fiche maintenant ?', nDlg===2, nDlg);
+  const reint = await (await page.request.get('http://localhost:8777/api/__reint')).json();
+  t('« Créer la fiche » envoie le badge, le nom lu sur la pointeuse et le premier jour après la sortie',
+    reint.length===1 && reint[0].badge==='520' && reint[0].nom==='NOUVELLE Recrue' && reint[0].depuis===await page.evaluate(()=>addDays(TODAY,-39)), JSON.stringify(reint));
+  t('la fiche apparaît aussitôt dans l\'effectif', await page.evaluate(()=>DB.employees.some(e=>e.matricule==='520')));
+  t('le badge disparaît de la liste', await page.locator('#ptzRapport tr[data-badge="520"]').count()===0);
+  await page.click('#ptzRapport button:has-text("C’est noté")'); await page.waitForTimeout(700);
+  t('« C’est noté » retire la liste des nouvelles fiches', await page.locator('#rapNouv').count()===0);
+  t('« Changer la clé » n\'apparaît qu\'une fois le kit téléchargé',
+    await page.locator('#ptzBox button:has-text("Changer la clé")').count() === 0);
+  const [dl] = await Promise.all([page.waitForEvent('download',{timeout:8000}).catch(()=>null),
+                                  page.click('#ptzBox button:has-text("kit de l")')]);
+  t('le kit se télécharge sous le nom PilotRH_Agent.zip', dl && dl.suggestedFilename() === 'PilotRH_Agent.zip',
+    dl ? dl.suggestedFilename() : 'aucun téléchargement');
+  await page.waitForTimeout(500);
+  t('après téléchargement, la clé peut être changée',
+    await page.locator('#ptzBox button:has-text("Changer la clé")').count() === 1);
 
   await page.fill('#ptzIp','192.168.1.55');
   await page.fill('#ptzInt','15');
@@ -374,7 +534,10 @@ const { chromium } = require('playwright');
   await page.evaluate(()=>go('alertes'));
   await page.waitForSelector('.alert-row',{timeout:15000});
   const alTxt = await page.locator('#main').innerText();
+  t('une fois traités, ces deux signalements ont quitté les alertes', !/Badges non importés|Nouvelles fiches à compléter/.test(alTxt));
   t('« Pointeuse muette » figure dans les alertes', /pointeuse muette/i.test(alTxt), alTxt.slice(0,200));
+  t('l\'alerte reprend la panne signalée par l\'agent', /Dernière panne signalée par l’agent : Rien ne répond/.test(alTxt));
+  t('une alerte dédiée signale l\'horloge décalée', /Horloge de la pointeuse décalée/.test(alTxt) && /47 min de retard/.test(alTxt));
   const alPtz = page.locator('.alert-clic', { hasText:'Pointeuse muette' }).first();
   t('l\'alerte est cliquable', await alPtz.count() === 1);
   await alPtz.click();

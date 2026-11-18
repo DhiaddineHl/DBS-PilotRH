@@ -32,12 +32,23 @@ function renderComs(){
       '<button class="'+(COMS_ONGLET==='notes'?'on':'')+'" onclick="comsOnglet(\'notes\')">Notes de service ('+COMS.notes.length+')</button>'+
       '<button class="'+(COMS_ONGLET==='votes'?'on':'')+'" onclick="comsOnglet(\'votes\')">Sondages ('+COMS.votes.length+')</button>'+
     '</div>'+(COMS_ONGLET==='notes'?vueNotes():vueVotes());
+  majCible(COMS_ONGLET==='notes'?'n':'v');
 }
 function comsOnglet(o){COMS_ONGLET=o;renderComs()}
 
 /* -------------------------------------------------------------- ciblage commun */
 function champsCible(prefixe){
+  /* Une conversation avec UNE personne est le cas le plus fréquent (« votre
+     pointage du 12 a été corrigé ») : sans ce choix, il fallait écrire à tout
+     un service pour dire un mot à une seule ouvrière. */
+  const gens=[...DB.employees].filter(e=>e.actif!==false)
+    .sort((a,b)=>((a.nom||'')+(a.prenom||'')).localeCompare((b.nom||'')+(b.prenom||'')));
   return '<div style="display:flex;gap:10px;flex-wrap:wrap">'+
+    '<div><label class="fldlab" for="'+prefixe+'Emp">Une seule personne</label>'+
+      '<select class="ssel" id="'+prefixe+'Emp" onchange="majCible(\''+prefixe+'\')">'+
+      '<option value="">— non, un groupe —</option>'+
+      gens.map(e=>'<option value="'+esc(e.id)+'">'+esc(matOf(e)+' · '+(e.prenom||'')+' '+(e.nom||''))+'</option>').join('')+
+      '</select></div>'+
     '<div><label class="fldlab" for="'+prefixe+'Serv">Service ciblé</label>'+
       '<select class="ssel" id="'+prefixe+'Serv"><option value="">Tout le personnel</option>'+
       SERVICES.map(s=>'<option>'+esc(s)+'</option>').join('')+'</select></div>'+
@@ -51,24 +62,38 @@ function champsCible(prefixe){
   '</div>';
 }
 function lireCible(prefixe){
-  return {service:($('#'+prefixe+'Serv')||{}).value||'',
+  return {emp:($('#'+prefixe+'Emp')||{}).value||'',
+          service:($('#'+prefixe+'Serv')||{}).value||'',
           atelier:($('#'+prefixe+'Atel')||{}).value||'',
           categorie:($('#'+prefixe+'Cat')||{}).value||'',
           fin:($('#'+prefixe+'Fin')||{}).value||''};
 }
+/* Choisir une personne rend les filtres de groupe sans objet : on les grise pour
+   qu'il n'y ait aucun doute sur qui recevra le message. */
+function majCible(prefixe){
+  const seul=!!(($('#'+prefixe+'Emp')||{}).value);
+  ['Serv','Atel','Cat'].forEach(k=>{
+    const el=$('#'+prefixe+k); if(!el)return;
+    el.disabled=seul; if(seul)el.value='';
+    if(el.parentNode)el.parentNode.style.opacity=seul?'.45':'1';
+  });
+}
 function nbCibles(c){
+  if(c.emp) return DB.employees.some(e=>e.id===c.emp)?1:0;
   return DB.employees.filter(e=>e.actif!==false
     &&(!c.service||e.service===c.service)
     &&(!c.atelier||e.atelier===c.atelier)
     &&(!c.categorie||e.categorie===c.categorie)).length;
 }
 function libelleCible(c){
+  if(c.emp) return empName(c.emp);
   const p=[];
   if(c.service)p.push(c.service);
   if(c.atelier)p.push(c.atelier);
   if(c.categorie)p.push(c.categorie);
   return p.length?p.join(' · '):'tout le personnel';
 }
+window.majCible=majCible;
 window.nbCibles=nbCibles;
 
 /* ------------------------------------------------------------ notes de service */
@@ -108,10 +133,40 @@ function vueNotes(){
           '<div style="margin-top:10px"><div class="rse-card" style="border:none;padding:0"><div class="rb">'+
             '<i style="width:'+(cibles?Math.round(lus/cibles*100):0)+'%"></i></div></div>'+
             (lus?'<button class="linkish" style="margin-top:8px" onclick="detailLecture(\''+escJs(n.id)+'\')">Voir qui a lu / qui n’a pas lu →</button>':'')+
-          '</div></div>';
+          '</div>'+vueReponses(n)+'</div>';
       }).join('')
     : '<div class="card"><div class="empty">Aucune note publiée</div></div>');
 }
+/* Réponses des salariées : c'est ce qui fait la différence entre un panneau
+   d'affichage et une messagerie. Les réponses non lues sont mises en avant. */
+function vueReponses(n){
+  const rep=(n.reponses||[]);
+  if(!rep.length)return '';
+  const neuves=rep.filter(r=>!r.lu).length;
+  return '<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">'+
+    '<div style="font-size:12px;font-weight:700;color:var(--gold-ink);margin-bottom:8px">'+
+      rep.length+' réponse(s)'+(neuves?' · <span style="color:var(--absent)">'+neuves+' non lue(s)</span>':'')+
+      (neuves?' <button class="linkish" onclick="marquerReponsesLues(\''+escJs(n.id)+'\')">Marquer comme lues</button>':'')+
+    '</div>'+
+    rep.slice(-30).map(r=>'<div style="display:flex;gap:9px;align-items:flex-start;margin-bottom:7px'+
+      (r.lu?'':';font-weight:600')+'">'+
+      '<span class="tag t-neutral mono" style="flex:none">'+esc(r.matricule||'')+'</span>'+
+      '<div style="flex:1;font-size:13px;white-space:pre-wrap">'+esc(r.texte)+
+        '<span style="display:block;font-size:11px;color:var(--faint);font-weight:400">'+
+        esc(r.nom||'')+' · '+esc(String(r.ts||'').replace('T',' ').slice(0,16))+'</span></div>'+
+      (r.lu?'':'<span class="tag t-late" style="flex:none">nouveau</span>')+
+    '</div>').join('')+'</div>';
+}
+async function marquerReponsesLues(id){
+  try{
+    await api('/api/coms/note/lu-reponses',{method:'POST',body:{id}});
+    const n=COMS.notes.find(x=>x.id===id);
+    if(n)(n.reponses||[]).forEach(r=>r.lu=true);
+    renderComs();
+  }catch(e){ toast('Échec : '+e.message,'err') }
+}
+window.marquerReponsesLues=marquerReponsesLues;
+
 async function publierNote(){
   const titre=$('#nTitre').value.trim(),texte=$('#nTexte').value.trim();
   if(!titre){toast('Donnez un titre','warn');return}

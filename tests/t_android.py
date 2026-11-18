@@ -109,7 +109,10 @@ try:
     tv("les chaînes de l'interface sont toutes en français et nommées", len(chaines) >= 20,
        "%d chaînes" % len(chaines))
 
-    shutil.copy(os.path.join(SOURCE, "java", "tn", "dbsfashion", "pilotrh", "MainActivity.java"), pkg)
+    src_dir = os.path.join(SOURCE, "java", "tn", "dbsfashion", "pilotrh")
+    for fic in sorted(os.listdir(src_dir)):
+        if fic.endswith(".java"):
+            shutil.copy(os.path.join(src_dir, fic), pkg)
     for racine_stub, _, fichiers in os.walk(os.path.join(STUBS, "android")):
         for fic in fichiers:
             if not fic.endswith(".java"):
@@ -125,7 +128,7 @@ try:
     classes = os.path.join(tmp, "_classes")
     r = subprocess.run(["javac", "-nowarn", "-d", classes] + sources,
                        capture_output=True, text=True)
-    tv("MainActivity.java compile sans erreur", r.returncode == 0,
+    tv("le code de l'application compile sans erreur", r.returncode == 0,
        (r.stderr or r.stdout)[:600])
     if r.returncode != 0:
         print("\n=========================")
@@ -174,6 +177,65 @@ public class Essai {
             t("%s (« %s »)" % (libelle, entree), obtenu, attendu)
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
+
+print("\n--- Notifications : réglages, son, vibration ---")
+notifs = open(os.path.join(SOURCE, "java", "tn", "dbsfashion", "pilotrh", "Notifs.java"),
+              encoding="utf-8").read()
+verif = open(os.path.join(SOURCE, "java", "tn", "dbsfashion", "pilotrh", "Verificateur.java"),
+             encoding="utf-8").read()
+reglages = open(os.path.join(SOURCE, "java", "tn", "dbsfashion", "pilotrh", "ReglagesActivity.java"),
+                encoding="utf-8").read()
+
+tv("la permission de notifier est demandée (Android 13+)",
+   "POST_NOTIFICATIONS" in manifeste and "POST_NOTIFICATIONS" in src)
+tv("la permission de vibrer est déclarée", "android.permission.VIBRATE" in manifeste)
+tv("les notifications reprennent après un redémarrage",
+   "BOOT_COMPLETED" in manifeste and "AuDemarrage" in verif)
+tv("l'écran des réglages est déclaré", 'android:name=".ReglagesActivity"' in manifeste)
+tv("le vérificateur périodique est déclaré", 'android:name=".Verificateur"' in manifeste)
+tv("le vérificateur n'est pas exposé aux autres applications",
+   'android:name=".Verificateur" android:exported="false"' in manifeste)
+
+# le son et la vibration appartiennent au canal depuis Android 8 : changer de
+# réglage doit changer de canal, sinon le nouveau son n'est jamais appliqué
+tv("l'identifiant de canal dépend du son ET de la vibration",
+   '"messages_son" + son(c) + "_vib"' in notifs)
+tv("les canaux devenus inutiles sont supprimés", "deleteNotificationChannel" in notifs)
+tv("quatre choix de son, dont silencieux", notifs.count('"') > 0 and
+   all(x in notifs for x in ("Silencieux", "Son par défaut", "Sonnerie", "Alarme")))
+tv("le mode silencieux coupe réellement le son", "ch.setSound(null, null)" in notifs)
+tv("la vibration a un motif défini", "setVibrationPattern" in notifs)
+tv("les téléphones d'avant Android 8 sont traités aussi",
+   "setVibrate" in notifs and "PRIORITY_HIGH" in notifs)
+tv("le contenu du message n'est pas déballé dans la notification",
+   "apercu" in notifs and "140" in open(os.path.join(RACINE, "app.py"), encoding="utf-8").read())
+
+tv("l'écran des réglages fait entendre le son choisi", "essayerSon" in reglages)
+tv("il fait vibrer pour essayer", "essayerVibration" in reglages)
+tv("il propose une notification d'essai", "reg_essai" in reglages)
+tv("il emmène vers les réglages Android si besoin",
+   "ACTION_CHANNEL_NOTIFICATION_SETTINGS" in reglages)
+tv("une plage « ne pas déranger » est réglable", "silenceDe" in reglages and "enSilence" in notifs)
+tv("la plage de silence sait passer minuit", "de > a" in notifs or "(de < a)" in notifs)
+
+print("\n--- Vérification périodique des messages ---")
+tv("elle interroge le point d'appel léger", "/api/me/nouveautes" in verif)
+tv("elle n'appelle PAS l'écran complet du pointage", "/api/me\"" not in verif)
+tv("elle se replanifie à chaque réveil", "programmer(c)" in verif)
+tv("le réveil est inexact, pour économiser la batterie",
+   "AlarmManager.RTC" in verif and "setExact" not in verif)
+tv("15 minutes minimum, comme l'impose Android", "Math.max(15" in notifs)
+tv("elle ne fait rien sans réseau", "reseau(c)" in verif)
+tv("elle ne fait rien pendant la plage de silence", "enSilence" in verif)
+tv("elle ne renotifie pas le même message à chaque réveil",
+   "signature" in verif and "CLE_VU" in verif)
+tv("le jeton est lu depuis la page, sans passerelle JavaScript",
+   "evaluateJavascript" in src and "addJavascriptInterface" not in src)
+tv("aucune bibliothèque JSON ajoutée pour quatre champs",
+   "org.json" not in verif and "implementation" not in gradle)
+tv("un clic sur la notification ouvre la conversation",
+   "EXTRA_MESSAGES" in src and "#notes" in src)
+tv("la notification s'efface quand elle a lu ses messages", "Notifs.effacer" in src)
 
 print("\n--- Fabrication de l'APK en ligne (GitHub Actions) ---")
 wf = open(os.path.join(RACINE, ".github", "workflows", "apk.yml"), encoding="utf-8").read()

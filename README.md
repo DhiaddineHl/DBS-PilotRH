@@ -191,9 +191,9 @@ si vous avez déjà PilotPro. Pour le relier, mettez simplement un lien depuis P
 2. **Volume persistant** — montez un volume sur **`/app/data`**. Sinon SQLite (donc tout
    l'historique des pointages et les codes) serait effacé à chaque redéploiement.
 3. **Faire remonter le pointage** — un serveur Railway ne voit pas la pointeuse de l'usine.
-   Lancez **`push_pointeuse.py`** sur un PC de l'usine (qui voit le `.mdb`) : il envoie le
-   fichier au serveur dès qu'il change. Configuration en haut du script (URL, chemin du
-   `.mdb`, mot de passe admin). Sur Windows : Planificateur de tâches au démarrage.
+   Dans PilotRH, *Sécurité & accès → Pointeuse → Télécharger le kit de l'agent*, puis sur un
+   PC de l'usine : extraire le ZIP, `DIAGNOSTIC.bat`, `DEMARRER.bat`. Rien à installer ni à
+   remplir. Détails : `CONNEXION_POINTEUSE.md`.
 
 > Railway fournit le HTTPS automatiquement : les liens des QR et les codes ne circulent
 > transmis dans le corps de la requete (POST), et non plus dans l'adresse :

@@ -360,6 +360,7 @@ function majSidebar(){
   const nav=document.getElementById('nav'); if(!nav)return;
   nav.innerHTML=NAV.map(n=>{
     if(n.v==='parametres'&&!can('settings')&&!can('users'))return '';
+    if(n.roles&&!n.roles.includes(ME.role))return '';
     if(n.grp)return '<div class="nav-group">'+n.grp+'</div>';
     const nb = n.v==='alertes' ? alertCount() : (n.v==='presences' ? aRevoirCount() : 0);
     const pill = nb ? '<span class="pill">'+nb+'</span>' : '';

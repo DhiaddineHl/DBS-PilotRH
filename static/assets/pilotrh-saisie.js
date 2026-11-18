@@ -540,9 +540,66 @@ async function importMdb(f){
     const d=await api('/api/import-mdb',{method:'POST',body:fd});
     closeModal();await charger();await rendre();
     toast('Base .mdb importée — '+d.employees+' salariés, '+d.jours+' jours','ok',6000);
+    const r=d.rapport||{};
+    if((r.nouvelles||[]).length||(r.ignores||[]).length) openRapportImport(r);
   }catch(e){toast('Import .mdb impossible : '+e.message,'err',9000)}
 }
-Object.assign(window,{openImport,dropFile,handleFile,importMdb,findEmp,normDate,normTime,afficherResultatImport});
+/* Rapport d'import : qui a été créé, qui a été laissé de côté et pourquoi.
+   Avant, une personne enregistrée sur la pointeuse mais non importée ne se
+   voyait nulle part, et le service RH la recréait à la main avec ses pointages. */
+const RAISONS_IMPORT = {
+  badge_sorti:'Ce badge appartenait à une personne sortie de l’effectif, et il a de nouveau badgé après sa sortie : '+
+              'sans doute une nouvelle recrue à qui l’on a redonné ce numéro.',
+  badge_zero:'Badge n° 0 (badge de test ou d’administration de la pointeuse) : jamais importé.',
+};
+function rapportImportHtml(r){
+  const nv=r.nouvelles||[], ig=(r.ignores||[]);
+  const igA=ig.filter(x=>x.raison!=='badge_zero'), ig0=ig.filter(x=>x.raison==='badge_zero');
+  return (nv.length?'<div class="info-block" id="rapNouv"><h4>'+nv.length+' fiche(s) créée(s) par l’import</h4>'+
+      '<div class="hint" style="margin-bottom:8px">Personnes enregistrées sur la pointeuse qui n’avaient pas encore de fiche. '+
+      'Leurs pointages sont déjà importés ; complétez leur fiche (nom, poste, date d’embauche…).</div>'+
+      '<div class="tblwrap"><table class="tbl"><thead><tr><th>Badge</th><th>Nom sur la pointeuse</th><th>Premier badge</th><th>Jours</th><th></th></tr></thead><tbody>'+
+      nv.map(x=>'<tr><td class="mono">'+esc(x.badge)+'</td><td>'+(x.sansNom?'<span class="tag t-late">sans nom sur la pointeuse</span>':esc(x.nom))+'</td>'+
+        '<td class="mono">'+fmtDate(x.premier)+'</td><td>'+x.jours+'</td>'+
+        '<td>'+(DB.employees.some(e=>e.id===x.id)?'<button class="linkish" onclick="closeModal();openEditEmp(\''+escJs(x.id)+'\')">Compléter la fiche →</button>':'')+'</td></tr>').join('')+
+      '</tbody></table></div>'+
+      (can('settings')?'<div style="text-align:right;margin-top:8px"><button class="btn btn-ghost" onclick="importVu()">C’est noté</button></div>':'')+'</div>':'')+
+    (igA.length?'<div class="info-block" id="rapIgn"><h4 style="color:var(--absent)">'+igA.length+' badge(s) qui pointent sans être importés</h4>'+
+      '<div class="tblwrap"><table class="tbl"><thead><tr><th>Badge</th><th>Nom sur la pointeuse</th><th>Période</th><th>Pourquoi</th><th></th></tr></thead><tbody>'+
+      igA.map(x=>'<tr data-badge="'+esc(x.badge)+'"><td class="mono">'+esc(x.badge)+'</td><td>'+esc(x.nom||'—')+'</td>'+
+        '<td class="mono" style="white-space:nowrap">'+fmtDate(x.premier)+' → '+fmtDate(x.dernier)+'<div class="hint">'+x.jours+' jour(s)</div></td>'+
+        '<td style="font-size:12.5px;color:var(--muted)">'+esc(RAISONS_IMPORT[x.raison]||x.raison)+(x.sortie?' Sortie enregistrée le '+fmtDate(x.sortie)+'.':'')+'</td>'+
+        '<td>'+(can('settings')?'<button class="btn btn-gold" style="white-space:nowrap" onclick="reintegrerBadge(\''+escJs(x.badge)+'\',\''+escJs(x.nom||'')+'\',\''+escJs(x.sortie&&x.sortie<x.dernier?addDays(x.sortie,1):x.premier)+'\')">Créer la fiche</button>':'')+'</td></tr>').join('')+
+      '</tbody></table></div></div>':'')+
+    (ig0.length?'<div class="hint">'+ig0.length+' badge n° 0 (test) ignoré(s), comme prévu.</div>':'')+
+    (r.anciens?'<div class="hint" style="margin-top:6px">'+r.anciens+' ancien(s) badge(s) sans aucun pointage depuis 5 mois et sans fiche : non importés (personnes parties).</div>':'');
+}
+function openRapportImport(r){
+  openModal('<div class="modal-head">'+I.users+'<h3>Rapport d’import de la pointeuse</h3>'+
+    '<button class="x" onclick="closeModal()" aria-label="Fermer">'+I.x+'</button></div>'+
+    '<div class="modal-body" id="rapImport">'+rapportImportHtml(r)+'</div>'+
+    '<div class="modal-foot"><button class="btn btn-gold" onclick="closeModal()">Fermer</button></div>','wide');
+}
+async function reintegrerBadge(badge,nom,depuis){
+  if(!confirm('Créer une fiche pour le badge '+badge+(nom?' ('+nom+')':'')+' ?\n\n'+
+    'Le badge est retiré de la liste des personnes sorties. Ses pointages seront importés au prochain passage de l’agent '+
+    '(ou au prochain import du fichier .mdb) : rien à ressaisir.')) return;
+  try{
+    const d=await api('/api/import/reintegrer',{method:'POST',body:{badge,nom,depuis}});
+    await charger();
+    document.querySelectorAll('tr[data-badge="'+CSS.escape(badge)+'"]').forEach(tr=>tr.remove());
+    toast('Fiche créée pour le badge '+badge+' — ses pointages arriveront au prochain import','ok',9000);
+    if(PTZ) loadPointeuse();
+    if(confirm('Fiche créée. Voulez-vous la compléter maintenant (nom, poste, date d’embauche) ?')){ closeModal(); openEditEmp(d.id); }
+  }catch(e){ toast('Refusé : '+e.message,'err',9000) }
+}
+async function importVu(){
+  try{ await api('/api/import/vu',{method:'POST',body:{}}); const b=document.getElementById('rapNouv'); if(b) b.remove();
+    if(PTZ&&PTZ.rapport) PTZ.rapport.nouvelles=[]; await charger(); majSidebar(); }
+  catch(e){ toast('Refusé : '+e.message,'err') }
+}
+Object.assign(window,{openImport,dropFile,handleFile,importMdb,findEmp,normDate,normTime,afficherResultatImport,
+  openRapportImport,rapportImportHtml,reintegrerBadge,importVu});
 
 /* ============================================================================
    OCR / documents
@@ -1245,9 +1302,13 @@ function renderPointeuse(){
           (e.pointages?' · '+e.pointages+' badges':'')+
           (muet?'<br>Rien n’est arrivé depuis plus de '+seuil+' h : vérifiez que le PC de l’atelier est allumé et que l’agent tourne.':''))+
       '</div></div>'+
-    (e.derniere_erreur?'<div class="banner banner-err" style="margin:0 0 12px">'+I.warn+
+    (e.derniere_erreur?'<div class="banner banner-err" id="ptzErr" style="margin:0 0 12px">'+I.warn+
       '<div class="grow"><b>Dernière tentative en échec</b> ('+esc(String(e.derniere_erreur.ts||'').replace('T',' ').slice(0,16))+
-      ') : '+esc(e.derniere_erreur.message)+'</div></div>':'')+
+      ') : '+esc(e.derniere_erreur.message)+
+      (e.derniere_erreur.conseil?'<br><b>Que faire :</b> '+esc(e.derniere_erreur.conseil):'')+'</div></div>':'')+
+    ptzAgent(e.agent)+
+    (PTZ.rapport&&((PTZ.rapport.nouvelles||[]).length||(PTZ.rapport.ignores||[]).some(x=>x.raison!=='badge_zero'))
+      ?'<div id="ptzRapport" style="margin:0 0 12px">'+rapportImportHtml(PTZ.rapport)+'</div>':'')+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
       '<div><label class="fldlab" for="ptzIp">Adresse IP de la pointeuse</label>'+
         '<input class="fldin" id="ptzIp" value="'+esc(r.ip||'')+'"'+(modif?'':' disabled')+'></div>'+
@@ -1267,21 +1328,20 @@ function renderPointeuse(){
       (PTZ.lecture_directe_possible
         ? '<button class="btn btn-ghost" onclick="testPointeuse()">'+I.cloud+' Tester et importer maintenant</button>'
         : '')+
-      '<button class="btn btn-ghost" onclick="telechargerAgent()">'+I.download+' Fichier de lancement de l’agent</button>'+
+      '<button class="btn btn-ghost" onclick="telechargerAgent()">'+I.download+' Télécharger le kit de l’agent</button>'+
+      (PTZ.cle_creee?'<button class="btn btn-ghost" onclick="changerCleAgent()">Changer la clé</button>':'')+
     '</div>':'')+
     '<div class="hint" style="margin-top:12px">'+
       (PTZ.lecture_directe_possible
-        ? 'Ce serveur est sur le même réseau que la pointeuse : il peut la lire directement'+
-          (PTZ.pyzk?'' : ' — mais le module <span class="mono">pyzk</span> n’est pas installé ici '+
-            '(<span class="mono">pip install pyzk</span>), la lecture directe est donc indisponible')+'.'
+        ? 'Ce serveur est sur le même réseau que la pointeuse : « Tester et importer maintenant » la lit directement. '+
+          'Pour une remontée automatique, installez aussi l’agent ci-dessous.'
         : 'Ce serveur est <b>en ligne</b> : il ne peut pas joindre une adresse privée comme '+
           esc(r.ip||'192.168.x.x')+' — Internet n’entre pas sur votre réseau local. La remontée '+
-          'automatique passe donc par l’<b>agent</b> installé sur un PC de l’atelier, qui envoie les '+
-          'pointages. Le bouton ci-dessus prépare son fichier de lancement avec ces réglages.')+
-      (PTZ.compte_agent_existe?'':'<br><b>À faire :</b> créez d’abord un compte de service '+
-        '<span class="mono">agent</span> (rôle Chef d’atelier) dans « Comptes &amp; rôles » ci-contre. '+
-        'N’utilisez jamais le compte administrateur sur un PC d’atelier.')+
-      '<br>Marche à suivre détaillée : fichier <span class="mono">CONNEXION_POINTEUSE.md</span>.'+
+          'automatique passe donc par l’<b>agent</b>, un petit programme à poser sur un PC de l’atelier.')+
+      '<br><b>Installer l’agent :</b> 1) « Télécharger le kit de l’agent » · 2) sur le PC de l’atelier, '+
+      'clic droit sur le fichier ZIP → « Extraire tout » · 3) double-clic sur <span class="mono">DIAGNOSTIC.bat</span>, '+
+      'puis sur <span class="mono">DEMARRER.bat</span>. Rien à installer ni à remplir : l’adresse de ce serveur '+
+      'et la clé d’accès sont déjà dans le kit, et l’adresse de la pointeuse ci-dessus est transmise à l’agent.'+
     '</div>';
 }
 function ptzCorps(){
@@ -1307,15 +1367,42 @@ async function testPointeuse(){
     loadPointeuse();
   }catch(e){ toast('Échec : '+e.message,'err',12000) }
 }
+function ptzAgent(a){
+  if(!a || !a.ts) return '';
+  const min = Math.max(0,(Date.now()-new Date(a.ts).getTime())/60000);
+  const vu = min<2 ? 'à l’instant' : min<90 ? 'il y a '+Math.round(min)+' min' : min<2880 ? 'il y a '+Math.round(min/60)+' h' : 'il y a '+Math.round(min/1440)+' jours';
+  const inter = +((PTZ.reglages||{}).intervalle)||30;
+  const endormi = min > Math.max(3*inter, 90);
+  const p = a.pointeuse||{}, ec = p.ecart_horloge_min;
+  return '<div class="banner '+(endormi?'banner-warn':'banner-info')+'" id="ptzAgent" style="margin:0 0 12px">'+(endormi?I.warn:I.check)+
+    '<div class="grow"><b>Agent '+(endormi?'silencieux':'en marche')+'</b> sur le PC « '+esc(a.pc||'?')+' »'+
+    (a.systeme?' ('+esc(a.systeme)+')':'')+' · vu '+esc(vu)+(a.version?' · version '+esc(a.version):'')+
+    (endormi?'<br>Il ne donne plus de nouvelles : PC éteint, session Windows fermée, ou fenêtre de l’agent fermée.':'')+
+    (p.nom||p.serie?'<br>Pointeuse : '+esc(p.nom||'modèle inconnu')+(p.serie?' · n° '+esc(p.serie):'')+
+      (p.pointages!=null?' · '+p.pointages+' badgeages en mémoire':'')+(p.liaison?' · liaison '+esc(p.liaison):''):'')+
+    (ec!=null && Math.abs(ec)>=5 ? '<br><b>Horloge de la pointeuse décalée de '+Math.abs(ec)+' min ('+(ec>0?'en avance':'en retard')+
+      ')</b> : les heures d’entrée et de sortie sont faussées d’autant. Réglez-la sur l’appareil (Menu → Système → Date/Heure).':'')+
+    (a.message && a.etat!=='erreur'?'<br><span class="hint">'+esc(a.message)+'</span>':'')+
+    '</div></div>';
+}
+async function changerCleAgent(){
+  if(!confirm('Changer la clé de l’agent ?\n\nL’agent déjà installé cessera aussitôt d’envoyer les pointages : il faudra retélécharger le kit et remplacer le fichier config.ini sur le PC de l’atelier.\n\nÀ faire si ce PC est remplacé ou si la clé a pu être copiée.')) return;
+  try{
+    await api('/api/pointeuse/cle',{method:'POST',body:{}});
+    toast('Clé changée — retéléchargez le kit et remplacez config.ini sur le PC de l’atelier','ok',12000);
+    loadPointeuse();
+  }catch(e){ toast('Refusé : '+e.message,'err',8000) }
+}
 async function telechargerAgent(){
   try{
-    const r = await fetch('/api/pointeuse/agent.txt');
+    const r = await fetch('/api/pointeuse/kit.zip');
     if(!r.ok){ let m='erreur '+r.status; try{m=(JSON.parse(await r.text()).error)||m}catch(x){} throw new Error(m) }
     const b = await r.blob(), u = URL.createObjectURL(b);
-    const a = document.createElement('a'); a.href=u; a.download='lancer_agent.bat'; a.click();
+    const a = document.createElement('a'); a.href=u; a.download='PilotRH_Agent.zip'; a.click();
     setTimeout(()=>URL.revokeObjectURL(u),4000);
-    toast('Fichier préparé — à copier sur le PC de l’atelier, à côté de pilotrh_agent.py','ok',9000);
+    toast('Kit téléchargé — copiez le ZIP sur le PC de l’atelier, extrayez-le, puis lancez DIAGNOSTIC.bat','ok',12000);
+    PTZ.cle_creee = true; renderPointeuse();
   }catch(e){ toast('Téléchargement impossible : '+e.message,'err',9000) }
 }
-Object.assign(window,{loadPointeuse,renderPointeuse,savePointeuse,testPointeuse,telechargerAgent,ptzDelai});
+Object.assign(window,{loadPointeuse,renderPointeuse,savePointeuse,testPointeuse,telechargerAgent,changerCleAgent,ptzAgent,ptzDelai});
 }

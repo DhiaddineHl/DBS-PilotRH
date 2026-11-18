@@ -3,6 +3,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Notifier les nouveaux messages : indispensable depuis Android 13. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Faire vibrer, et reprendre les vérifications après un redémarrage. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:label="@string/app_name"
@@ -39,5 +44,26 @@
                 <data android:scheme="http" android:host="@string/app_host" android:pathPrefix="/moi" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".ReglagesActivity"
+            android:exported="false"
+            android:label="@string/reg_titre"
+            android:screenOrientation="portrait" />
+
+        <!-- Réveil périodique : demande au serveur s'il y a de nouveaux messages. -->
+        <receiver android:name=".Verificateur" android:exported="false">
+            <intent-filter>
+                <action android:name="tn.dbsfashion.pilotrh.VERIFIER" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Sans ce receveur, les notifications s'arrêtent après un redémarrage
+             du téléphone jusqu'à la prochaine ouverture de l'application. -->
+        <receiver android:name=".Verificateur$AuDemarrage" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

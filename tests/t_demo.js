@@ -27,7 +27,12 @@ const DEMO = path.join(__dirname,'..','demo');
   console.log('\n--- Les écrans se remplissent ---');
   await p.click('[data-v="presences"]'); await p.waitForSelector('#presBody tr');
   t('feuille de pointage', await p.locator('#presBody tr').count() > 50);
-  t('journées à vérifier détectées', await p.locator('.banner-warn').count() >= 1);
+  /* le bandeau d'avertissement ne concerne que le jour affiché : un férié ou un
+     dimanche n'a rien à vérifier. On regarde donc sur le MOIS, via le compteur
+     du menu, qui ne dépend pas de la date d'ouverture. */
+  t('journées à vérifier détectées sur le mois',
+    (await p.evaluate(()=>aRevoirCount())) >= 1,
+    String(await p.evaluate(()=>aRevoirCount())));
   await p.click('[data-v="rapports"]'); await p.waitForSelector('#repBody tr');
   t('rapport de paie', await p.locator('#repBody tr').count() > 50);
   t('total calculé', (await p.locator('.rep-tot').innerText()).includes('h'));
@@ -48,6 +53,20 @@ const DEMO = path.join(__dirname,'..','demo');
 
   console.log('\n--- On peut vraiment modifier ---');
   await p.click('[data-v="presences"]'); await p.waitForSelector('#presBody tr');
+  /* on se place sur la dernière journée RÉELLEMENT travaillée : selon la date du
+     jour, la démonstration peut s'ouvrir sur un férié (13 août, Fête de la Femme)
+     ou un dimanche, où il n'y a évidemment aucune heure à modifier */
+  const jourTravaille = await p.evaluate(()=>{
+    const jours = Object.keys(DB.pointages).sort().reverse();
+    for (const j of jours) {
+      const rec = DB.pointages[j];
+      if (Object.keys(rec).some(k => rec[k].statut === 'present')) return j;
+    }
+    return null;
+  });
+  t('la démonstration contient des journées travaillées', !!jourTravaille, String(jourTravaille));
+  await p.evaluate(j=>setDay(j), jourTravaille);
+  await p.waitForSelector('#presBody input[aria-label^="Heures travaillées"]',{timeout:15000});
   const sel = p.locator('#presBody select').first();
   const avant = await p.locator('#presBody tr').first().innerText();
   await sel.selectOption('leave'); await p.waitForTimeout(500);
@@ -183,6 +202,26 @@ const DEMO = path.join(__dirname,'..','demo');
     /montant/i.test(await p.locator('.tablecard thead').innerText()));
 
   console.log('\n--- Erreurs console ---');
+  console.log('\n--- Nouveautés : assiduité, corrections, discipline (hors ligne) ---');
+  await p.evaluate(()=>go('assiduite')); await p.waitForSelector('#asBody tr',{timeout:15000});
+  t('assiduité : tableau par personne', await p.locator('#asBody tr').count()>10);
+  t('assiduité : graphiques', await p.locator('#asMois svg rect').count()>=2);
+  await p.evaluate(()=>go('corrections')); await p.waitForSelector('#cmFams',{timeout:15000});
+  t('corrections en masse : les quatre familles', await p.locator('#cmFams [data-fam]').count()===4);
+  await p.evaluate(()=>go('discipline')); await p.waitForSelector('#diBody',{timeout:15000});
+  const idD = await p.evaluate(()=>DB.employees.find(e=>e.sexe!=='H').id);
+  await p.evaluate(id=>discNouveau(id,'avertissement'), idD); await p.waitForSelector('#dCorps');
+  await p.selectOption('#dMotif','telephone'); await p.waitForTimeout(400);
+  t('discipline : le document arabe se prépare sans serveur', /استعمال الهاتف الجوّال/.test(await p.inputValue('#dCorps')) && /إنذار كتابي/.test(await p.inputValue('#dCorps')));
+  await p.click('#discOk'); await p.waitForTimeout(600);
+  t('discipline : la pièce est enregistrée et numérotée', /^AV-\d{4}-001/.test(await p.locator('.modal-head h3').innerText()));
+  await p.evaluate(()=>closeModal()); await p.evaluate(()=>go('discipline')); await p.waitForTimeout(500);
+  t('discipline : elle apparaît dans la liste', await p.locator('#diBody tr[data-disc]').count()===1);
+  await p.evaluate(()=>{go('parametres')}); await p.waitForTimeout(1200);
+  await p.evaluate(()=>window.telechargerAgent&&telechargerAgent()); await p.waitForTimeout(500);
+  t('le kit de l\'agent, qui exige le serveur, l\'explique au lieu d\'échouer en silence',
+    /préparé par le serveur/.test(await p.locator('#toasts').innerText()), await p.locator('#toasts').innerText());
+
   const graves = errs.filter(e=>!/favicon|manifest|sw\.js|ServiceWorker|net::ERR_FILE_NOT_FOUND|fonts\.googleapis|fonts\.gstatic|ERR_INTERNET|ERR_NAME_NOT_RESOLVED|Failed to load resource/i.test(e));
   t('aucune erreur JavaScript', graves.length===0, graves.slice(0,4).join(' | '));
 

@@ -269,7 +269,7 @@ mdb_import.default_settings = default_settings
 # volontairement PLUS : sans cela, n'importe quel compte pouvait se nommer
 # administrateur ou choisir la clé de signature des sessions.
 CLIENT_META_KEYS = ("employees", "settings", "documents", "conges", "absences", "signalements", "exclus")
-SERVER_META_KEYS = ("users", "_secret", "pointeuse")
+SERVER_META_KEYS = ("users", "_secret", "pointeuse", "discipline", "exclus_dates")
 # retirés de la réponse envoyée au navigateur : les comptes et la clé de signature
 # ne doivent jamais en sortir ; les notes et sondages ont leur propre endpoint
 SECRETES = set(SERVER_META_KEYS) | {"notes", "votes"}
@@ -364,6 +364,81 @@ def _note_contact(voie, pointages=0, jours=0, employees=0, erreur_msg=None, qui=
         p["etat"] = etat
         set_meta_serveur({POINTEUSE_META: p})
     return etat
+
+
+def pointeuse_cle(creer=True):
+    """Clé propre à l'agent d'usine. Elle n'autorise QUE la remontée des pointages :
+    plus besoin de créer un compte, de choisir son rôle ni de recopier un mot de
+    passe sur le PC de l'atelier — trois étapes où l'installation échouait."""
+    cle = (get_meta().get(POINTEUSE_META) or {}).get("cle") or ""
+    if cle or not creer:
+        return cle
+    with _WLOCK:
+        p = dict(get_meta().get(POINTEUSE_META) or {})
+        if not p.get("cle"):
+            p["cle"] = secrets.token_urlsafe(24)
+            set_meta_serveur({POINTEUSE_META: p})
+        return p["cle"]
+
+
+def _cle_agent_valide(request):
+    recu = request.headers.get("x-pilotrh-cle", "") or ""
+    cle = pointeuse_cle(creer=False)
+    return bool(recu and cle) and hmac.compare_digest(recu.encode("utf-8"), cle.encode("utf-8"))
+
+
+def _note_agent(b, ip=""):
+    """Ce que l'agent dit de lui-même : en marche, sur quel PC, sa dernière panne."""
+    etat_agent = str(b.get("etat") or "")[:20]
+    pt = b.get("pointeuse") if isinstance(b.get("pointeuse"), dict) else {}
+    fiche = {"ts": ts(), "etat": etat_agent, "code": str(b.get("code") or "")[:40],
+             "message": str(b.get("message") or "")[:300], "conseil": str(b.get("conseil") or "")[:600],
+             "version": str(b.get("version") or "")[:12], "pc": str(b.get("pc") or "")[:60],
+             "systeme": str(b.get("systeme") or "")[:60], "ip": ip}
+    with _WLOCK:
+        p = dict(get_meta().get(POINTEUSE_META) or {})
+        etat = dict(p.get("etat") or {})
+        ancien = etat.get("agent") or {}
+        # on garde la dernière description connue de l'appareil : un rapport de
+        # simple veille n'en contient pas
+        fiche["pointeuse"] = ({k: pt.get(k) for k in ("nom", "serie", "liaison", "pointages", "personnes",
+                                                      "heure", "ecart_horloge_min", "ignores", "ip")}
+                              if pt else ancien.get("pointeuse") or {})
+        etat["agent"] = fiche
+        if etat_agent == "erreur":
+            etat["derniere_erreur"] = {"ts": ts(), "voie": "agent", "message": fiche["message"],
+                                       "conseil": fiche["conseil"], "code": fiche["code"]}
+        elif etat_agent == "ok":
+            # la pointeuse a été lue avec succès : la liaison est vivante, même si
+            # personne n'a badgé depuis (dimanche, congés) — sinon fausse alerte
+            etat["ts"], etat["voie"], etat["par"] = ts(), "agent", fiche["pc"]
+            if pt.get("pointages") is not None:
+                etat["pointages"] = int(pt.get("pointages") or 0)
+            etat["derniere_erreur"] = None
+        p["etat"] = etat
+        set_meta_serveur({POINTEUSE_META: p})
+    return fiche
+
+
+def _note_rapport(voie, s):
+    """Garde le rapport du dernier import : nouvelles fiches et badges laissés de
+    côté. Sans lui, une personne enregistrée sur la pointeuse mais non importée
+    restait invisible, et le service RH la recréait à la main."""
+    st = (s or {}).get("_import_stats") or {}
+    rap = {"ts": ts(), "voie": voie,
+           "nouvelles": list(st.get("nouvelles") or [])[:300],
+           "ignores": list(st.get("ignores") or [])[:300],
+           "anciens": int(st.get("anciens") or 0),
+           "rattaches": int(st.get("rattaches") or 0)}
+    with _WLOCK:
+        p = dict(get_meta().get(POINTEUSE_META) or {})
+        # les nouvelles fiches s'accumulent jusqu'à ce que le RH les ait vues
+        avant = (p.get("rapport") or {}).get("nouvelles") or []
+        deja = set(x.get("id") for x in rap["nouvelles"])
+        rap["nouvelles"] = (rap["nouvelles"] + [x for x in avant if x.get("id") not in deja])[:300]
+        p["rapport"] = rap
+        set_meta_serveur({POINTEUSE_META: p})
+    return rap
 
 
 def pointeuse_silence_h():
@@ -538,6 +613,7 @@ def do_sync(force=False):
         audit("Système", "Synchronisation pointeuse (%d employées)" % SYNC["employees"])
         _note_contact("dossier surveillé", jours=len(s["pointages"]),
                       employees=len(s["employees"]), qui="Système")
+        _note_rapport("dossier surveillé", s)
         log.info("[sync] %s", SYNC["last"])
     except Exception as e:
         SYNC["error"] = str(e)
@@ -734,7 +810,8 @@ def _ip(request):
 # inaperçu pour /api/me/lu et /api/me/vote : les tests appelaient la fonction
 # directement, donc sans traverser le portier. Un test énumère désormais les
 # routes déclarées et refuse tout /api/me/... absent de cette liste.
-PUBLIC_SALARIE = ("/api/me", "/api/me/flag", "/api/me/lu", "/api/me/vote")
+PUBLIC_SALARIE = ("/api/me", "/api/me/flag", "/api/me/lu", "/api/me/vote",
+                  "/api/me/repondre", "/api/me/nouveautes", "/api/me/assiduite")
 
 PUBLIC_EXACT = set(PUBLIC_SALARIE) | {
     "/moi", "/moi.html", "/login", "/login.html", "/api/login",
@@ -746,10 +823,20 @@ PUBLIC_EXACT = set(PUBLIC_SALARIE) | {
     "/sw.js", "/manifest.webmanifest"}
 PUBLIC_PREFIXES = ("/assets/",)
 ADMIN_ONLY = ("/api/users",)
-RH_PLUS = ("/api/employee/delete", "/api/import-mdb", "/api/punches", "/api/sync",
-           "/api/pull-device", "/api/qr-codes.pdf", "/api/backup", "/api/ai", "/api/ocr")
+RH_PLUS = ("/api/employee/delete", "/api/sync", "/api/import/",
+           "/api/pull-device", "/api/qr-codes.pdf", "/api/backup", "/api/ai", "/api/ocr",
+           # dossiers disciplinaires : ni le chef d'atelier ni la lecture seule n'y ont accès
+           "/api/discipline")
+# Remonter les pointages est le métier d'un chef d'atelier, pas une prérogative RH.
+# Ces deux chemins étaient dans RH_PLUS : l'agent d'usine, à qui l'on recommande
+# un compte « Chef d'atelier » (le moins de droits possible sur un PC d'atelier),
+# recevait donc un 403 et rien ne remontait. Ils restent interdits en lecture seule.
+ATELIER_PLUS = ("/api/import-mdb", "/api/punches")
 WRITE_PREFIXES = ("/api/pointage", "/api/pointages/bulk", "/api/day", "/api/state",
-                  "/api/state-meta", "/api/employee")
+                  "/api/state-meta", "/api/employee", "/api/punches", "/api/import-mdb")
+
+# Chemins ouverts par la clé de l'agent d'usine (en-tête X-PilotRH-Cle), et par elle seule.
+AGENT_PATHS = ("/api/punches", "/api/import-mdb", "/api/agent/rapport")
 
 def _est_public(p):
     return p in PUBLIC_EXACT or any(p.startswith(x) for x in PUBLIC_PREFIXES)
@@ -758,7 +845,7 @@ def _est_public(p):
 async def auth_gate(request: Request, call_next):
     """Connexion obligatoire (sauf espace salarié). Applique les rôles."""
     p = request.url.path
-    if not OPEN_MODE and not _est_public(p):
+    if not OPEN_MODE and not _est_public(p) and not (p in AGENT_PATHS and _cle_agent_valide(request)):
         user = _current_user(request)
         if not user:
             if p.startswith("/api"):
@@ -768,6 +855,8 @@ async def auth_gate(request: Request, call_next):
         if any(p.startswith(x) for x in ADMIN_ONLY) and role != "admin":
             return JSONResponse({"error": "Réservé à l'administrateur"}, status_code=403)
         if any(p.startswith(x) for x in RH_PLUS) and role not in ("admin", "rh"):
+            return JSONResponse({"error": "Action non autorisée pour votre rôle"}, status_code=403)
+        if any(p.startswith(x) for x in ATELIER_PLUS) and role not in ("admin", "rh", "atelier"):
             return JSONResponse({"error": "Action non autorisée pour votre rôle"}, status_code=403)
         if role == "lecture" and request.method in ("POST", "PUT", "PATCH", "DELETE") \
            and any(p.startswith(x) for x in WRITE_PREFIXES):
@@ -812,9 +901,21 @@ def _resume_pointeuse():
     complets (adresse, mot de passe de communication) restent sur /api/pointeuse."""
     h = pointeuse_silence_h()
     seuil = +pointeuse_reglages().get("alerte_h", 24) or 24
+    e = pointeuse_etat() or {}
+    ag = e.get("agent") or {}
+    err = e.get("derniere_erreur") or {}
     return {"silence_h": (round(h, 2) if h is not None else None),
             "muet": (h is None or h > seuil), "seuil_h": seuil,
-            "voie": (pointeuse_etat() or {}).get("voie", "")}
+            "voie": e.get("voie", ""),
+            # la panne en clair et le décalage d'horloge : deux choses qu'il faut
+            # voir dans les alertes, pas découvrir le jour de la paie
+            "erreur": (err.get("message") or "")[:200],
+            # badges qui pointent mais ne sont rattachés à aucune fiche, et fiches créées
+            # par l'import : ils doivent se voir dans les alertes
+            "non_importes": len([x for x in (((get_meta().get(POINTEUSE_META) or {}).get("rapport") or {}).get("ignores") or [])
+                                 if x.get("raison") != "badge_zero"]),
+            "nouvelles_fiches": len(((get_meta().get(POINTEUSE_META) or {}).get("rapport") or {}).get("nouvelles") or []),
+            "ecart_horloge_min": (ag.get("pointeuse") or {}).get("ecart_horloge_min")}
 
 
 @app.get("/api/state")
@@ -878,6 +979,11 @@ async def api_employee_delete(req: Request):
         exclus = set(str(x) for x in m.get("exclus", []))
         if badge:
             exclus.add(badge)
+            # la date de sortie permet de reconnaître plus tard un badge redonné à
+            # une nouvelle recrue (elle badge APRÈS la sortie de l'ancienne titulaire)
+            dates = dict(m.get("exclus_dates") or {})
+            dates[badge] = today().isoformat()
+            set_meta_serveur({"exclus_dates": dates})
         set_meta({"employees": [e for e in emps if e.get("id") != eid],
                   "exclus": sorted(exclus)})
         with conn_rw() as c:
@@ -1115,9 +1221,10 @@ async def api_import_mdb(req: Request,
         audit(qui, "Import .mdb (%d employées, %d jours)" % (len(s["employees"]), len(s["pointages"])),
               role, _ip(req))
         _note_contact("fichier", jours=len(s["pointages"]), employees=len(s["employees"]), qui=qui)
+        rap = _note_rapport("fichier", s)
         # on ne renvoie plus l'état complet (il contenait les hashes et le secret) :
         # un résumé suffit, le client recharge ce dont il a besoin
-        return {"ok": True, "employees": len(s["employees"]), "jours": len(s["pointages"])}
+        return {"ok": True, "employees": len(s["employees"]), "jours": len(s["pointages"]), "rapport": rap}
     except Exception as e:
         log.exception("échec import .mdb")
         return erreur("Import impossible : %s" % e)
@@ -1139,7 +1246,10 @@ async def api_punches(req: Request):
     qui, role = _acteur(req, "Pointeuse")
     try:
         def _travail():
-            s = mdb_import.merge_punches(get_state(), users, punches, au=(b.get("au") or None))
+            du = str(b.get("du") or "")
+            if not re.match(r"^\d{4}-\d{2}-\d{2}$", du) or du < mdb_import.DEFAULT_DU:
+                du = mdb_import.DEFAULT_DU
+            s = mdb_import.merge_punches(get_state(), users, punches, du=du, au=(b.get("au") or None))
             set_state(s, par="Pointeuse")
             ensure_tokens_persist()
             return s
@@ -1148,7 +1258,9 @@ async def api_punches(req: Request):
               % (len(punches), len(s["employees"])), role, _ip(req))
         _note_contact("agent", pointages=len(punches), jours=len(s["pointages"]),
                       employees=len(s["employees"]), qui=qui)
-        return {"ok": True, "employees": len(s["employees"]), "jours": len(s["pointages"])}
+        rap = _note_rapport("agent", s)
+        return {"ok": True, "employees": len(s["employees"]), "jours": len(s["pointages"]),
+                "nouvelles": len(rap["nouvelles"]), "ignores": len(rap["ignores"])}
     except Exception as e:
         log.exception("échec import direct")
         _note_contact("agent", erreur_msg=e, qui=qui)
@@ -1174,9 +1286,8 @@ def api_pointeuse(request: Request):
         # connaître l'adresse ni le mot de passe de communication de l'appareil
         return {"reglages": {}, "etat": pointeuse_etat(),
                 "silence_h": pointeuse_silence_h(), "peut_modifier": False,
-                "lecture_directe_possible": False, "pyzk": False,
-                "mdb_path": "", "sync": {}, "url_publique": "",
-                "compte_agent_existe": True}
+                "lecture_directe_possible": False,
+                "mdb_path": "", "sync": {}, "url_publique": ""}
     return {"reglages": pointeuse_reglages(),
             "etat": pointeuse_etat(),
             "silence_h": pointeuse_silence_h(),
@@ -1184,20 +1295,110 @@ def api_pointeuse(request: Request):
             # sur un hébergeur public, il ne peut pas joindre une IP privée
             "lecture_directe_possible": bool(DEVICE_ALLOW) or not bool(
                 os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID")),
-            "pyzk": _pyzk_present(),
             "mdb_path": MDB_PATH,
             "sync": SYNC,
             "url_publique": PUBLIC_URL,
             "peut_modifier": True,
-            "compte_agent_existe": any(x.get("login") == "agent" for x in (get_meta().get("users") or []))}
+            "cle_creee": bool(pointeuse_cle(creer=False)),
+            "rapport": (get_meta().get(POINTEUSE_META) or {}).get("rapport") or {}}
 
 
-def _pyzk_present():
+@app.post("/api/import/reintegrer")
+async def api_import_reintegrer(req: Request):
+    """Un badge écarté par l'import (badge d'une personne sortie, redonné à une
+    nouvelle recrue) : on le retire de la liste des sorties et on crée la fiche
+    tout de suite. Ses pointages arrivent au prochain import (l'agent passe
+    toutes les 30 minutes) ; rien n'est à ressaisir à la main."""
+    u = _current_user(req) or {}
+    if u.get("role") not in ("admin", "rh") and not OPEN_MODE:
+        return erreur("Réservé aux RH", 403)
+    b = await req.json()
+    badge = str(b.get("badge") or "").strip()
+    nom = re.sub(r"[<>\r\n\t]", " ", str(b.get("nom") or "")).strip()[:80]
+    if not badge or mdb_import.norm_badge(badge) == "0":
+        return erreur("Badge manquant")
+    qui, role = _acteur(req)
+    with _WLOCK:
+        m = get_meta()
+        nb = mdb_import.norm_badge(badge)
+        if any(mdb_import.norm_badge(x) == nb for e in m.get("employees", [])
+               for x in (e.get("matricule"), e.get("cin")) if x not in (None, "")):
+            return erreur("Une fiche porte déjà ce badge.", 409)
+        exclus = [x for x in m.get("exclus", []) if mdb_import.norm_badge(x) != nb]
+        n = 0
+        for e in m.get("employees", []):
+            try:
+                n = max(n, int(str(e.get("id", "E0"))[1:]))
+            except Exception:
+                pass
+        prenom, _, reste = nom.partition(" ")
+        eid = "E" + str(n + 1).zfill(3)
+        e = {"id": eid, "prenom": prenom if reste else "", "nom": reste or nom or ("Badge " + badge),
+             "poste": "Couturière piqueuse", "categorie": "Ouvrier", "service": "Couture",
+             "atelier": "Atelier A", "contrat": "CDI", "embauche": str(b.get("depuis") or "")[:10],
+             "naissance": "", "famille": "", "enfants": 0, "niveau": "", "email": "", "tel": "",
+             "adresse": "", "salaire": 0, "cin": badge, "matricule": badge, "sexe": "F",
+             "responsable": "", "actif": True, "aCompleter": True}
+        set_meta({"employees": m.get("employees", []) + [e], "exclus": exclus})
+        p = dict(m.get(POINTEUSE_META) or {})
+        rap = dict(p.get("rapport") or {})
+        rap["ignores"] = [x for x in (rap.get("ignores") or []) if mdb_import.norm_badge(x.get("badge")) != nb]
+        p["rapport"] = rap
+        set_meta_serveur({POINTEUSE_META: p})
+    ensure_tokens_persist()
+    audit(qui, "Badge %s réintégré depuis le rapport d'import : fiche %s créée" % (badge, eid), role, _ip(req))
+    return {"ok": True, "id": eid}
+
+
+@app.post("/api/import/vu")
+async def api_import_vu(req: Request):
+    """Le RH a pris connaissance des nouvelles fiches créées par l'import."""
+    u = _current_user(req) or {}
+    if u.get("role") not in ("admin", "rh") and not OPEN_MODE:
+        return erreur("Réservé aux RH", 403)
+    with _WLOCK:
+        p = dict(get_meta().get(POINTEUSE_META) or {})
+        rap = dict(p.get("rapport") or {})
+        rap["nouvelles"] = []
+        p["rapport"] = rap
+        set_meta_serveur({POINTEUSE_META: p})
+    return {"ok": True}
+
+
+@app.post("/api/agent/rapport")
+async def api_agent_rapport(req: Request):
+    """L'agent d'usine dit comment il va, et reçoit les réglages à appliquer.
+    C'est ce qui permet de changer l'adresse de la pointeuse depuis PilotRH sans
+    retourner sur le PC de l'atelier, et de voir sa dernière panne à distance."""
+    if not (OPEN_MODE or _cle_agent_valide(req)):
+        return erreur("Clé de l'agent refusée", 401)
     try:
-        import zk  # noqa: F401
-        return True
+        b = await req.json()
     except Exception:
-        return False
+        b = {}
+    if not isinstance(b, dict):
+        b = {}
+    _note_agent(b, _ip(req))
+    r = pointeuse_reglages()
+    return {"ok": True, "heure_serveur": ts(),
+            "reglages": {"ip": r["ip"], "port": r["port"], "motdepasse": r["motdepasse"],
+                         "intervalle": r["intervalle"]}}
+
+
+@app.post("/api/pointeuse/cle")
+async def api_pointeuse_cle(req: Request):
+    """Change la clé de l'agent (PC remplacé, clé recopiée ailleurs). L'ancienne
+    cesse aussitôt de fonctionner : il faut retélécharger le kit."""
+    u = _current_user(req) or {}
+    if u.get("role") not in ("admin", "rh") and not OPEN_MODE:
+        return erreur("Réservé aux RH", 403)
+    with _WLOCK:
+        p = dict(get_meta().get(POINTEUSE_META) or {})
+        p["cle"] = secrets.token_urlsafe(24)
+        set_meta_serveur({POINTEUSE_META: p})
+    qui, role = _acteur(req)
+    audit(qui, "Clé de l'agent de la pointeuse renouvelée", role, _ip(req))
+    return {"ok": True}
 
 
 @app.post("/api/pointeuse")
@@ -1244,45 +1445,68 @@ def _ip_valide(ip):
         return False
 
 
-@app.get("/api/pointeuse/agent.txt")
-def api_agent_config(request: Request):
-    """Fichier de configuration prêt à coller à côté de l'agent d'usine. Évite de
-    faire modifier un fichier Python à la main sur le PC de l'atelier."""
+AGENT_DIR = os.path.join(BASE, "agent_usine")
+
+
+def _adresse_publique(request):
+    """Adresse à inscrire dans le kit : celle par laquelle le RH atteint PilotRH."""
+    if PUBLIC_URL:
+        return PUBLIC_URL
+    h = request.headers
+    hote = (h.get("x-forwarded-host") or h.get("host") or "").split(",")[0].strip()
+    proto = (h.get("x-forwarded-proto") or request.url.scheme or "https").split(",")[0].strip()
+    return ("%s://%s" % (proto, hote)) if hote else ""
+
+
+@app.get("/api/pointeuse/kit.zip")
+def api_kit_agent(request: Request):
+    """Dossier complet de l'agent d'usine, prêt à dézipper sur le PC de l'atelier :
+    le programme, ses lanceurs, et un config.ini DÉJÀ rempli (adresse de ce
+    serveur + clé). Plus rien à éditer à la main."""
     u = _current_user(request) or {}
-    if u.get("role") not in ("admin", "rh"):
+    if u.get("role") not in ("admin", "rh") and not OPEN_MODE:
         return erreur("Réservé aux RH", 403)
-    r = pointeuse_reglages()
-    base = PUBLIC_URL or "https://VOTRE-APP.up.railway.app"
-    txt = "\n".join([
-        "REM  ---------------------------------------------------------------",
-        "REM  PilotRH — configuration de l'agent d'usine",
-        "REM  Placez ce fichier a cote de pilotrh_agent.py, sous le nom",
-        "REM  lancer_agent.bat, et double-cliquez dessus.",
-        "REM",
-        "REM  Le mot de passe ci-dessous est celui du compte de service 'agent'",
-        "REM  (Securite & acces). Ne mettez JAMAIS le mot de passe administrateur",
-        "REM  sur un PC d'atelier.",
-        "REM  ---------------------------------------------------------------",
-        "@echo off",
-        "chcp 65001 >nul",
-        'set "PILOTRH_URL=%s"' % base,
-        'set "PILOTRH_LOGIN=agent"',
-        'set "PILOTRH_PASSWORD=A_REMPLACER_PAR_LE_MOT_DE_PASSE_DU_COMPTE_AGENT"',
-        'set "PILOTRH_METHODE=pointeuse"',
-        'set "PILOTRH_DEVICE_IP=%s"' % r["ip"],
-        'set "PILOTRH_DEVICE_PORT=%d"' % r["port"],
-        'set "PILOTRH_DEVICE_PW=%d"' % r["motdepasse"],
-        'set "PILOTRH_INTERVAL_MIN=%d"' % r["intervalle"],
+    import zipfile
+    base = _adresse_publique(request)
+    if not base:
+        return erreur("Adresse publique du serveur inconnue : définissez PILOTRH_PUBLIC_URL.")
+    cfg = "\r\n".join([
+        "; PilotRH - configuration de l'agent de la pointeuse",
+        "; Fichier genere par PilotRH le %s. Ne le diffusez pas : il contient la cle" % now().strftime("%d/%m/%Y"),
+        "; qui autorise l'envoi de pointages vers votre application.",
         "",
-        "REM  Methode fichier .mdb : mettez PILOTRH_METHODE=fichier et decommentez",
-        'REM  set "PILOTRH_MDB=C:\\ZKTeco\\attBackup.mdb"',
+        "[pilotrh]",
+        "url = %s" % base,
+        "cle = %s" % pointeuse_cle(),
         "",
-        "python pilotrh_agent.py",
-        "pause",
-        "",
-    ])
-    return Response(content=txt.encode("utf-8"), media_type="text/plain; charset=utf-8",
-                    headers={"Content-Disposition": 'attachment; filename="lancer_agent.bat"'})
+        "[pointeuse]",
+        "; methode = pointeuse : lecture directe par le reseau (recommande)",
+        "; methode = fichier   : envoi du fichier attBackup.mdb du logiciel ZKTeco",
+        "methode = pointeuse",
+        "; Laissez ces lignes vides : l'adresse de la pointeuse se regle dans PilotRH",
+        "; (Securite & acces -> Pointeuse). Ne les remplissez que pour forcer une valeur.",
+        "ip =",
+        "port =",
+        "motdepasse =",
+        "intervalle_min =",
+        "fichier_mdb = C:\\ZKTeco\\attBackup.mdb",
+        ""])
+    tampon = io.BytesIO()
+    with zipfile.ZipFile(tampon, "w", zipfile.ZIP_DEFLATED) as z:
+        for nom in sorted(os.listdir(AGENT_DIR)):
+            chemin = os.path.join(AGENT_DIR, nom)
+            if not os.path.isfile(chemin) or nom in ("config.ini", "config.exemple.ini") \
+               or nom.endswith((".pyc", ".json")) or nom.startswith(("journal", "diagnostic")):
+                continue
+            with open(chemin, "rb") as f:
+                z.writestr("PilotRH_Agent/" + nom, f.read())
+        with open(os.path.join(BASE, "zkproto.py"), "rb") as f:
+            z.writestr("PilotRH_Agent/zkproto.py", f.read())
+        z.writestr("PilotRH_Agent/config.ini", cfg.encode("ascii", "replace"))
+    qui, role = _acteur(request)
+    audit(qui, "Kit de l'agent de la pointeuse téléchargé", role, _ip(request))
+    return Response(content=tampon.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition": 'attachment; filename="PilotRH_Agent.zip"'})
 
 def _ip_privee(ip):
     try:
@@ -1310,22 +1534,11 @@ async def api_pull_device(req: Request):
         return erreur("Seule une adresse IP locale (192.168.x.x, 10.x.x.x…) est acceptée.", 403)
     if port not in (4370, 4371):
         return erreur("Port inattendu pour une pointeuse ZKTeco (4370 attendu).", 400)
-    try:
-        from zk import ZK
-    except ImportError:
-        return erreur("Module 'pyzk' non installé sur ce poste (pip install pyzk).")
+    import zkproto
     qui, role = _acteur(req, "Pointeuse")
-    conn = None
     try:
-        conn = ZK(ip, port=port, timeout=20, password=pw, force_udp=False, ommit_ping=False).connect()
-        conn.disable_device()
-        users = conn.get_users() or []
-        att = conn.get_attendance() or []
-        conn.enable_device()
-        urows = [{"badge": str(u.user_id or u.uid), "name": u.name or "",
-                  "sexe": getattr(u, "gender", "") or ""} for u in users]
-        prows = [{"badge": str(a.user_id), "dt": a.timestamp.strftime("%Y-%m-%d %H:%M:%S")}
-                 for a in att if a.timestamp]
+        d = await run_in_threadpool(zkproto.lire_tout, ip, port, pw, 20)
+        urows, prows = d["users"], d["punches"]
         def _travail():
             s = mdb_import.merge_punches(get_state(), urows, prows)
             set_state(s, par="Pointeuse")
@@ -1336,17 +1549,161 @@ async def api_pull_device(req: Request):
               % (len(prows), len(s["employees"])), role, _ip(req))
         _note_contact("reseau", pointages=len(prows), jours=len(s["pointages"]),
                       employees=len(s["employees"]), qui=qui)
-        return {"ok": True, "employees": len(s["employees"]), "jours": len(s["pointages"]),
-                "pointages": len(prows)}
+        rap = _note_rapport("reseau", s)
+        return {"ok": True, "employees": len(s["employees"]), "jours": len(s["pointages"]), "rapport": rap,
+                "pointages": len(prows), "appareil": d["infos"], "ignores": d["ignores"]}
+    except zkproto.ErreurPointeuse as e:
+        _note_contact("reseau", erreur_msg=e.message, qui=qui)
+        return erreur("%s %s" % (e.message, e.conseil))
     except Exception as e:
         log.exception("échec connexion pointeuse")
         _note_contact("reseau", erreur_msg=e, qui=qui)
         return erreur("Connexion à la pointeuse impossible : %s" % e)
-    finally:
-        try:
-            if conn: conn.disconnect()
-        except Exception:
-            pass
+
+# ---------------------------------------------------------------------------
+# Dossiers disciplinaires
+#   Données sensibles : elles vivent dans une clé serveur à part, jamais jointe à
+#   /api/state (que reçoivent aussi le chef d'atelier et les comptes en lecture
+#   seule). Chaque écriture est tracée dans le journal d'audit.
+# ---------------------------------------------------------------------------
+DISCIPLINE_META = "discipline"
+DISC_TYPES = {"questionnaire": "Q", "observation": "OB", "avertissement": "AV", "blame": "BL",
+              "miseapied": "MP", "reprise": "RT", "convocation": "CV", "pv": "PV"}
+DISC_STATUTS = ("brouillon", "remis", "signe", "refus", "classe")
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _disc_lire():
+    m = get_meta().get(DISCIPLINE_META) or {}
+    return {"entrees": list(m.get("entrees") or []), "societe": dict(m.get("societe") or {}),
+            "modeles": dict(m.get("modeles") or {}), "compteurs": dict(m.get("compteurs") or {})}
+
+
+def _disc_rh(request):
+    if OPEN_MODE:
+        return True
+    return (_current_user(request) or {}).get("role") in ("admin", "rh")
+
+
+def _txt(v, n):
+    return str(v if v is not None else "")[:n]
+
+
+@app.get("/api/discipline")
+def api_discipline(request: Request):
+    if not _disc_rh(request):
+        return erreur("Réservé aux RH", 403)
+    d = _disc_lire()
+    return {"entrees": d["entrees"], "societe": d["societe"], "modeles": d["modeles"]}
+
+
+@app.post("/api/discipline")
+async def api_discipline_ecrire(req: Request):
+    """Crée ou met à jour UNE pièce du dossier (questionnaire, avertissement…).
+    Une pièce à la fois : deux RH qui travaillent en même temps ne s'écrasent pas."""
+    if not _disc_rh(req):
+        return erreur("Réservé aux RH", 403)
+    b = await req.json()
+    if not isinstance(b, dict):
+        return erreur("Demande invalide")
+    typ = str(b.get("type") or "")
+    emp = str(b.get("emp") or "")
+    date = str(b.get("date") or "")
+    if typ not in DISC_TYPES:
+        return erreur("Type de document inconnu")
+    if not _ID_RE.match(emp):
+        return erreur("Salarié(e) non précisé(e)")
+    if not _DATE_RE.match(date):
+        return erreur("Date du document invalide")
+    statut = str(b.get("statut") or "brouillon")
+    if statut not in DISC_STATUTS:
+        return erreur("Statut inconnu")
+    try:
+        jours = max(0, min(30, int(b.get("jours") or 0)))
+    except (TypeError, ValueError):
+        return erreur("Le nombre de jours doit être un nombre")
+    for cle in ("date_faits", "du", "au", "remis_le"):
+        if b.get(cle) and not _DATE_RE.match(str(b.get(cle))):
+            return erreur("Date invalide (%s)" % cle)
+    qui, role = _acteur(req)
+    with _WLOCK:
+        d = _disc_lire()
+        existant = next((x for x in d["entrees"] if x.get("id") == b.get("id")), None) if b.get("id") else None
+        if b.get("id") and not existant:
+            return erreur("Pièce introuvable (supprimée entre-temps ?)", 404)
+        if existant and existant.get("emp") != emp:
+            return erreur("Une pièce ne peut pas changer de salarié(e)")
+        e = dict(existant or {})
+        if not existant:
+            if not any(x.get("id") == emp for x in (get_meta().get("employees") or [])):
+                return erreur("Salarié(e) introuvable", 404)
+            cle = "%s-%s" % (DISC_TYPES[typ], date[:4])
+            d["compteurs"][cle] = int(d["compteurs"].get(cle) or 0) + 1
+            e.update({"id": "D" + secrets.token_hex(5), "emp": emp, "type": typ,
+                      "ref": "%s-%03d" % (cle, d["compteurs"][cle]),
+                      "cree_le": ts(), "cree_par": qui})
+        e.update({"date": date, "statut": statut, "jours": jours,
+                  "motif": _txt(b.get("motif"), 40), "date_faits": _txt(b.get("date_faits"), 10),
+                  "du": _txt(b.get("du"), 10), "au": _txt(b.get("au"), 10),
+                  "delai_h": max(0, min(240, int(b.get("delai_h") or 0))) if str(b.get("delai_h") or "0").isdigit() else 0,
+                  "faits": _txt(b.get("faits"), 4000), "corps": _txt(b.get("corps"), 12000),
+                  "reponse": _txt(b.get("reponse"), 4000), "note": _txt(b.get("note"), 1000),
+                  "suite_de": _txt(b.get("suite_de"), 20), "remis_le": _txt(b.get("remis_le"), 10),
+                  "maj_le": ts(), "maj_par": qui})
+        if existant:
+            d["entrees"] = [e if x.get("id") == e["id"] else x for x in d["entrees"]]
+        else:
+            d["entrees"].append(e)
+        set_meta_serveur({DISCIPLINE_META: d})
+    audit(qui, "Dossier disciplinaire : %s %s (%s, statut %s)"
+          % (e["ref"], "modifié" if existant else "créé", emp, statut), role, _ip(req))
+    return {"ok": True, "entree": e}
+
+
+@app.post("/api/discipline/supprimer")
+async def api_discipline_supprimer(req: Request):
+    if not _disc_rh(req):
+        return erreur("Réservé aux RH", 403)
+    b = await req.json()
+    qui, role = _acteur(req)
+    with _WLOCK:
+        d = _disc_lire()
+        cible = next((x for x in d["entrees"] if x.get("id") == b.get("id")), None)
+        if not cible:
+            return erreur("Pièce introuvable", 404)
+        if cible.get("statut") != "brouillon" and role != "admin" and not OPEN_MODE:
+            return erreur("Une pièce déjà remise ne peut être supprimée que par l'administrateur. "
+                          "Vous pouvez la classer sans suite.", 403)
+        d["entrees"] = [x for x in d["entrees"] if x.get("id") != cible["id"]]
+        set_meta_serveur({DISCIPLINE_META: d})
+    audit(qui, "Dossier disciplinaire : %s supprimé (%s)" % (cible.get("ref"), cible.get("emp")), role, _ip(req))
+    return {"ok": True}
+
+
+@app.post("/api/discipline/reglages")
+async def api_discipline_reglages(req: Request):
+    """En-tête de la société (français + arabe) et textes des modèles personnalisés."""
+    if not _disc_rh(req):
+        return erreur("Réservé aux RH", 403)
+    b = await req.json()
+    qui, role = _acteur(req)
+    with _WLOCK:
+        d = _disc_lire()
+        if isinstance(b.get("societe"), dict):
+            d["societe"] = {k: _txt(b["societe"].get(k), 200) for k in
+                            ("nom", "nomAr", "adresse", "adresseAr", "ville", "villeAr",
+                             "representant", "representantAr", "qualiteAr", "mf")}
+        if isinstance(b.get("modeles"), dict):
+            for k, v in b["modeles"].items():
+                if k in DISC_TYPES:
+                    if v:
+                        d["modeles"][k] = _txt(v, 12000)
+                    else:
+                        d["modeles"].pop(k, None)          # vide = retour au modèle d'origine
+        set_meta_serveur({DISCIPLINE_META: d})
+    audit(qui, "Dossier disciplinaire : en-tête ou modèles modifiés", role, _ip(req))
+    return {"ok": True, "societe": d["societe"], "modeles": d["modeles"]}
+
 
 # ---------------------------------------------------------------------------
 # Photos
@@ -1688,6 +2045,53 @@ async def api_me_post(req: Request):
     _pin_ok(cle)
     return _me_payload(e, mois)
 
+ASSIDUITE_MAX_JOURS = 400
+
+
+@app.post("/api/me/assiduite")
+async def api_me_assiduite(req: Request):
+    """Absences et retards de la salariée sur une période qu'elle choisit (mois,
+    année, ou dates libres). Mêmes garanties que /api/me : jeton de la carte QR
+    ET code personnel, avec le même anti-force brute. Ne renvoie que SES jours,
+    et de ses justificatifs seulement le type et les dates — jamais la note du
+    service RH, qui peut contenir un motif médical."""
+    b = await req.json()
+    e = _find_by_token(str(b.get("t") or ""))
+    if not e:
+        return erreur("Lien invalide", 401)
+    cle = e["id"] + "|" + _ip(req)
+    if _pin_bloque(cle):
+        return erreur("Trop de tentatives. Patientez quelques minutes.", 429)
+    attendu = str(e.get("pin") or "")
+    if not attendu or not hmac.compare_digest(str(b.get("pin") or ""), attendu):
+        _pin_echec(cle)
+        return JSONResponse({"need_pin": True}, status_code=401)
+    _pin_ok(cle)
+    t = today()
+    try:
+        du = datetime.date.fromisoformat(str(b.get("du") or ""))
+        au = datetime.date.fromisoformat(str(b.get("au") or ""))
+    except ValueError:
+        return erreur("Dates invalides")
+    if au < du:
+        du, au = au, du
+    au = min(au, t)                                    # l'avenir n'a pas de pointage
+    if du > au:
+        return erreur("La période commence après aujourd'hui")
+    if (au - du).days + 1 > ASSIDUITE_MAX_JOURS:
+        return erreur("Période trop longue : %d jours au plus" % ASSIDUITE_MAX_JOURS)
+    jours = _jours_emp(e["id"], du.isoformat(), au.isoformat())
+    m = get_meta()
+    justifs = [{"debut": a.get("debut", ""), "fin": a.get("fin") or a.get("debut", ""),
+                "type": str(a.get("type") or "")[:40], "statut": a.get("statut", "")}
+               for a in (m.get("absences") or [])
+               if a.get("id") == e["id"] and a.get("statut") == "justifiée"
+               and str(a.get("debut", "")) <= au.isoformat() and str(a.get("fin") or a.get("debut", "")) >= du.isoformat()]
+    return {"du": du.isoformat(), "au": au.isoformat(), "today": t.isoformat(),
+            "embauche": e.get("embauche", "") if not e.get("aCompleter") else "",
+            "jours": jours, "justificatifs": justifs, "settings": m.get("settings") or {}}
+
+
 @app.get("/api/me")
 def api_me(t: str = "", pin: str = "", mois: str = ""):
     """Ancienne forme conservée pour ne pas casser un QR déjà distribué : elle ne
@@ -1856,6 +2260,15 @@ def _set_coms(notes=None, votes=None):
         set_meta(partial, cles=COMS_KEYS)
 
 def _cible_ok(e, cible):
+    """Un message peut viser une PERSONNE précise (cible.emp) ou un groupe.
+    Sans cette clé, on ne pouvait écrire qu'à un service entier — impossible de
+    dire un mot à une seule ouvrière sans que tout l'atelier le lise."""
+    if (cible or {}).get("emp"):
+        return e.get("id") == cible["emp"]
+    return _cible_groupe(e, cible)
+
+
+def _cible_groupe(e, cible):
     cible = cible or {}
     if cible.get("service") and e.get("service") != cible["service"]:
         return False
@@ -1883,10 +2296,11 @@ async def api_coms_note(req: Request):
     qui, role = _acteur(req)
     notes, _ = _coms()
     notes.append({"id": "N" + secrets.token_hex(5), "titre": titre, "texte": texte,
-                  "cible": {k: _propre((b.get("cible") or {}).get(k), 40) for k in ("service", "atelier", "categorie")},
+                  "cible": {k: _propre((b.get("cible") or {}).get(k), 40)
+                            for k in ("service", "atelier", "categorie", "emp")},
                   "fin": _propre((b.get("cible") or {}).get("fin"), 10),
                   "important": bool(b.get("important")),
-                  "ts": ts(), "par": qui, "lus": []})
+                  "ts": ts(), "par": qui, "lus": [], "reponses": []})
     _set_coms(notes=notes)
     audit(qui, "Note de service publiée · %s" % titre, role, _ip(req))
     return {"ok": True}
@@ -1946,7 +2360,13 @@ def _coms_pour(e):
     t = today().isoformat()
     mes_notes = [{"id": n["id"], "titre": n["titre"], "texte": n["texte"],
                   "important": n.get("important"), "ts": n.get("ts"), "par": n.get("par"),
-                  "lu": e["id"] in (n.get("lus") or [])}
+                  "lu": e["id"] in (n.get("lus") or []),
+                  "prive": bool((n.get("cible") or {}).get("emp")),
+                  # une salariée ne voit QUE ses propres réponses : un message de
+                  # groupe ne doit pas transformer une remarque personnelle en
+                  # conversation publique devant tout l'atelier
+                  "reponses": [{"texte": r.get("texte"), "ts": r.get("ts"), "moi": True}
+                               for r in (n.get("reponses") or []) if r.get("emp") == e["id"]]}
                  for n in notes if _cible_ok(e, n.get("cible")) and (not n.get("fin") or n["fin"] >= t)]
     mes_votes = []
     for v in votes:
@@ -1980,6 +2400,80 @@ async def api_me_lu(req: Request):
         if touche:
             _set_coms(notes=notes)
     return {"ok": True}
+
+@app.post("/api/me/repondre")
+async def api_me_repondre(req: Request):
+    """Réponse d'une salariée à un message. C'est ce qui transforme la note de
+    service en conversation : elle peut dire « d'accord » ou signaler une erreur
+    sans passer par la chef d'atelier."""
+    b = await req.json()
+    e = _find_by_token(str(b.get("t") or ""))
+    if not e:
+        return erreur("invalide", 401)
+    texte = _propre(b.get("texte"), 1000)
+    if not texte:
+        return erreur("Message vide")
+    nid = str(b.get("id") or "")
+    with _WLOCK:
+        notes, _ = _coms()
+        n = next((x for x in notes if x.get("id") == nid), None)
+        if not n:
+            return erreur("Message introuvable", 404)
+        if not _cible_ok(e, n.get("cible")):
+            return erreur("Ce message ne vous concerne pas", 403)
+        rep = (n.get("reponses") or [])
+        # garde-fou anti-inondation : une salariée ne peut pas remplir la boîte
+        if len([r for r in rep if r.get("emp") == e["id"]]) >= 20:
+            return erreur("Trop de réponses sur ce message. Voyez avec le service RH.", 429)
+        rep.append({"id": "R" + secrets.token_hex(4), "emp": e["id"],
+                    "nom": ((e.get("prenom") or "") + " " + (e.get("nom") or "")).strip(),
+                    "matricule": str(e.get("matricule") or e.get("cin") or ""),
+                    "texte": texte, "ts": ts(), "lu": False})
+        n["reponses"] = rep
+        if e["id"] not in (n.get("lus") or []):
+            n.setdefault("lus", []).append(e["id"])
+        _set_coms(notes=notes)
+    return {"ok": True, "ts": ts()}
+
+
+@app.post("/api/me/nouveautes")
+async def api_me_nouveautes(req: Request):
+    """Appel LÉGER, fait par l'application Android en arrière-plan : combien de
+    messages et de sondages non lus, et de quoi remplir la notification. Ne
+    renvoie ni pointage ni heure — c'est ce qui permet de l'appeler souvent sans
+    peser sur le serveur ni sur le forfait téléphone de la salariée."""
+    b = await req.json()
+    e = _find_by_token(str(b.get("t") or ""))
+    if not e:
+        return erreur("invalide", 401)
+    notes, votes = _coms_pour(e)
+    non_lus = [n for n in notes if not n.get("lu")]
+    a_voter = [v for v in votes if not v.get("vote") and not v.get("ferme")]
+    dernier = non_lus[0] if non_lus else None
+    return {"ok": True,
+            "messages": len(non_lus),
+            "sondages": len(a_voter),
+            "titre": (dernier or {}).get("titre", ""),
+            "apercu": ((dernier or {}).get("texte", "") or "")[:140],
+            "important": bool((dernier or {}).get("important")),
+            "ts": (dernier or {}).get("ts", ""),
+            "prenom": e.get("prenom", "")}
+
+
+@app.post("/api/coms/note/lu-reponses")
+async def api_coms_reponses_lues(req: Request):
+    """Marque les réponses d'un message comme lues côté RH."""
+    b = await req.json()
+    nid = str(b.get("id") or "")
+    with _WLOCK:
+        notes, _ = _coms()
+        for n in notes:
+            if n.get("id") == nid:
+                for r in (n.get("reponses") or []):
+                    r["lu"] = True
+        _set_coms(notes=notes)
+    return {"ok": True}
+
 
 @app.post("/api/me/vote")
 async def api_me_vote(req: Request):

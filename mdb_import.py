@@ -25,7 +25,10 @@ from access_parser import AccessParser
 # La pointeuse a des dates erronées (horloge déréglée) hors de cette plage : on les ignore.
 DEFAULT_DU = "2023-01-01"
 DEFAULT_AU = None  # None => calculé dynamiquement (aujourd'hui + 1 jour)
-MIN_JOURS_ACTIF = 3   # une employée est "active" si elle a pointé >= 3 jours
+# Une personne inconnue de l'application reçoit une fiche dès qu'elle a badgé UNE
+# fois dans les 5 derniers mois. On exigeait 3 jours : une nouvelle recrue restait
+# invisible ses deux premiers jours, et ces deux journées étaient perdues.
+MIN_JOURS_ACTIF = 1
 JOURS_ROSTER = 150    # roster courant = a pointé dans les ~5 derniers mois
 
 # Fêtes tunisiennes à date fixe (les fêtes religieuses, mobiles, se saisissent
@@ -82,10 +85,10 @@ def _assemble(users, checkins, du=DEFAULT_DU, au=None):
         days_per[uid].add(d)
     actifs = {uid for uid in recent if len(days_per[uid]) >= MIN_JOURS_ACTIF}
 
+    # On garde les pointages de TOUT LE MONDE : c'est la fusion qui décide qui est
+    # rattaché à une fiche, et qui signale ce qu'elle laisse de côté.
     day_user = defaultdict(dict)
     for (uid, d), ts in punches.items():
-        if uid not in actifs:
-            continue
         ts = sorted(set(ts))
         clean = []
         for t in ts:
@@ -96,6 +99,16 @@ def _assemble(users, checkins, du=DEFAULT_DU, au=None):
     return users, actifs, day_user
 
 
+def norm_badge(b):
+    """« 0123 », « 123 » et « 123 » (espaces) désignent le même badge."""
+    s = str(b if b is not None else "").strip()
+    return (s.lstrip("0") or ("0" if s else "")) if s.isdigit() else s
+
+
+def _a_un_nom(u):
+    return any(c.isalpha() for c in (u.get("nom", "") + u.get("prenom", "")))
+
+
 def parse(mdb_path, du=DEFAULT_DU, au=None):
     """Lecture du fichier Access (.mdb) exporté par le logiciel ZKTeco."""
     db = AccessParser(mdb_path)
@@ -104,9 +117,9 @@ def parse(mdb_path, du=DEFAULT_DU, au=None):
     users = {}
     for i in range(len(U["USERID"])):
         uid, name = U["USERID"][i], U["Name"][i]
-        if not name:
-            continue
-        nom, prenom = _split_nom(name)
+        # Une personne enregistrée sur la pointeuse SANS nom (seulement un numéro de
+        # badge) était sautée ici : tous ses pointages disparaissaient en silence.
+        nom, prenom = _split_nom(name or "")
         users[uid] = {
             "badge": str(U["Badgenumber"][i] or uid),
             "nom": nom, "prenom": prenom,
@@ -200,14 +213,21 @@ def _feries_set(settings, dates):
 
 
 def _merge_assembled(state, users, actifs, day_user):
-    """Fusionne un jeu déjà assemblé (users/actifs/day_user) dans l'état."""
-    exclus = set(str(b) for b in state.get("exclus", []))   # démissions : jamais réimportées
+    """Fusionne un jeu déjà assemblé (users/actifs/day_user) dans l'état.
+
+    Personne n'est plus écarté en silence : chaque badge qui a pointé sur la
+    période et n'est rattaché à aucune fiche figure dans le rapport d'import
+    (state["_import_stats"]["ignores"]) avec la raison, pour que le service RH
+    puisse agir au lieu de recréer la personne et ses pointages à la main."""
+    exclus_brut = [str(b) for b in state.get("exclus", [])]
+    exclus = set(norm_badge(b) for b in exclus_brut)       # démissions : jamais réimportées
+    exclus_dates = dict((norm_badge(k), v) for k, v in (state.get("exclus_dates") or {}).items())
     employees = state.get("employees", [])
     by_badge = {}
     for e in employees:
         for k in (e.get("matricule"), e.get("cin")):
-            if k:
-                by_badge.setdefault(str(k), e)
+            if k not in (None, ""):
+                by_badge.setdefault(norm_badge(k), e)
 
     # identifiants : on repart du plus grand numéro existant, pas du nombre
     # d'employées — après une suppression, le compteur recréait un id déjà pris
@@ -220,35 +240,69 @@ def _merge_assembled(state, users, actifs, day_user):
             pass
     next_n = max_n + 1
 
-    badge_to_id = {}
-    for uid in sorted(actifs, key=lambda u: int(users[u]["badge"]) if users[u]["badge"].isdigit() else 9999):
-        u = users[uid]
-        badge = u["badge"]
-        if badge in ("", "0") or not any(c.isalpha() for c in (u.get("nom", "") + u.get("prenom", ""))):
-            continue                                # badge de test / sans nom : ignoré
-        if badge in exclus:
+    # ce que chaque badge a fait sur la période importée
+    vu = defaultdict(list)
+    for d in day_user:
+        for uid in day_user[d]:
+            vu[uid].append(d)
+
+    def _cle_tri(uid):
+        b = users.get(uid, {}).get("badge", "")
+        return (0, int(b)) if str(b).isdigit() else (1, str(b))
+
+    badge_to_id, nouvelles, ignores, anciens = {}, [], [], 0
+    premier_jour = {}            # employé créé ou à compléter -> premier jour badgé
+    for uid in sorted(vu, key=_cle_tri):
+        u = users.get(uid) or {"badge": str(uid), "nom": "", "prenom": "", "sexe": "F"}
+        badge = str(u.get("badge") or "").strip()
+        nb = norm_badge(badge)
+        jours = sorted(vu[uid])
+        nom_aff = (u.get("prenom", "") + " " + u.get("nom", "")).strip()
+        info = {"badge": badge, "nom": nom_aff, "jours": len(jours), "premier": jours[0], "dernier": jours[-1]}
+        if nb in ("", "0"):
+            ignores.append(dict(info, raison="badge_zero"))
             continue
-        if badge in by_badge:                       # déjà connue : MAJ douce
-            e = by_badge[badge]
-            e["prenom"] = e.get("prenom") or u["prenom"]
-            e["nom"] = e.get("nom") or u["nom"]
+        if nb in by_badge:                                  # déjà connue : MAJ douce
+            e = by_badge[nb]
+            if _a_un_nom(u):
+                e["prenom"] = e.get("prenom") or u["prenom"]
+                e["nom"] = e.get("nom") or u["nom"]
             badge_to_id[uid] = e["id"]
-        else:                                       # nouvelle employée
-            eid = "E" + str(next_n).zfill(3)
-            next_n += 1
-            e = {
-                "id": eid, "prenom": u["prenom"], "nom": u["nom"],
-                "poste": "Couturière piqueuse", "categorie": "Ouvrier",
-                "service": "Couture", "atelier": "Atelier A", "contrat": "CDI",
-                "embauche": datetime.date.today().isoformat(), "naissance": "",
-                "famille": "", "enfants": 0, "niveau": "",
-                "email": "", "tel": "", "adresse": "", "salaire": 0,
-                "cin": badge, "matricule": badge, "sexe": u["sexe"],
-                "responsable": "", "actif": True, "aCompleter": True,
-            }
-            employees.append(e)
-            by_badge[badge] = e
-            badge_to_id[uid] = eid
+            if e.get("aCompleter"):
+                premier_jour[e["id"]] = min(jours[0], premier_jour.get(e["id"], jours[0]))
+            continue
+        if nb in exclus:
+            # une personne sortie qui badge encore APRÈS sa sortie : c'est presque
+            # toujours une nouvelle recrue à qui l'on a redonné le même numéro
+            sortie = exclus_dates.get(nb, "")
+            apres = [d for d in jours if not sortie or d > sortie]
+            if apres and uid in actifs:
+                ignores.append(dict(info, raison="badge_sorti", sortie=sortie, apres=len(apres)))
+            continue
+        if uid not in actifs:
+            anciens += 1                                    # n'a plus badgé depuis 5 mois
+            continue
+        eid = "E" + str(next_n).zfill(3)
+        next_n += 1
+        sans_nom = not _a_un_nom(u)
+        e = {
+            "id": eid,
+            "prenom": "" if sans_nom else u["prenom"],
+            "nom": ("Badge " + badge) if sans_nom else u["nom"],
+            "poste": "Couturière piqueuse", "categorie": "Ouvrier",
+            "service": "Couture", "atelier": "Atelier A", "contrat": "CDI",
+            # première présence connue plutôt que la date de l'import
+            "embauche": jours[0], "naissance": "",
+            "famille": "", "enfants": 0, "niveau": "",
+            "email": "", "tel": "", "adresse": "", "salaire": 0,
+            "cin": badge, "matricule": badge, "sexe": u.get("sexe") or "F",
+            "responsable": "", "actif": True, "aCompleter": True,
+        }
+        employees.append(e)
+        by_badge[nb] = e
+        badge_to_id[uid] = eid
+        premier_jour[eid] = jours[0]
+        nouvelles.append(dict(info, id=eid, sansNom=sans_nom))
 
     state["employees"] = employees
 
@@ -259,7 +313,9 @@ def _merge_assembled(state, users, actifs, day_user):
     # pointages
     pointages = state.get("pointages", {})
     emp_ids = [e["id"] for e in employees if e.get("actif", True)]
-    stats = {"protegees": 0, "jours": 0, "feries": 0, "ignores_clos": 0}
+    stats = {"protegees": 0, "jours": 0, "feries": 0, "ignores_clos": 0,
+             "nouvelles": nouvelles, "ignores": ignores, "anciens": anciens,
+             "rattaches": len(badge_to_id)}
     for d in sorted(day_user):
         if d[:7] in clotures:
             stats["ignores_clos"] += 1
@@ -287,6 +343,10 @@ def _merge_assembled(state, users, actifs, day_user):
             rec[eid] = r
         for eid in emp_ids:
             if eid in present:
+                continue
+            # pas d'« absence » avant l'arrivée : une recrue créée aujourd'hui se
+            # retrouvait absente sur trois ans d'historique
+            if eid in premier_jour and d < premier_jour[eid]:
                 continue
             existant = jour_existant.get(eid)
             if _est_protege(existant):

@@ -9,7 +9,5 @@ httpx==0.28.1
 reportlab==4.2.5
 qrcode==8.0
 pillow==11.0.0
-# pyzk n'est utile que si le serveur est sur le même réseau que la pointeuse
-# (installation locale). Sur Railway, la pointeuse n'est pas joignable :
-# laissez cette ligne commentée pour réduire la surface de l'image.
-# pyzk==0.9
+# La lecture de la pointeuse (protocole ZKTeco, port 4370) est faite par
+# zkproto.py, écrit avec la seule bibliothèque standard : pyzk n'est plus utilisé.

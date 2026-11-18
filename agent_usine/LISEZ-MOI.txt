@@ -1,0 +1,62 @@
+﻿PilotRH — AGENT DE LA POINTEUSE
+===============================
+
+A quoi sert ce dossier
+----------------------
+A installer sur UN PC de l'usine, branché sur le même réseau que la pointeuse.
+Il lit les badgeages sur la pointeuse et les envoie à PilotRH, tout seul,
+plusieurs fois par jour. Il ne fait que LIRE : il n'efface rien sur la pointeuse.
+
+
+Mise en route (5 minutes)
+-------------------------
+ 1. Copiez ce dossier ENTIER sur le PC de l'usine (par exemple sur le Bureau).
+    S'il est encore dans un fichier ZIP : clic droit -> « Extraire tout… ».
+    Ne lancez rien depuis l'intérieur du ZIP.
+
+ 2. Double-cliquez sur   DIAGNOSTIC.bat
+    Il vérifie tout, étape par étape, et dit en clair ce qui bloque.
+    La première fois, si Python n'est pas sur ce PC, il le télécharge tout
+    seul dans ce dossier (10 Mo). Rien n'est installé dans Windows.
+
+ 3. Quand le diagnostic affiche « TOUT FONCTIONNE » :
+    double-cliquez sur   DEMARRER.bat
+    Laissez la fenêtre ouverte (vous pouvez la réduire).
+
+ 4. Pour que l'agent se relance tout seul à chaque démarrage du PC :
+    double-cliquez une fois sur   DEMARRAGE_AUTOMATIQUE.bat
+
+
+Où régler l'adresse de la pointeuse ?
+-------------------------------------
+Dans PilotRH : Sécurité & accès -> Pointeuse. Pas sur ce PC.
+L'agent reprend ces réglages à chaque remontée.
+
+Pour connaître l'adresse de la pointeuse : sur l'appareil,
+Menu -> Comm. -> Ethernet (ou Réseau) -> « Adresse IP ».
+
+
+Si quelque chose ne marche pas
+------------------------------
+ * Relancez DIAGNOSTIC.bat : il indique la cause et quoi faire.
+ * Deux fichiers racontent tout ce qui s'est passé :
+       diagnostic.txt       le dernier diagnostic
+       journal_agent.txt    l'activité de l'agent
+   Envoyez-les si vous demandez de l'aide.
+ * Dans PilotRH (Sécurité & accès -> Pointeuse), vous voyez aussi si l'agent
+   est en marche, sur quel PC, et sa dernière erreur.
+
+
+Les fichiers
+------------
+ DIAGNOSTIC.bat                      vérifier l'installation
+ DEMARRER.bat                        lancer l'agent
+ DEMARRAGE_AUTOMATIQUE.bat           le lancer à chaque démarrage du PC
+ ARRETER_DEMARRAGE_AUTOMATIQUE.bat   annuler le lancement automatique
+ config.ini                          adresse de PilotRH et clé d'accès (ne pas diffuser)
+ pilotrh_agent.py, zkproto.py        le programme
+ _python.bat                         trouve ou télécharge Python (utilisé par les autres)
+
+Le fichier config.ini contient une clé qui autorise l'envoi de pointages vers
+votre PilotRH. Si ce PC est remplacé ou si la clé a pu être copiée : dans
+PilotRH, « Changer la clé », puis retéléchargez le kit.

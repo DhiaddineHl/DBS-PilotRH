@@ -35,4 +35,39 @@
     <string name="annuler">Annuler</string>
     <string name="fermer">Fermer</string>
     <string name="aucun_navigateur">Aucun navigateur installé sur ce téléphone</string>
+    <string name="m_notifications">Notifications : son et vibration</string>
+
+    <!-- notifications -->
+    <string name="canal_messages">Messages du service RH</string>
+    <string name="canal_messages_desc">Notes de service, messages personnels et sondages</string>
+    <string name="notif_titre">Message du service RH</string>
+    <string name="notif_un">Vous avez un nouveau message</string>
+    <string name="notif_plusieurs">Vous avez %1$d nouveaux messages</string>
+    <string name="notif_sondage">%1$d sondage(s) attendent votre réponse</string>
+
+    <!-- écran des réglages -->
+    <string name="reg_titre">Notifications</string>
+    <string name="reg_aide">Choisissez comment votre téléphone vous prévient quand le service RH vous écrit.</string>
+    <string name="reg_actif">Me prévenir des nouveaux messages</string>
+    <string name="reg_son">Son</string>
+    <string name="reg_vibration">Vibrer aussi</string>
+    <string name="reg_frequence">Vérifier les nouveaux messages</string>
+    <string name="reg_minutes">toutes les %1$d minutes</string>
+    <string name="reg_heures">toutes les %1$d heures</string>
+    <string name="reg_frequence_note">Vérifier souvent consomme un peu plus de batterie. Android n'autorise pas moins de 15 minutes.</string>
+    <string name="reg_silence">Ne pas me déranger</string>
+    <string name="reg_silence_aide">Aucun son ni vibration pendant cette plage horaire (la nuit, par exemple). Les messages arrivent quand même, sans bruit.</string>
+    <string name="reg_sans">— aucune —</string>
+    <string name="reg_de">De</string>
+    <string name="reg_a">À</string>
+    <string name="reg_enregistrer">Enregistrer</string>
+    <string name="reg_enregistre">Réglages enregistrés</string>
+    <string name="reg_essai">Envoyer une notification d'essai</string>
+    <string name="reg_essai_titre">Essai</string>
+    <string name="reg_essai_texte">Voici à quoi ressemblera un message du service RH.</string>
+    <string name="reg_essai_envoye">Notification d'essai envoyée</string>
+    <string name="reg_systeme">Réglages Android de cette application</string>
+    <string name="reg_systeme_note">À utiliser pour choisir un son qui ne figure pas dans la liste, ou si les notifications restent silencieuses malgré tout.</string>
+    <string name="reg_systeme_echec">Impossible d'ouvrir les réglages Android sur ce téléphone</string>
+    <string name="reg_pas_de_vibreur">Ce téléphone n'a pas de vibreur</string>
 </resources>

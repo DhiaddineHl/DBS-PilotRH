@@ -428,6 +428,7 @@ function openProfile(id){
     '<div class="info-block"><h4>Dossier numérique</h4>'+
       (docs.map(d=>'<span class="doc-chip">'+I.doc+' '+esc(d.type)+' <small style="color:var(--faint)">'+fmtDate(d.date)+'</small></span>').join('')
        ||'<span style="color:var(--muted);font-size:13px">Aucun document</span>')+'</div>'+
+    (['admin','rh'].includes(ME.role)&&window.discProfil?'<div class="info-block" id="discProfil"><h4>Dossier disciplinaire</h4><div class="skel"></div></div>':'')+
     (can('users')?'<div class="info-block"><h4>Accès espace salarié</h4>'+
       '<div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">En cas de carte QR perdue, régénérez l’accès : l’ancien lien devient inutilisable.</div>'+
       '<button class="btn btn-ghost" onclick="resetAcces(\''+escJs(id)+'\')">'+I.refresh+' Régénérer le QR et le code</button></div>':'')+
@@ -438,6 +439,7 @@ function openProfile(id){
     (can('edit')?'<button class="btn btn-gold" onclick="openEditEmp(\''+escJs(id)+'\')">'+I.gear+' Modifier la fiche</button>':'')+
   '</div>','wide');
   fillHist(id);
+  if(window.discProfil) window.discProfil(id);
 }
 async function fillHist(id){
   const a=$('#hFrom').value,b=$('#hTo').value;
@@ -981,8 +983,33 @@ function computeAlerts(){
     al.unshift({type:'Pointeuse muette',ic:I.warn,col:'var(--absent)',bg:'var(--absent-bg)',
       txt:(ptz.silence_h==null?'Aucun pointage jamais reçu':'Aucun pointage depuis '+
         (ptz.silence_h<48?Math.round(ptz.silence_h)+' h':Math.round(ptz.silence_h/24)+' jours')),
-      sub:'Le PC de l’atelier est peut-être éteint, ou l’agent ne tourne plus',when:'À vérifier',
+      sub:(ptz.erreur?'Dernière panne signalée par l’agent : '+ptz.erreur
+                     :'Le PC de l’atelier est peut-être éteint, ou l’agent ne tourne plus'),when:'À vérifier',
       act:"allerPointeuse()",actLbl:'Vérifier la liaison'});
+  }else if(ptz && ptz.erreur){
+    /* la liaison n'est pas encore « muette », mais l'agent vient d'échouer :
+       autant le savoir tout de suite plutôt qu'après le délai d'alerte */
+    al.unshift({type:'Pointeuse : dernière remontée en échec',ic:I.warn,col:'var(--late)',bg:'var(--late-bg)',
+      txt:ptz.erreur,sub:'L’agent réessaie tout seul ; si le message persiste, suivez le conseil affiché',when:'À surveiller',
+      act:"allerPointeuse()",actLbl:'Voir le détail'});
+  }
+  if(ptz && ptz.non_importes){
+    al.unshift({type:'Badges non importés',ic:I.users,col:'var(--absent)',bg:'var(--absent-bg)',
+      txt:ptz.non_importes+' badge(s) pointent sur la pointeuse sans être rattachés à une fiche',
+      sub:'Souvent un numéro de badge redonné à une nouvelle recrue — une fiche se crée en un clic',when:'À traiter',
+      act:"allerPointeuse()",actLbl:'Voir et créer les fiches'});
+  }
+  if(ptz && ptz.nouvelles_fiches){
+    al.unshift({type:'Nouvelles fiches à compléter',ic:I.users,col:'var(--leave)',bg:'var(--leave-bg)',
+      txt:ptz.nouvelles_fiches+' personne(s) ajoutée(s) automatiquement depuis la pointeuse',
+      sub:'Leurs pointages sont importés ; reste à compléter nom, poste, embauche',when:'À compléter',
+      act:"allerPointeuse()",actLbl:'Voir la liste'});
+  }
+  if(ptz && ptz.ecart_horloge_min!=null && Math.abs(ptz.ecart_horloge_min)>=5){
+    al.unshift({type:'Horloge de la pointeuse décalée',ic:I.clock||I.warn,col:'var(--late)',bg:'var(--late-bg)',
+      txt:Math.abs(ptz.ecart_horloge_min)+' min '+(ptz.ecart_horloge_min>0?'d’avance':'de retard'),
+      sub:'Toutes les heures d’entrée et de sortie sont faussées d’autant — à régler sur l’appareil',when:'À corriger',
+      act:"allerPointeuse()",actLbl:'Voir la liaison'});
   }
   const nonTraites=(DB.signalements||[]).filter(s=>!s.traite).length;
   if(nonTraites)al.unshift({type:'Signalements salariés',ic:I.bell,col:'var(--leave)',bg:'var(--leave-bg)',

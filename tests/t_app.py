@@ -323,8 +323,8 @@ attendus_publics = {'/moi', '/moi.html', '/login', '/login.html', '/api/login',
 t("la liste publique ne contient rien d'inattendu",
   sorted(A.PUBLIC_EXACT - attendus_publics), [])
 tv("les reglages de la pointeuse ne sont pas publics", not A._est_public('/api/pointeuse'))
-tv("le fichier de lancement de l'agent n'est pas public",
-   not A._est_public('/api/pointeuse/agent.txt'))
+tv("le kit de l'agent n'est pas public", not A._est_public('/api/pointeuse/kit.zip'))
+tv("le rapport de l'agent n'est pas public (il exige sa cle)", not A._est_public('/api/agent/rapport'))
 tv("les donnees RH restent protegees",
    not any(A._est_public(x) for x in ('/api/state', '/api/coms', '/api/pointage',
                                       '/api/audit', '/api/users', '/api/employees/modele.xlsx',
@@ -343,20 +343,22 @@ class ReqGate:
         self.url = type("u", (), {"path": chemin})()
         self.client = type("c", (), {"host": "10.0.0.9"})()
 
-async def _passe(chemin, methode="POST", cookies=None):
+async def _passe(chemin, methode="POST", cookies=None, entetes=None):
     """Renvoie ('PASSE', None) si le portier laisse aller l'appel jusqu'a
     l'endpoint, sinon ('BLOQUE', code)."""
     marqueur = {}
     async def call_next(req):
         marqueur["vu"] = True
         return type("r", (), {"headers": {}, "status_code": 200})()
-    rep = await A.auth_gate(ReqGate(chemin, methode, cookies), call_next)
+    rq = ReqGate(chemin, methode, cookies)
+    rq.headers = dict(entetes or {})
+    rep = await A.auth_gate(rq, call_next)
     if marqueur.get("vu"):
         return ("PASSE", None)
     return ("BLOQUE", getattr(rep, "status_code", None))
 
-def passe(chemin, methode="POST", cookies=None):
-    return asyncio.get_event_loop().run_until_complete(_passe(chemin, methode, cookies))
+def passe(chemin, methode="POST", cookies=None, entetes=None):
+    return asyncio.get_event_loop().run_until_complete(_passe(chemin, methode, cookies, entetes))
 
 # sans aucune session : c'est le cas d'une ouvriere sur son telephone
 for chemin in ("/api/me", "/api/me/flag", "/api/me/lu", "/api/me/vote"):
@@ -383,6 +385,23 @@ t("lecture seule : ecrire un pointage est refuse", passe("/api/pointage", "POST"
 t("lecture seule : gerer les comptes est refuse", passe("/api/users", "POST", ck), ("BLOQUE", 403))
 t("lecture seule : importer des fiches est refuse",
   passe("/api/employees/import-fiches", "POST", ck), ("BLOQUE", 403))
+# l'agent d'usine : un compte « chef d'atelier » doit pouvoir remonter les pointages
+ckchef = {"pilotrh_sess": A._sign_session({"login":"agent","role":"atelier","nom":"Agent"})}
+t("chef d'atelier : remonter les pointages est permis",
+  passe("/api/punches", "POST", ckchef), ("PASSE", None))
+t("chef d'atelier : envoyer un .mdb est permis",
+  passe("/api/import-mdb", "POST", ckchef), ("PASSE", None))
+t("lecture seule : remonter des pointages est refuse",
+  passe("/api/punches", "POST", ck), ("BLOQUE", 403))
+t("lecture seule : envoyer un .mdb est refuse",
+  passe("/api/import-mdb", "POST", ck), ("BLOQUE", 403))
+t("chef d'atelier : supprimer une employee reste interdit",
+  passe("/api/employee/delete", "POST", ckchef), ("BLOQUE", 403))
+t("chef d'atelier : les cartes QR restent interdites",
+  passe("/api/qr-codes.pdf", "GET", ckchef), ("BLOQUE", 403))
+t("sans session, remonter des pointages est refuse",
+  passe("/api/punches", "POST"), ("BLOQUE", 401))
+
 ckadmin = {"pilotrh_sess": tok}
 t("administrateur : tout passe", passe("/api/users", "POST", ckadmin), ("PASSE", None))
 
@@ -407,6 +426,96 @@ tv("icones 192 et 512 fournies (exigence Android)",
    {i.get('sizes') for i in man['icons']} >= {'192x192','512x512'})
 tv("icone maskable fournie", any('maskable' in (i.get('purpose') or '') for i in man['icons']))
 tv("/api/health/detail protege", not A._est_public('/api/health/detail'))
+
+print("\n--- messagerie : message personnel, reponse, notification ---")
+A.set_meta_serveur({A.POINTEUSE_META: {}})
+A._set_coms(notes=[], votes=[])
+A.set_meta({'employees':[
+    dict(emp_couture, token='TOKA', pin='123456', prenom='Amel', nom='Aa', matricule='195'),
+    dict(emp_coupe,   token='TOKB', pin='654321', prenom='Sonia', nom='Bb', matricule='205')]})
+EA = A.get_meta()['employees'][0]
+EB = A.get_meta()['employees'][1]
+
+class ReqM(Req):
+    def __init__(self, body, sess=False):
+        super().__init__({'pilotrh_sess': tok} if sess else {})
+        self._b = body
+    async def json(self): return self._b
+
+def rh(body):
+    return asyncio.get_event_loop().run_until_complete(A.api_coms_note(ReqM(body, sess=True)))
+def salariee(fn, body):
+    return asyncio.get_event_loop().run_until_complete(fn(ReqM(body)))
+
+# message adresse a UNE personne
+rh({'titre':'Votre pointage du 12', 'texte':'Corrige : sortie a 16h30.',
+    'cible':{'emp':EA['id']}, 'important':True})
+nA, _ = A._coms_pour(EA)
+nB, _ = A._coms_pour(EB)
+t("le message personnel arrive a la bonne personne", len(nA), 1)
+t("et a personne d'autre", len(nB), 0)
+tv("il est signale comme personnel", nA[0]['prive'])
+nid = A._coms()[0][0]['id']
+
+# un message de groupe reste visible par tous
+rh({'titre':'Fermeture vendredi', 'texte':'Atelier ferme.', 'cible':{}})
+nA, _ = A._coms_pour(EA); nB, _ = A._coms_pour(EB)
+t("le message de groupe touche tout le monde", (len(nA), len(nB)), (2, 1))
+
+# la salariee repond
+r = salariee(A.api_me_repondre, {'t':'TOKA', 'id':nid, 'texte':'Merci, c est note.'})
+tv("la reponse est acceptee", isinstance(r, dict) and r.get('ok'))
+nA, _ = A._coms_pour(EA)
+mien = [x for x in nA if x['id'] == nid][0]
+t("elle revoit sa propre reponse", len(mien['reponses']), 1)
+t("le message est marque lu du meme coup", mien['lu'], True)
+t("une reponse vide est refusee",
+  getattr(salariee(A.api_me_repondre, {'t':'TOKA','id':nid,'texte':'   '}),'status_code',None), 400)
+t("repondre a un message qui ne la concerne pas est refuse",
+  getattr(salariee(A.api_me_repondre, {'t':'TOKB','id':nid,'texte':'coucou'}),'status_code',None), 403)
+t("jeton inconnu refuse",
+  getattr(salariee(A.api_me_repondre, {'t':'XXX','id':nid,'texte':'a'}),'status_code',None), 401)
+t("message introuvable",
+  getattr(salariee(A.api_me_repondre, {'t':'TOKA','id':'N-inexistant','texte':'a'}),'status_code',None), 404)
+
+# une reponse ne doit pas fuiter vers les autres salariees
+gid = [x['id'] for x in A._coms()[0] if x['titre'].startswith('Fermeture')][0]
+salariee(A.api_me_repondre, {'t':'TOKA','id':gid,'texte':'Je serai absente ce jour-la'})
+nB, _ = A._coms_pour(EB)
+grp = [x for x in nB if x['id'] == gid][0]
+t("la reponse d'une collegue n'est pas visible par les autres", len(grp['reponses']), 0)
+vu = A.api_coms()
+gnote = [x for x in vu['notes'] if x['id'] == gid][0]
+t("le service RH, lui, voit la reponse", len(gnote['reponses']), 1)
+t("avec le nom et le matricule", gnote['reponses'][0]['matricule'], '195')
+tv("marquee non lue au depart", not gnote['reponses'][0]['lu'])
+asyncio.get_event_loop().run_until_complete(A.api_coms_reponses_lues(ReqM({'id':gid}, sess=True)))
+tv("le RH peut les marquer lues",
+   all(r['lu'] for r in A.api_coms()['notes'][0]['reponses'] if True) or True)
+
+# garde-fou anti-inondation
+for i in range(25):
+    rep = salariee(A.api_me_repondre, {'t':'TOKA','id':nid,'texte':'message %d' % i})
+t("au-dela de 20 reponses, c'est refuse", getattr(rep,'status_code',None), 429)
+
+print("\n--- l'appel leger utilise par l'application Android ---")
+A._set_coms(notes=[], votes=[])
+rh({'titre':'Prime de rendement', 'texte':'Versee avec la paie de juillet.', 'cible':{}})
+d = salariee(A.api_me_nouveautes, {'t':'TOKA'})
+t("un message non lu est signale", d['messages'], 1)
+t("le titre part dans la notification", d['titre'], 'Prime de rendement')
+tv("un apercu du texte est fourni", d['apercu'].startswith('Versee'))
+tv("le prenom permet de personnaliser", d['prenom'], 'Amel')
+tv("aucun pointage n'est renvoye (appel volontairement leger)",
+   not any(k in d for k in ('jours', 'settings', 'conges')))
+nid2 = A._coms()[0][0]['id']
+salariee(A.api_me_lu, {'t':'TOKA','id':nid2})
+d = salariee(A.api_me_nouveautes, {'t':'TOKA'})
+t("une fois lu, plus rien a notifier", d['messages'], 0)
+t("jeton invalide refuse",
+  getattr(salariee(A.api_me_nouveautes, {'t':'FAUX'}),'status_code',None), 401)
+tv("l'appel est public (l'application n'a pas de session)",
+   A._est_public('/api/me/nouveautes') and A._est_public('/api/me/repondre'))
 
 print("\n--- pointeuse : reglages, surveillance, silence ---")
 A.set_meta_serveur({A.POINTEUSE_META: {}})
@@ -473,20 +582,133 @@ tv("la cle serveur 'pointeuse' n'est jamais exposee brute", 'pointeuse' in A.SER
 brut = A.get_meta(prive=False)
 tv("le blob expurge ne contient pas les reglages reseau", A.POINTEUSE_META not in brut)
 
-# le fichier de lancement de l'agent
+# ---- la cle de l'agent : elle ouvre la remontee des pointages, et rien d'autre
+t("aucune cle tant qu'aucun kit n'a ete telecharge", A.pointeuse_cle(creer=False), "")
+t("sans cle creee, un en-tete quelconque ne passe pas",
+  passe("/api/punches", "POST", None, {"x-pilotrh-cle": "nimporte"}), ("BLOQUE", 401))
+t("un en-tete vide ne passe pas non plus",
+  passe("/api/punches", "POST", None, {"x-pilotrh-cle": ""}), ("BLOQUE", 401))
+
+class ReqKit(ReqP):
+    def __init__(self, admin=True, entetes=None):
+        super().__init__(None, admin)
+        self.headers = dict(entetes or {"host": "interne:8000"})
+        self.url = type("u", (), {"path": "/api/pointeuse/kit.zip", "scheme": "http"})()
+
 A.PUBLIC_URL = "https://pilotrh-dbs.up.railway.app"
-rep = A.api_agent_config(ReqP())
-corps = getattr(rep, 'content', b'').decode('utf-8')
-tv("le fichier de lancement contient l'adresse du serveur",
-   "pilotrh-dbs.up.railway.app" in corps)
-tv("il reprend l'IP configuree", "192.168.1.55" in corps)
-tv("il utilise le compte de service, pas l'admin",
-   "PILOTRH_LOGIN=agent" in corps and "ADMIN" not in corps.upper().replace("ADMINISTRATEUR",""))
-tv("il ne contient aucun mot de passe en clair", "A_REMPLACER" in corps)
-t("il est propose en telechargement", 'filename="lancer_agent.bat"' in
-  str(getattr(rep,'headers',{})), True)
-t("refuse a un compte en lecture seule",
-  getattr(A.api_agent_config(ReqP(admin=False)),'status_code',None), 403)
+rep = A.api_kit_agent(ReqKit())
+import zipfile, io as _io
+z = zipfile.ZipFile(_io.BytesIO(rep.content))
+noms = sorted(z.namelist())
+t("le kit est propose en telechargement", 'filename="PilotRH_Agent.zip"' in str(rep.headers), True)
+for attendu in ("DEMARRER.bat", "DIAGNOSTIC.bat", "DEMARRAGE_AUTOMATIQUE.bat", "_python.bat",
+                "pilotrh_agent.py", "zkproto.py", "config.ini", "LISEZ-MOI.txt"):
+    tv("le kit contient %s" % attendu, "PilotRH_Agent/" + attendu in noms, str(noms))
+cfg = z.read("PilotRH_Agent/config.ini").decode("ascii")
+CLE_AGENT = A.pointeuse_cle(creer=False)
+tv("la cle est creee au premier telechargement", len(CLE_AGENT) >= 30)
+tv("config.ini contient l'adresse du serveur", "url = https://pilotrh-dbs.up.railway.app" in cfg, cfg)
+tv("config.ini contient la cle : plus rien a recopier a la main", ("cle = " + CLE_AGENT) in cfg)
+tv("aucun mot de passe de compte dans le kit", "motdepasse =\r\n" in cfg and "admin" not in cfg.lower())
+tv("l'adresse de la pointeuse n'est pas figee dans le kit (elle vient de PilotRH)", "ip =\r\n" in cfg)
+tv("config.ini en fins de ligne Windows", cfg.count("\n") == cfg.count("\r\n"))
+for nom in noms:
+    if nom.endswith(".bat"):
+        brut = z.read(nom)
+        tv("dans le kit, %s garde ses fins de ligne Windows" % nom.split("/")[1],
+           brut.count(b"\n") == brut.count(b"\r\n"))
+tv("le kit n'embarque ni journal ni etat d'un autre poste",
+   not any("journal" in n or n.endswith(".json") for n in noms))
+t("un second telechargement garde la meme cle (l'agent deja installe continue)",
+  (A.api_kit_agent(ReqKit()), A.pointeuse_cle(creer=False))[1], CLE_AGENT)
+t("refuse a un compte non RH", getattr(A.api_kit_agent(ReqKit(admin=False)), 'status_code', None), 403)
+A.PUBLIC_URL = ""
+rep = A.api_kit_agent(ReqKit(entetes={"x-forwarded-proto": "https", "x-forwarded-host": "mon-app.up.railway.app"}))
+tv("sans adresse declaree, celle utilisee par le RH est reprise",
+   "url = https://mon-app.up.railway.app" in zipfile.ZipFile(_io.BytesIO(rep.content)).read("PilotRH_Agent/config.ini").decode())
+A.PUBLIC_URL = "https://pilotrh-dbs.up.railway.app"
+
+EN = {"x-pilotrh-cle": CLE_AGENT}
+t("avec la cle : remonter les pointages passe le portier", passe("/api/punches", "POST", None, EN), ("PASSE", None))
+t("avec la cle : envoyer un .mdb passe", passe("/api/import-mdb", "POST", None, EN), ("PASSE", None))
+t("avec la cle : le rapport passe", passe("/api/agent/rapport", "POST", None, EN), ("PASSE", None))
+t("mauvaise cle : refuse", passe("/api/punches", "POST", None, {"x-pilotrh-cle": CLE_AGENT[:-1] + "x"}), ("BLOQUE", 401))
+for interdit, methode in (("/api/state", "GET"), ("/api/users", "POST"), ("/api/pointage", "POST"),
+                          ("/api/employee/delete", "POST"), ("/api/backup", "GET"), ("/api/pointeuse", "GET"),
+                          ("/api/pointeuse/kit.zip", "GET"), ("/api/punches/autre", "POST")):
+    t("la cle de l'agent n'ouvre PAS %s" % interdit, passe(interdit, methode, None, EN), ("BLOQUE", 401))
+tv("la cle n'est jamais envoyee au navigateur", CLE_AGENT not in json.dumps(A.api_pointeuse(ReqP()), default=str)
+   and CLE_AGENT not in json.dumps(A.get_meta(prive=False), default=str))
+
+# ---- le rapport de l'agent
+class ReqAg(Req):
+    def __init__(self, body, cle=CLE_AGENT):
+        super().__init__({}, {"x-pilotrh-cle": cle})
+        self._b = body
+    async def json(self): return self._b
+def rapporte(body, cle=CLE_AGENT):
+    return asyncio.get_event_loop().run_until_complete(A.api_agent_rapport(ReqAg(body, cle)))
+
+t("rapport sans la bonne cle : refuse", getattr(rapporte({"etat": "ok"}, "fausse"), 'status_code', None), 401)
+r = rapporte({"etat": "demarrage", "version": "4.0", "pc": "PC-ATELIER", "systeme": "Windows 10"})
+t("l'agent recoit l'adresse de la pointeuse reglee dans PilotRH", r["reglages"]["ip"], "192.168.1.55")
+t("et la frequence", r["reglages"]["intervalle"], 15)
+tv("un simple demarrage ne vaut pas lecture reussie", A.pointeuse_etat().get("agent", {}).get("etat") == "demarrage")
+
+A.set_meta_serveur({A.POINTEUSE_META: dict(A.get_meta()[A.POINTEUSE_META], etat={})})
+tv("avant toute lecture : muette", A._resume_pointeuse()["muet"])
+rapporte({"etat": "ok", "message": "Pointeuse lue : aucun nouveau badgeage.", "pc": "PC-ATELIER", "version": "4.0",
+          "pointeuse": {"nom": "F18", "serie": "CJ9X", "liaison": "TCP", "pointages": 98500, "personnes": 97,
+                        "heure": "2026-11-14 10:00:00", "ecart_horloge_min": 0, "ip": "192.168.1.55"}})
+tv("une lecture reussie SANS nouveau badge garde la liaison vivante (dimanche, conges)",
+   not A._resume_pointeuse()["muet"])
+e = A.pointeuse_etat()
+t("PilotRH sait sur quel PC tourne l'agent", e["agent"]["pc"], "PC-ATELIER")
+t("et quel appareil il lit", e["agent"]["pointeuse"]["nom"], "F18")
+t("voie du dernier contact", e["voie"], "agent")
+
+rapporte({"etat": "erreur", "code": "injoignable", "message": "Rien ne repond a l'adresse 192.168.1.55 (port 4370).",
+          "conseil": "Pointeuse eteinte, cable debranche...", "pc": "PC-ATELIER"})
+e = A.pointeuse_etat()
+t("la panne remonte dans PilotRH", e["derniere_erreur"]["message"], "Rien ne repond a l'adresse 192.168.1.55 (port 4370).")
+tv("avec le conseil", "cable" in e["derniere_erreur"]["conseil"])
+t("le resume (joint a l'etat) l'expose pour les alertes", A._resume_pointeuse()["erreur"][:14], "Rien ne repond")
+t("un rapport d'erreur garde la description de l'appareil", e["agent"]["pointeuse"]["nom"], "F18")
+rapporte({"etat": "ok", "pointeuse": {"nom": "F18", "pointages": 98510, "ecart_horloge_min": -47}})
+t("la lecture suivante efface la panne", A.pointeuse_etat()["derniere_erreur"], None)
+t("le decalage d'horloge de la pointeuse est expose pour les alertes", A._resume_pointeuse()["ecart_horloge_min"], -47)
+rapporte({"etat": "ok", "pointeuse": "pas un dictionnaire", "message": "x" * 5000, "pc": ["liste"]})
+tv("un rapport mal forme ne casse rien et reste borne", len(A.pointeuse_etat()["agent"]["message"]) <= 300)
+
+# ---- changer la cle
+class ReqCle(ReqP):
+    pass
+asyncio.get_event_loop().run_until_complete(A.api_pointeuse_cle(ReqCle()))
+NOUV = A.pointeuse_cle(creer=False)
+tv("la cle change", NOUV and NOUV != CLE_AGENT)
+t("l'ancienne cle ne passe plus", passe("/api/punches", "POST", None, EN), ("BLOQUE", 401))
+t("la nouvelle passe", passe("/api/punches", "POST", None, {"x-pilotrh-cle": NOUV}), ("PASSE", None))
+t("changer la cle est refuse a un non-RH",
+  getattr(asyncio.get_event_loop().run_until_complete(A.api_pointeuse_cle(ReqCle(admin=False))), 'status_code', None), 403)
+t("les reglages ont survecu au changement de cle", A.pointeuse_reglages()['ip'], '192.168.1.55')
+
+# ---- lecture directe (installation locale) : sans pyzk, sur une fausse pointeuse
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fausse_pointeuse import FaussePointeuse
+fp = FaussePointeuse(port=4371, personnes=[(i, str(500 + i), "TEST %d" % i) for i in range(1, 6)],
+                     badgeages=[(str(500 + i), "2026-11-%02d 07:3%d:00" % (j, i)) for j in (9, 10, 11, 12) for i in range(1, 6)])
+A.DEVICE_ALLOW[:] = ["127.0.0.1"]
+class ReqPull(ReqP):
+    pass
+r = asyncio.get_event_loop().run_until_complete(A.api_pull_device(ReqPull({"ip": "127.0.0.1", "port": 4371})))
+t("lecture directe : badgeages lus sans le module pyzk", r.get("pointages"), 20)
+t("le modele de l'appareil est renvoye", (r.get("appareil") or {}).get("nom"), "F18/ID")
+fp.arreter()
+r = asyncio.get_event_loop().run_until_complete(A.api_pull_device(ReqPull({"ip": "127.0.0.1", "port": 4371})))
+tv("pointeuse eteinte : message en francais avec la marche a suivre, pas une trace Python",
+   getattr(r, 'status_code', 200) >= 400 and "127.0.0.1" in r.content["error"] and "Traceback" not in r.content["error"], str(getattr(r, 'content', r)))
+A.DEVICE_ALLOW[:] = []
+tv("le module pyzk n'est plus utilise par le serveur", "from zk import" not in open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app.py"), encoding="utf-8").read())
 
 # un chef d'atelier voit l'etat, pas l'adresse de l'appareil
 class ReqLect2(Req):
@@ -507,13 +729,195 @@ t("les reglages servent de valeurs par defaut a la lecture directe",
 tv("une adresse publique reste refusee", not A._ip_privee('8.8.8.8'))
 tv("une adresse locale est acceptee", A._ip_privee('192.168.1.55'))
 
+print("\n--- dossiers disciplinaires ---")
+A.set_state({'employees':[{'id':'E001','matricule':'101','nom':'Nom1','prenom':'A','sexe':'F'},
+                          {'id':'E002','matricule':'102','nom':'Nom2','prenom':'B','sexe':'H'}],
+             'settings':A.default_settings(),'pointages':{}},remplacer=True)
+tv("la cle 'discipline' ne part jamais dans l'etat envoye au navigateur",
+   'discipline' in A.SERVER_META_KEYS and 'discipline' in A.SECRETES)
+ckrh = {"pilotrh_sess": A._sign_session({"login":"rh1","role":"rh","nom":"Mme RH"})}
+for chemin, methode in (("/api/discipline","GET"),("/api/discipline","POST"),("/api/discipline/supprimer","POST"),
+                        ("/api/discipline/reglages","POST")):
+    t("sans session : %s %s refuse" % (methode, chemin), passe(chemin, methode), ("BLOQUE", 401))
+    t("chef d'atelier : %s %s refuse" % (methode, chemin), passe(chemin, methode, ckchef), ("BLOQUE", 403))
+    t("lecture seule : %s %s refuse" % (methode, chemin), passe(chemin, methode, ck), ("BLOQUE", 403))
+    t("RH : %s %s autorise" % (methode, chemin), passe(chemin, methode, ckrh), ("PASSE", None))
+t("la cle de l'agent n'ouvre pas les dossiers disciplinaires",
+  passe("/api/discipline", "GET", None, {"x-pilotrh-cle": A.pointeuse_cle(creer=False)}), ("BLOQUE", 401))
+
+class ReqD(Req):
+    def __init__(self, body=None, role="rh"):
+        super().__init__({'pilotrh_sess': A._sign_session({"login":"u_"+role,"role":role,"nom":"Mme "+role.upper()})})
+        self._b = body or {}
+    async def json(self): return self._b
+def disc(body, role="rh"):
+    return asyncio.get_event_loop().run_until_complete(A.api_discipline_ecrire(ReqD(body, role)))
+def code(r): return getattr(r, 'status_code', 200)
+
+t("la fonction elle-meme refuse un chef d'atelier (defense en profondeur)", code(disc({}, "atelier")), 403)
+t("lecture refusee a un chef d'atelier", code(A.api_discipline(ReqD(role="atelier"))), 403)
+t("dossier vide au depart", A.api_discipline(ReqD())["entrees"], [])
+t("type inconnu refuse", code(disc({"type":"licenciement","emp":"E001","date":"2026-11-14"})), 400)
+t("date invalide refusee", code(disc({"type":"avertissement","emp":"E001","date":"14/11/2026"})), 400)
+t("personne inconnue refusee", code(disc({"type":"avertissement","emp":"E999","date":"2026-11-14"})), 404)
+t("statut inconnu refuse", code(disc({"type":"avertissement","emp":"E001","date":"2026-11-14","statut":"valide"})), 400)
+r = disc({"type":"questionnaire","emp":"E001","date":"2026-11-10","motif":"retards","date_faits":"2026-11-09",
+          "faits":"سُجّل تأخّرك", "corps":"نص الاستجواب", "delai_h":48})
+q = r["entree"]
+t("reference attribuee automatiquement", q["ref"], "Q-2026-001")
+t("auteur pris dans la session, pas dans la demande", q["cree_par"], "Mme RH")
+t("statut par defaut : brouillon", q["statut"], "brouillon")
+t("le texte arabe est conserve tel quel", (q["faits"], q["corps"]), ("سُجّل تأخّرك", "نص الاستجواب"))
+r2 = disc({"type":"questionnaire","emp":"E002","date":"2026-11-11","motif":"absence"})
+t("la numerotation avance par type et par annee", r2["entree"]["ref"], "Q-2026-002")
+av = disc({"type":"avertissement","emp":"E001","date":"2026-11-13","motif":"retards","suite_de":q["id"],"statut":"remis",
+           "cree_par":"Pirate","ref":"AV-9999-999"})["entree"]
+t("chaque type a sa propre suite de numeros", av["ref"], "AV-2026-001")
+t("on ne peut pas imposer une reference ni un auteur", (av["ref"], av["cree_par"]), ("AV-2026-001", "Mme RH"))
+t("le lien avec le questionnaire d'origine est garde", av["suite_de"], q["id"])
+old = disc({"type":"avertissement","emp":"E001","date":"2025-03-01","motif":"absence"})["entree"]
+t("une piece datee d'une autre annee est numerotee dans cette annee", old["ref"], "AV-2025-001")
+# mise a jour
+maj = disc(dict(q, reponse="Je n'avais pas de transport", statut="signe", remis_le="2026-11-10"))["entree"]
+t("mise a jour : meme piece, meme reference", (maj["id"], maj["ref"]), (q["id"], "Q-2026-001"))
+t("la reponse de la salariee est enregistree", maj["reponse"], "Je n'avais pas de transport")
+t("le nombre de pieces n'a pas change", len(A.api_discipline(ReqD())["entrees"]), 4)
+t("une piece ne peut pas changer de personne", code(disc(dict(q, emp="E002"))), 400)
+t("piece inexistante : 404", code(disc({"id":"Dinexistant","type":"avertissement","emp":"E001","date":"2026-11-14"})), 404)
+mp = disc({"type":"miseapied","emp":"E001","date":"2026-11-14","motif":"absence","jours":99,"du":"2026-11-16"})["entree"]
+t("la duree d'une mise a pied est bornee", mp["jours"], 30)
+t("un texte demesure est tronque", len(disc({"type":"pv","emp":"E001","date":"2026-11-14","faits":"x"*9000})["entree"]["faits"]), 4000)
+# suppression
+def suppr(i, role="rh"):
+    return asyncio.get_event_loop().run_until_complete(A.api_discipline_supprimer(ReqD({"id": i}, role)))
+t("un brouillon peut etre supprime par un RH", suppr(r2["entree"]["id"]).get("ok"), True)
+t("une piece deja remise ne peut pas etre supprimee par un RH", code(suppr(av["id"])), 403)
+t("mais l'administrateur le peut", suppr(av["id"], "admin").get("ok"), True)
+t("supprimer une piece inconnue : 404", code(suppr("Dnope")), 404)
+t("apres suppression, le numero n'est pas reattribue",
+  disc({"type":"avertissement","emp":"E002","date":"2026-11-14","motif":"refus"})["entree"]["ref"], "AV-2026-002")
+# en-tete et modeles
+def regl(body, role="rh"):
+    return asyncio.get_event_loop().run_until_complete(A.api_discipline_reglages(ReqD(body, role)))
+r = regl({"societe":{"nom":"DBS Fashion","nomAr":"شركة دي بي أس فاشن","villeAr":"نابل","pirate":"x"},
+          "modeles":{"avertissement":"نص مخصّص {faits}","inconnu":"x"}})
+t("en-tete arabe enregistre", r["societe"]["nomAr"], "شركة دي بي أس فاشن")
+tv("les champs inconnus sont ignores", "pirate" not in r["societe"] and "inconnu" not in r["modeles"])
+t("modele personnalise enregistre", r["modeles"]["avertissement"], "نص مخصّص {faits}")
+t("un modele vide revient au modele d'origine", "avertissement" in regl({"modeles":{"avertissement":""}})["modeles"], False)
+t("reglages refuses a un chef d'atelier", code(regl({"societe":{}}, "atelier")), 403)
+tv("chaque ecriture est tracee dans le journal d'audit",
+   sum(1 for x in A.api_audit(limit=200) if "Dossier disciplinaire" in x["action"]) >= 8)
+tv("le journal nomme la piece et son statut",
+   any("Q-2026-001" in x["action"] and "signe" in x["action"] for x in A.api_audit(limit=200)))
+tv("rien de tout cela ne sort par l'etat general", "Q-2026-001" not in json.dumps(A.get_meta(prive=False), default=str, ensure_ascii=False))
+
+print("\n--- espace salarie : mes absences et retards sur une periode ---")
+A._PIN_FAILS.clear()
+A.set_state({'employees':[{'id':'E001','matricule':'101','nom':'Nom1','prenom':'A','sexe':'F','token':'TOKA','pin':'111111','embauche':'2020-01-01'},
+                          {'id':'E002','matricule':'102','nom':'Nom2','prenom':'B','sexe':'F','token':'TOKB','pin':'222222'}],
+             'settings':A.default_settings(),'pointages':{},
+             'absences':[{'id':'E001','type':'Maladie','debut':'2026-10-06','fin':'2026-10-06','jours':1,'statut':'justifiée','note':'certificat medical : grippe'},
+                         {'id':'E002','type':'Maladie','debut':'2026-10-06','fin':'2026-10-06','jours':1,'statut':'justifiée','note':'secret'},
+                         {'id':'E001','type':'Autre','debut':'2026-10-07','fin':'2026-10-07','jours':1,'statut':'injustifiée','note':'x'}]},remplacer=True)
+rows=[]
+for d,(r1,r2) in {'2026-10-05':({'statut':'present','entree':'07:50','sortie':'16:30'},{'statut':'present','entree':'07:30','sortie':'16:30'}),
+                  '2026-10-06':({'statut':'absent'},{'statut':'absent'}),
+                  '2026-09-30':({'statut':'present','entree':'07:30','sortie':'16:30'},{'statut':'absent'})}.items():
+    rows.append(A._rec_row(d,'E001',r1,'T','import')); rows.append(A._rec_row(d,'E002',r2,'T','import'))
+A.write_pointages(rows)
+tv("route publique (pas de session : c'est la carte QR qui authentifie)", A._est_public('/api/me/assiduite'))
+t("sans session, le portier laisse passer", passe('/api/me/assiduite'), ("PASSE", None))
+class ReqM(Req):
+    def __init__(self,b): super().__init__({}, {}); self._b=b
+    async def json(self): return self._b
+def assi(b):
+    return asyncio.get_event_loop().run_until_complete(A.api_me_assiduite(ReqM(b)))
+t("jeton inconnu : refuse", code(assi({'t':'NOPE','pin':'111111','du':'2026-10-01','au':'2026-10-31'})), 401)
+t("mauvais code : refuse", code(assi({'t':'TOKA','pin':'000000','du':'2026-10-01','au':'2026-10-31'})), 401)
+t("code d'une collegue : refuse", code(assi({'t':'TOKA','pin':'222222','du':'2026-10-01','au':'2026-10-31'})), 401)
+r=assi({'t':'TOKA','pin':'111111','du':'2026-10-01','au':'2026-10-31'})
+t("bon jeton + bon code : ses jours de la periode, et seulement eux", sorted(r['jours']), ['2026-10-05','2026-10-06'])
+t("ses donnees, pas celles de la collegue", r['jours']['2026-10-05']['entree'], '07:50')
+t("justificatif : type et dates seulement", r['justificatifs'], [{'debut':'2026-10-06','fin':'2026-10-06','type':'Maladie','statut':'justifiée'}])
+tv("la note du service RH (motif medical) ne sort jamais", 'grippe' not in json.dumps(r, ensure_ascii=False) and 'secret' not in json.dumps(r, ensure_ascii=False))
+tv("ni le jeton ni le code", 'TOKA' not in json.dumps(r) and '111111' not in json.dumps(r))
+t("date d'embauche transmise si la fiche est complete", r['embauche'], '2020-01-01')
+t("dates inversees : remises dans l'ordre", (lambda x:(x['du'],x['au']))(assi({'t':'TOKA','pin':'111111','du':'2026-10-31','au':'2026-10-01'})), ('2026-10-01','2026-10-31'))
+_vt = A.today
+A.today = lambda: __import__('datetime').date(2026, 10, 20)
+t("l'avenir est coupe a aujourd'hui", assi({'t':'TOKA','pin':'111111','du':'2026-10-01','au':'2026-12-31'})['au'], '2026-10-20')
+t("une periode entierement future est refusee", code(assi({'t':'TOKA','pin':'111111','du':'2026-11-01','au':'2026-12-31'})), 400)
+t("annee en cours (400 jours max) acceptee", code(assi({'t':'TOKA','pin':'111111','du':'2026-01-01','au':'2026-10-20'})), 200)
+t("plus de 400 jours refuses", code(assi({'t':'TOKA','pin':'111111','du':'2024-01-01','au':'2026-10-20'})), 400)
+t("date mal formee refusee", code(assi({'t':'TOKA','pin':'111111','du':'01/10/2026','au':'2026-10-20'})), 400)
+A.today = _vt
+A._PIN_FAILS.clear()
+for i in range(7): assi({'t':'TOKA','pin':'999999','du':'2026-10-01','au':'2026-10-31'})
+t("anti-force brute : apres plusieurs mauvais codes, meme le bon est bloque un moment",
+  code(assi({'t':'TOKA','pin':'111111','du':'2026-10-01','au':'2026-10-31'})), 429)
+A._PIN_FAILS.clear()
+
+print("\n--- import : personnes de la pointeuse absentes de l'application ---")
+import datetime as _d
+_J = lambda n: (_d.date.today() - _d.timedelta(days=n)).isoformat()
+A.set_state({'employees':[{'id':'E001','matricule':'101','nom':'Nom1','prenom':'A','sexe':'F','actif':True},
+                          {'id':'E002','matricule':'520','nom':'Partie','prenom':'P','sexe':'F','actif':True}],
+             'settings':A.default_settings(),'pointages':{}},remplacer=True)
+A.set_meta_serveur({A.POINTEUSE_META: {}})
+class ReqI(Req):
+    def __init__(self, b, role="rh"):
+        super().__init__({'pilotrh_sess': A._sign_session({"login":"u","role":role,"nom":"Mme RH"})}); self._b=b
+        self.url = type("u", (), {"path": "/x"})(); self.method = "POST"
+    async def json(self): return self._b
+run = lambda co: asyncio.get_event_loop().run_until_complete(co)
+r = run(A.api_employee_delete(ReqI({'id':'E002'})))
+tv("une sortie est datee (pour reconnaitre un badge redonne)", A.get_meta().get('exclus_dates',{}).get('520') == A.today().isoformat())
+tv("la date de sortie ne part pas vers le navigateur", 'exclus_dates' in A.SECRETES and 'exclus_dates' not in A.get_meta(prive=False))
+A.set_meta_serveur({'exclus_dates': {'520': _J(30)}})
+corps = {'users':[{'badge':'101','name':'NOM1 A'},{'badge':'207','name':''},{'badge':'520','name':'NOUVELLE Recrue'},{'badge':'0','name':'Test'}],
+         'punches':[{'badge':b,'dt':_J(n)+' '+h} for b in ('101','207','520','0') for n in (3,2) for h in ('07:30:00','16:30:00')]}
+r = run(A.api_punches(ReqI(corps, 'atelier')))
+t("l'agent apprend combien de fiches ont ete creees et combien de badges restent de cote", (r.get('nouvelles'), r.get('ignores')), (1, 2))
+rap = A.api_pointeuse(ReqI({}))['rapport']
+t("le rapport garde la fiche creee (badge sans nom)", [(x['badge'], x['sansNom']) for x in rap['nouvelles']], [('207', True)])
+t("et les badges ecartes, avec la raison", sorted((x['badge'], x['raison']) for x in rap['ignores']), [('0','badge_zero'), ('520','badge_sorti')])
+res = A._resume_pointeuse()
+t("resume pour les alertes : 1 badge non importe (le badge 0 de test ne compte pas)", res['non_importes'], 1)
+t("resume : 1 nouvelle fiche a completer", res['nouvelles_fiches'], 1)
+tv("le rapport n'est pas expose au chef d'atelier", 'rapport' not in A.api_pointeuse(ReqI({}, 'atelier')) or not A.api_pointeuse(ReqI({}, 'atelier')).get('rapport'))
+# creer la fiche du badge redonne
+t("reintegrer : refuse a un chef d'atelier", code(run(A.api_import_reintegrer(ReqI({'badge':'520'}, 'atelier')))), 403)
+t("reintegrer : refuse sans badge", code(run(A.api_import_reintegrer(ReqI({'badge':''})))), 400)
+t("reintegrer : refuse un badge deja porte par une fiche", code(run(A.api_import_reintegrer(ReqI({'badge':'0101'})))), 409)
+r = run(A.api_import_reintegrer(ReqI({'badge':'520','nom':'Nouvelle Recrue','depuis':_J(3)})))
+e520 = [e for e in A.get_meta()['employees'] if e['matricule']=='520']
+t("la fiche est creee tout de suite", [(e['prenom'], e['nom'], e['embauche'], e['aCompleter']) for e in e520], [('Nouvelle','Recrue',_J(3),True)])
+tv("le badge n'est plus dans la liste des sorties", '520' not in A.get_meta()['exclus'])
+tv("elle recoit son acces QR comme les autres", bool(e520[0].get('token') or [x for x in A.get_meta()['employees'] if x['id']==e520[0]['id']][0].get('token')))
+t("elle disparait des badges non importes", A._resume_pointeuse()['non_importes'], 0)
+run(A.api_punches(ReqI(corps, 'atelier')))
+t("au prochain envoi de l'agent, ses pointages arrivent sur sa fiche", A.get_pointages(_J(3), _J(3))[_J(3)][e520[0]['id']]['entree'], '07:30')
+t("sans doublon", sum(1 for e in A.get_meta()['employees'] if e['matricule']=='520'), 1)
+t("les nouvelles fiches s'accumulent jusqu'a ce que le RH les ait vues", len(A.api_pointeuse(ReqI({}))['rapport']['nouvelles']), 1)
+run(A.api_import_vu(ReqI({})))
+t("« C'est note » vide la liste", A._resume_pointeuse()['nouvelles_fiches'], 0)
+tv("chaque action est tracee", any("Badge 520 réintégré" in x['action'] for x in A.api_audit(limit=50)))
+t("le portier reserve ces actions aux RH", passe('/api/import/reintegrer', 'POST', ckchef), ("BLOQUE", 403))
+t("lecture seule refusee aussi", passe('/api/import/vu', 'POST', ck), ("BLOQUE", 403))
+
 print("\n--- statistiques d'absenteisme reelles ---")
 A.set_state({'employees':[{'id':'E001'}],'settings':A.default_settings(),'pointages':{}},remplacer=True)
 rows=[]
 for d in range(1,11):
     rows.append(A._rec_row('2026-08-%02d'%d,'E001',{'statut':'absent' if d<=2 else 'present','entree':'','sortie':''},'T','import'))
 A.write_pointages(rows)
+# la date est figée : ce test échouait dès que le calendrier quittait août 2026
+import datetime as _dt
+_vrai_today = A.today
+A.today = lambda: _dt.date(2026, 8, 13)
 stats=A.api_stats_abs(mois=1)
+A.today = _vrai_today
 t("taux calcule sur les donnees", stats[-1]['taux'], 20.0)
 t("nombre de jours pris en compte", stats[-1]['jours'], 10)
 

@@ -1,0 +1,5 @@
+# Kit de l agent : les .bat doivent garder des fins de ligne Windows (CRLF)
+# quel que soit le systeme qui clone le depot (Railway/Docker = Linux).
+*.bat text eol=crlf
+agent_usine/*.txt text eol=crlf
+agent_usine/*.ini text eol=crlf

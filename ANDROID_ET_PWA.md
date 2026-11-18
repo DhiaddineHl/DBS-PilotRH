@@ -68,13 +68,16 @@ personnel est mémorisé dans le téléphone.
 
 Une coquille autour de `/moi`, volontairement minimale : **aucune bibliothèque
 externe**, pas d'AndroidX, pas de Kotlin. Le fichier pèse quelques dizaines de
-kilo-octets et ne demande que deux permissions, Internet et l'état du réseau —
-ni caméra, ni contacts, ni position.
+kilo-octets et ne demande que le strict nécessaire : Internet, état du réseau,
+notifications, vibreur, et le redémarrage du téléphone (pour que les notifications
+reprennent après un redémarrage) — **ni caméra, ni contacts, ni position**.
 
 Ce qu'elle ajoute par rapport au navigateur :
 
 - **Le scan de la carte QR ouvre l'application** (filtre d'intention sur `/moi`),
   qui mémorise le jeton. Plus jamais besoin de rescanner la carte.
+- **Elle prévient quand le service RH écrit** — son et vibration au choix de la
+  salariée (voir plus bas).
 - Une icône sur l'écran d'accueil sans passer par un menu de navigateur.
 - Un écran d'erreur en français qui distingue « pas de réseau » de « le serveur
   ne répond pas », avec un bouton **Réessayer**.
@@ -86,6 +89,34 @@ Ce qu'elle ajoute par rapport au navigateur :
   installation hébergée et pour une installation locale.
 
 Android 6 (2015) et plus — c'est-à-dire l'ensemble du parc encore en service.
+
+### Notifications : son, vibration, « ne pas déranger »
+
+Menu **⋯ → Notifications : son et vibration**. La salariée choisit elle-même :
+
+| Réglage | Choix |
+|---|---|
+| Me prévenir | oui / non |
+| Son | Silencieux · Son par défaut · Sonnerie · Alarme — **joué immédiatement** au choix |
+| Vibration | oui / non — **essayée** au moment du choix |
+| Vérifier les messages | toutes les 15, 30, 60, 120 ou 240 minutes |
+| Ne pas déranger | de … à … (sait passer minuit) |
+
+Plus une **notification d'essai**, et un bouton vers les réglages Android de
+l'application (pour un son personnalisé, ou si le téléphone bloque les notifications).
+
+Un clic sur la notification ouvre **directement la conversation**.
+
+**Ce qu'il faut savoir sur le délai.** Une notification instantanée comme WhatsApp passe
+obligatoirement par Firebase, donc par les serveurs de Google : compte Google, clé de
+serveur, services Google Play sur chaque téléphone, et vos messages qui transitent par un
+tiers. Ici, l'application **demande** au serveur s'il y a du nouveau, toutes les 30 minutes
+par défaut. Aucune dépendance, aucun tiers — mais **le message arrive au prochain réveil**,
+pas dans la seconde. Android n'autorise pas moins de 15 minutes, pour la batterie.
+
+Sur les téléphones **Xiaomi, Huawei, Oppo et Samsung**, l'économiseur de batterie coupe
+souvent les réveils des applications installées hors Play Store. Si une salariée ne reçoit
+rien : Réglages Android → Applications → PilotRH → Batterie → **Sans restriction**.
 
 ### Le compiler sans rien installer (recommandé)
 
@@ -171,13 +202,18 @@ l'application, et il faut en republier une nouvelle sous un autre nom.
   navigateur, où il est fait pour être utilisé.
 - **Elle ne stocke rien hors ligne pour l'instant** au-delà de la coquille : sans
   réseau, elle affiche un message clair au lieu de chiffres possiblement périmés.
+- **Elle ne notifie pas dans la seconde.** Voir l'explication du délai ci-dessus : c'est
+  un choix assumé pour ne dépendre ni de Google ni d'un compte Firebase.
 
 ## 4. Où sont les fichiers
 
 ```
 android/                                   projet Android (Java, sans dépendance)
   app/src/main/AndroidManifest.xml         permissions + filtre du scan de carte QR
-  app/src/main/java/.../MainActivity.java  toute l'application (une seule classe)
+  app/src/main/java/.../MainActivity.java  écran principal (la coquille web)
+  app/src/main/java/.../Notifs.java        notifications : canaux, son, vibration
+  app/src/main/java/.../Verificateur.java  réveil périodique, appel au serveur
+  app/src/main/java/.../ReglagesActivity.java  écran de réglages des notifications
   app/src/main/res/values/strings.xml      textes en français + DOMAINE À RENSEIGNER
   app/src/main/res/xml/…                   politique réseau (http local autorisé)
 .github/workflows/apk.yml                  fabrique l'APK sur GitHub, gratuitement

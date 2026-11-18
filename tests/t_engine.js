@@ -213,6 +213,44 @@ t('réglages par défaut : taux à zéro',
 t('taux existants préservés par la normalisation',
   C.normalizeSettings({tauxHoraireDefaut:2.75}).tauxHoraireDefaut, 2.75);
 
+console.log('\n--- Bilan d’assiduité d’une personne (espace salarié = vue RH) ---');
+{
+  S = conf(); E.invalidate();
+  const P=(e,s)=>({statut:'present',entree:e,sortie:s}), ABS={statut:'absent',entree:'',sortie:''};
+  // semaine du lundi 05/10/2026 ; samedi 07:30-13:00 ouvré par défaut ; dimanche 04 et 11 en repos
+  const jours={
+    '2026-10-04':ABS,                         // dimanche : ne compte pas
+    '2026-10-05':P('07:50','16:30'),          // retard 20
+    '2026-10-06':ABS,                         // absence injustifiée
+    '2026-10-07':P('08:10','16:30'),          // retard 40
+    '2026-10-08':ABS,                         // absence couverte par un justificatif
+    '2026-10-09':P('07:31',''),               // sortie manquante : présente, pointage incomplet
+    '2026-10-10':{statut:'leave',entree:'',sortie:''},
+    // 12/10 non importé : ne doit pas devenir une absence
+  };
+  const J=[{debut:'2026-10-08',fin:'2026-10-08'}];
+  const b=C.bilanAssiduite(E,jours,'2026-10-01','2026-10-12',J,'2019-01-01');
+  t('jours attendus (dimanche exclu, jour non importé exclu)', b.attendus, 6);
+  t('absences (dont 1 justifiée)', [b.absences,b.absJustifiees], [2,1]);
+  t('retards et minutes', [b.retards,b.retardMin], [2,60]);
+  t('jours travaillés, congés, incomplets', [b.travailles,b.conges,b.incomplets], [3,1,1]);
+  t('taux 2/6', b.taux, 33.3);
+  t('événements datés', b.evenements.map(v=>v.ds.slice(8)+v.type+(v.min||'')), ['05ret20','06abs','07ret40','08absJ']);
+  t('heure d’arrivée retenue pour le retard', b.evenements[0].heure, '07:50');
+  const b2=C.bilanAssiduite(E,jours,'2026-10-07','2026-10-07',[],'2019-01-01');
+  t('une période d’un jour', [b2.attendus,b2.retards,b2.absences], [1,1,0]);
+  const b3=C.bilanAssiduite(E,jours,'2026-10-01','2026-10-12',[],'2026-10-07');
+  t('rien n’est compté avant la date d’embauche', [b3.attendus,b3.absences,b3.retards], [4,1,1]);
+  const b4=C.bilanAssiduite(E,jours,'2026-10-01','2026-10-12',[],'');
+  t('sans date d’embauche : on part de la première présence de la période', b4.evenements[0].ds, '2026-10-05');
+  const b5=C.bilanAssiduite(E,{},'2026-10-01','2026-10-12',[],'');
+  t('aucun pointage : tout à zéro, pas de division par zéro', [b5.attendus,b5.absences,b5.taux], [0,0,0]);
+  S = conf({feries:[{date:'2026-10-06',nom:'Férié test',jours:1}]}); E.invalidate();
+  const b6=C.bilanAssiduite(E,jours,'2026-10-01','2026-10-12',J,'2019-01-01');
+  t('un jour férié n’est jamais une absence', [b6.absences,b6.attendus], [1,5]);
+  S = conf(); E.invalidate();
+}
+
 console.log('\n=========================');
 console.log('  '+ok+' réussis · '+ko+' échoués');
 process.exit(ko?1:0);

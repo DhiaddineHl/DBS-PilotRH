@@ -277,6 +277,38 @@ FAUX_RESEAU = r"""
     return (!c.service||e.service===c.service)&&(!c.atelier||e.atelier===c.atelier)&&(!c.categorie||e.categorie===c.categorie) }
 
   const vrai = window.fetch.bind(window);
+
+  /* --- dossiers disciplinaires (même logique que le serveur, en mémoire) --- */
+  const DISC_PREF = {questionnaire:'Q',observation:'OB',avertissement:'AV',blame:'BL',miseapied:'MP',reprise:'RT',convocation:'CV',pv:'PV'};
+  function discApi(S, chemin, corps){
+    if(!S.discipline) S.discipline = {entrees:[], societe:{}, modeles:{}, compteurs:{}};
+    const d = S.discipline;
+    if(chemin==='/api/discipline' && !corps) return [200,{entrees:d.entrees, societe:d.societe, modeles:d.modeles}];
+    if(chemin==='/api/discipline'){
+      if(!DISC_PREF[corps.type]) return [400,{error:'Type de document inconnu'}];
+      if(!corps.emp) return [400,{error:'Salarié(e) non précisé(e)'}];
+      let e = corps.id ? d.entrees.find(x=>x.id===corps.id) : null;
+      if(corps.id && !e) return [404,{error:'Pièce introuvable'}];
+      if(!e){
+        const cle = DISC_PREF[corps.type]+'-'+String(corps.date).slice(0,4);
+        d.compteurs[cle] = (d.compteurs[cle]||0)+1;
+        e = {id:'D'+Math.random().toString(16).slice(2,12), emp:corps.emp, type:corps.type,
+             ref:cle+'-'+String(d.compteurs[cle]).padStart(3,'0'), cree_le:new Date().toISOString(), cree_par:'RH'};
+        d.entrees.push(e);
+      }
+      ['date','statut','jours','motif','date_faits','du','au','delai_h','faits','corps','reponse','note','suite_de','remis_le']
+        .forEach(k=>{ if(corps[k]!==undefined) e[k]=corps[k] });
+      return [200,{ok:true, entree:e}];
+    }
+    if(chemin==='/api/discipline/supprimer'){ d.entrees = d.entrees.filter(x=>x.id!==corps.id); return [200,{ok:true}]; }
+    if(chemin==='/api/discipline/reglages'){
+      if(corps.societe) d.societe = corps.societe;
+      if(corps.modeles) Object.keys(corps.modeles).forEach(k=>{ if(corps.modeles[k]) d.modeles[k]=corps.modeles[k]; else delete d.modeles[k] });
+      return [200,{ok:true, societe:d.societe, modeles:d.modeles}];
+    }
+    return null;
+  }
+
   window.fetch = function(input, init){
     const url = (typeof input==='string') ? input : (input && input.url) || '';
     const u = url.replace(/^https?:\/\/[^/]+/,'');
@@ -287,6 +319,13 @@ FAUX_RESEAU = r"""
     const q = new URLSearchParams((u.split('?')[1]||''));
     const chemin = u.split('?')[0];
 
+    if(chemin.indexOf('/api/discipline')===0){
+      if(!D.discipline) D.discipline = {entrees:[], modeles:{}, compteurs:{},
+        societe:{nom:'Société de démonstration', nomAr:'شركة العرض التجريبي', adresse:'Zone industrielle, Nabeul',
+                 adresseAr:'المنطقة الصناعية، نابل', ville:'Nabeul', villeAr:'نابل', representantAr:'', qualiteAr:'المدير العام', mf:''}};
+      const r = discApi(D, chemin, m==='POST'?corps:null);
+      if(r) return r[0]===200 ? ok(r[1]) : err(r[1].error, r[0]);
+    }
     switch(chemin){
       case '/api/whoami':
         return ok({login:'demo', nom:'Démonstration', role:'admin', roles:{}});
@@ -407,6 +446,14 @@ FAUX_RESEAU = r"""
                    notes:mesNotes, votes:mesVotes,
                    conges:{du:dec(-330), au:dec(35), auEffectif:TODAY, jours:cj}});
       }
+      case '/api/me/assiduite': {
+        const e = D.employees[0];
+        if(corps.pin!=='123456') return err('code', 401);
+        const au = corps.au>TODAY?TODAY:corps.au, jours={};
+        for(const k in D.pointages){ const r=D.pointages[k][e.id]; if(r && k>=corps.du && k<=au) jours[k]=r; }
+        return ok({du:corps.du, au, today:TODAY, embauche:'', jours, settings:D.settings,
+          justificatifs:(D.absences||[]).filter(a=>a.id===e.id&&a.statut==='justifiée').map(a=>({debut:a.debut,fin:a.fin||a.debut}))});
+      }
       case '/api/me/lu': {
         const e=D.employees[0];
         D.notes.forEach(n=>{ if(n.id===corps.id && (n.lus||[]).indexOf(e.id)<0) n.lus.push(e.id) });
@@ -434,11 +481,12 @@ FAUX_RESEAU = r"""
       case '/api/pointeuse':
         if(m==='POST'){ Object.assign(D.pointeuse, corps||{}); return ok({ok:true, reglages:D.pointeuse}) }
         return ok({reglages:D.pointeuse, etat:D.ptzEtat,
-          silence_h:2.4, muet:false, lecture_directe_possible:false, pyzk:false,
+          silence_h:2.4, muet:false, lecture_directe_possible:false,
           mdb_path:'', sync:{}, url_publique:'https://demonstration.exemple',
-          peut_modifier:true, compte_agent_existe:true});
-      case '/api/pointeuse/agent.txt':
-        return err("Le fichier de lancement de l’agent est préparé par le serveur : indisponible dans cette démonstration.", 503);
+          peut_modifier:true, cle_creee:false});
+      case '/api/pointeuse/kit.zip':
+        return err("Le kit de l’agent est préparé par le serveur (il contient sa clé d’accès) : indisponible dans cette démonstration.", 503);
+      case '/api/pointeuse/cle': return ok({ok:true});
       case '/api/employees/modele.xlsx':
       case '/api/employees/import-fiches':
         return err("Le classeur Excel des fiches est construit et relu par le serveur : indisponible dans cette démonstration hors ligne. Sur votre installation, le bouton télécharge un modèle prérempli avec vos fiches.", 503);
@@ -472,7 +520,8 @@ BANNIERE = """
 def faire_rh(data):
     css = lire(ASSETS, "pilotrh-ui.css")
     js = [lire(ASSETS, f) for f in ("pilotrh-core.js", "pilotrh-app.js",
-                                    "pilotrh-views.js", "pilotrh-saisie.js", "pilotrh-coms.js")]
+                                    "pilotrh-views.js", "pilotrh-saisie.js", "pilotrh-coms.js",
+                                    "pilotrh-suivi.js", "pilotrh-discipline.js")]
     return """<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -498,12 +547,15 @@ def faire_rh(data):
 <script>%(js2)s</script>
 <script>%(js3)s</script>
 <script>%(js4)s</script>
+<script>%(js5)s</script>
+<script>%(js6)s</script>
 <script>demarrer();</script>
 </body>
 </html>
 """ % dict(css=css, banniere=BANNIERE, reseau=FAUX_RESEAU,
            data=json.dumps(data, ensure_ascii=False),
-           js0=js[0], js1=js[1], js2=js[2], js3=js[3], js4=js[4])
+           js0=js[0], js1=js[1], js2=js[2], js3=js[3], js4=js[4],
+           js5=js[5], js6=js[6])
 
 def faire_salarie(data):
     html = lire(BASE, "static", "moi.html")

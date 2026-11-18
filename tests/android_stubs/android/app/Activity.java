@@ -7,4 +7,7 @@ public class Activity extends Context {
   public void onBackPressed(){}
   public void setContentView(View v){}
   public Intent getIntent(){return null;}
+  public void finish(){}
+  public int checkSelfPermission(String p){return 0;}
+  public void requestPermissions(String[] p,int code){}
 }
