@@ -1322,6 +1322,12 @@ function renderPointeuse(){
         '<input class="fldin" id="ptzAl" type="number" min="1" max="240" value="'+seuil+'"'+(modif?'':' disabled')+'></div>'+
       '<div><label class="fldlab" for="ptzNote">Repère (emplacement, modèle…)</label>'+
         '<input class="fldin" id="ptzNote" value="'+esc(r.note||'')+'"'+(modif?'':' disabled')+'></div>'+
+      '<div><label class="fldlab" for="ptzSrc">Ce que l’agent envoie</label>'+
+        '<select class="fldin" id="ptzSrc"'+(modif?'':' disabled')+'>'+
+        [['auto','La pointeuse + le fichier .mdb (recommandé)'],['pointeuse_seule','La pointeuse seulement'],['fichier','Le fichier .mdb seulement']]
+          .map(o=>'<option value="'+o[0]+'"'+((r.source||'auto')===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select></div>'+
+      '<div><label class="fldlab" for="ptzMdb">Fichier .mdb sur le PC de l’atelier</label>'+
+        '<input class="fldin mono" id="ptzMdb" placeholder="vide : recherché automatiquement" value="'+esc(r.mdb||'')+'"'+(modif?'':' disabled')+'></div>'+
     '</div>'+
     (modif?'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'+
       '<button class="btn btn-gold" onclick="savePointeuse()">'+I.check+' Enregistrer</button>'+
@@ -1329,6 +1335,7 @@ function renderPointeuse(){
         ? '<button class="btn btn-ghost" onclick="testPointeuse()">'+I.cloud+' Tester et importer maintenant</button>'
         : '')+
       '<button class="btn btn-ghost" onclick="telechargerAgent()">'+I.download+' Télécharger le kit de l’agent</button>'+
+      '<button class="btn btn-ghost" onclick="afficherCleAgent()">Afficher la clé</button>'+
       (PTZ.cle_creee?'<button class="btn btn-ghost" onclick="changerCleAgent()">Changer la clé</button>':'')+
     '</div>':'')+
     '<div class="hint" style="margin-top:12px">'+
@@ -1347,7 +1354,8 @@ function renderPointeuse(){
 function ptzCorps(){
   return {ip:($('#ptzIp')||{}).value, port:+($('#ptzPort')||{}).value,
           motdepasse:+($('#ptzPw')||{}).value, intervalle:+($('#ptzInt')||{}).value,
-          alerte_h:+($('#ptzAl')||{}).value, note:($('#ptzNote')||{}).value};
+          alerte_h:+($('#ptzAl')||{}).value, note:($('#ptzNote')||{}).value,
+          source:($('#ptzSrc')||{}).value||'auto', mdb:(($('#ptzMdb')||{}).value||'').trim()};
 }
 async function savePointeuse(){
   try{
@@ -1380,10 +1388,42 @@ function ptzAgent(a){
     (endormi?'<br>Il ne donne plus de nouvelles : PC éteint, session Windows fermée, ou fenêtre de l’agent fermée.':'')+
     (p.nom||p.serie?'<br>Pointeuse : '+esc(p.nom||'modèle inconnu')+(p.serie?' · n° '+esc(p.serie):'')+
       (p.pointages!=null?' · '+p.pointages+' badgeages en mémoire':'')+(p.liaison?' · liaison '+esc(p.liaison):''):'')+
+    (a.mdb?'<br>Fichier .mdb envoyé : <span class="mono">'+esc(a.mdb)+'</span>'+(a.mdb_maj?' (modifié le '+esc(String(a.mdb_maj).replace(/^(\d{4})-(\d\d)-(\d\d)/,'$3/$2/$1'))+')':''):'')+
+    (p.dernier?'<br>Mémoire de la pointeuse : badges du '+esc(String(p.premier||'').replace(/^(\d{4})-(\d\d)-(\d\d)/,'$3/$2/$1'))+
+      ' au '+esc(String(p.dernier).replace(/^(\d{4})-(\d\d)-(\d\d)/,'$3/$2/$1'))+
+      (p.aujourdhui!=null?' · <b>'+p.aujourdhui+' badge(s) aujourd’hui</b>':''):'')+
+    (p.videe_recemment?'<br><span class="hint">La pointeuse a été vidée récemment (un logiciel ZKTeco la vide sans doute après téléchargement). '+
+      'Sans conséquence : PilotRH additionne ce qu’apportent l’agent et le fichier .mdb, aucune source n’efface l’autre.</span>':'')+
     (ec!=null && Math.abs(ec)>=5 ? '<br><b>Horloge de la pointeuse décalée de '+Math.abs(ec)+' min ('+(ec>0?'en avance':'en retard')+
       ')</b> : les heures d’entrée et de sortie sont faussées d’autant. Réglez-la sur l’appareil (Menu → Système → Date/Heure).':'')+
     (a.message && a.etat!=='erreur'?'<br><span class="hint">'+esc(a.message)+'</span>':'')+
     '</div></div>';
+}
+async function afficherCleAgent(){
+  try{
+    const d=await api('/api/pointeuse/cle');
+    PTZ.cle_creee=true;
+    openModal('<div class="modal-head">'+I.lock+'<h3>Adresse et clé de l’agent</h3>'+
+      '<button class="x" onclick="closeModal()" aria-label="Fermer">'+I.x+'</button></div>'+
+      '<div class="modal-body"><p style="font-size:13px;color:var(--muted);margin-top:0">À coller dans l’assistant de '+
+      '<span class="mono">DIAGNOSTIC.bat</span> sur le PC de l’atelier (clic droit dans la fenêtre noire pour coller).</p>'+
+      '<label class="fldlab" for="ckUrl">1) Adresse de PilotRH</label>'+
+      '<div style="display:flex;gap:8px"><input class="fldin mono" id="ckUrl" readonly value="'+esc(d.url||location.origin)+'">'+
+      '<button class="btn btn-ghost" onclick="copierChamp(\'ckUrl\')">Copier</button></div>'+
+      '<label class="fldlab" for="ckCle" style="margin-top:12px">2) Clé de l’agent</label>'+
+      '<div style="display:flex;gap:8px"><input class="fldin mono" id="ckCle" readonly value="'+esc(d.cle)+'">'+
+      '<button class="btn btn-ghost" onclick="copierChamp(\'ckCle\')">Copier</button></div>'+
+      '<div class="hint" style="margin-top:12px">Cette clé n’autorise que l’envoi de pointages. Ne la diffusez pas ; '+
+      'si elle a pu être copiée ailleurs, « Changer la clé » la révoque aussitôt.</div></div>'+
+      '<div class="modal-foot"><button class="btn btn-gold" onclick="closeModal();renderPointeuse()">Fermer</button></div>');
+  }catch(e){ toast('Refusé : '+e.message,'err',8000) }
+}
+function copierChamp(id){
+  const el=document.getElementById(id); if(!el) return;
+  el.select();
+  const fait=()=>toast('Copié');
+  if(navigator.clipboard) navigator.clipboard.writeText(el.value).then(fait,()=>{try{document.execCommand('copy');fait()}catch(e){}});
+  else { try{document.execCommand('copy');fait()}catch(e){} }
 }
 async function changerCleAgent(){
   if(!confirm('Changer la clé de l’agent ?\n\nL’agent déjà installé cessera aussitôt d’envoyer les pointages : il faudra retélécharger le kit et remplacer le fichier config.ini sur le PC de l’atelier.\n\nÀ faire si ce PC est remplacé ou si la clé a pu être copiée.')) return;
@@ -1404,5 +1444,5 @@ async function telechargerAgent(){
     PTZ.cle_creee = true; renderPointeuse();
   }catch(e){ toast('Téléchargement impossible : '+e.message,'err',9000) }
 }
-Object.assign(window,{loadPointeuse,renderPointeuse,savePointeuse,testPointeuse,telechargerAgent,changerCleAgent,ptzAgent,ptzDelai});
+Object.assign(window,{loadPointeuse,renderPointeuse,savePointeuse,testPointeuse,telechargerAgent,changerCleAgent,afficherCleAgent,copierChamp,ptzAgent,ptzDelai});
 }

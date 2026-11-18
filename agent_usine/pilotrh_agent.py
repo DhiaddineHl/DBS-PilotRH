@@ -116,8 +116,14 @@ class Config(object):
         self.cle = lire("pilotrh", "cle", "PILOTRH_CLE")
         self.login = lire("pilotrh", "identifiant", "PILOTRH_LOGIN", "agent")
         self.motdepasse = lire("pilotrh", "motdepasse", "PILOTRH_PASSWORD")
-        self.methode = (lire("pointeuse", "methode", "PILOTRH_METHODE", "pointeuse") or "pointeuse").lower()
-        self.mdb = lire("pointeuse", "fichier_mdb", "PILOTRH_MDB", r"C:\ZKTeco\attBackup.mdb")
+        # « auto » : la pointeuse ET le fichier .mdb du logiciel ZKTeco s'il est sur ce PC.
+        # Les anciens config.ini portent « pointeuse » : traité comme « auto », puisque
+        # les envois s'additionnent sans jamais s'effacer. « pointeuse_seule » et
+        # « fichier » restreignent à une seule source.
+        self.methode = (lire("pointeuse", "methode", "PILOTRH_METHODE", "auto") or "auto").lower().replace(" ", "_")
+        if self.methode in ("pointeuse", "les_deux", "deux"):
+            self.methode = "auto"
+        self.mdb = lire("pointeuse", "fichier_mdb", "PILOTRH_MDB", "")
         # Laissés vides, ces réglages sont donnés par PilotRH (Sécurité & accès → Pointeuse).
         self.ip_locale = lire("pointeuse", "ip", "PILOTRH_DEVICE_IP")
         self.port_local = lire("pointeuse", "port", "PILOTRH_DEVICE_PORT")
@@ -130,13 +136,186 @@ class Config(object):
         """Phrase décrivant ce qui manque, ou None."""
         if not self.url or "VOTRE-APP" in self.url:
             return ("L'adresse du serveur PilotRH n'est pas renseignée.",
-                    "Dans PilotRH : Sécurité & accès → Pointeuse → « Télécharger le kit de l'agent ». "
-                    "Le kit contient un fichier config.ini déjà rempli : dézippez-le en entier sur ce PC.")
+                    "Relancez DIAGNOSTIC.bat : il vous posera deux questions et créera config.ini. "
+                    "Ou, dans PilotRH : Sécurité & accès → Pointeuse → « Télécharger le kit de l'agent » "
+                    "(ce kit contient config.ini déjà rempli).")
         if not self.cle and not self.motdepasse:
             return ("Aucune clé d'accès n'est renseignée (ligne « cle » de config.ini).",
-                    "Retéléchargez le kit depuis PilotRH : Sécurité & accès → Pointeuse → "
-                    "« Télécharger le kit de l'agent ». La clé y est déjà inscrite.")
+                    "Relancez DIAGNOSTIC.bat et collez la clé (PilotRH : Sécurité & accès → Pointeuse → "
+                    "« Afficher la clé »), ou retéléchargez le kit depuis PilotRH.")
         return None
+
+
+def interactif():
+    if os.environ.get("PILOTRH_ASSISTANT") == "0":
+        return False
+    if os.environ.get("PILOTRH_ASSISTANT") == "1":
+        return True
+    try:
+        return sys.stdin.isatty()
+    except Exception:
+        return False
+
+
+class _PlusDeSaisie(Exception):
+    pass
+
+
+def _demander(question, defaut=""):
+    try:
+        print("")
+        rep_ = input(question + (" [%s]" % defaut if defaut else "") + " : ")
+    except (EOFError, KeyboardInterrupt):
+        raise _PlusDeSaisie()                 # fenêtre fermée / pas de clavier : on n'insiste pas
+    return (rep_ or "").strip() or defaut
+
+
+def nettoyer_adresse(txt):
+    """Garde « https://nom.up.railway.app » d'une adresse collée telle quelle
+    (avec /moi?t=…, un espace, sans https://…)."""
+    t = (txt or "").strip().strip('"').strip("'")
+    if not t:
+        return ""
+    if not t.lower().startswith(("http://", "https://")):
+        t = "https://" + t
+    proto, _, reste = t.partition("://")
+    hote = reste.split("/")[0].split("?")[0].split("#")[0].strip()
+    return (proto.lower() + "://" + hote) if hote else ""
+
+
+def assistant_config(cfg):
+    """config.ini absent ou incomplet : on pose les deux questions et on l'écrit,
+    au lieu de demander d'éditer un fichier à la main."""
+    print("")
+    print("=" * 62)
+    print("  Configuration de l'agent — deux questions, une seule fois")
+    print("=" * 62)
+    print("La réponse se trouve dans PilotRH : Sécurité & accès → Pointeuse.")
+    try:
+        return _assistant(cfg)
+    except _PlusDeSaisie:
+        print("")
+        print("   Configuration interrompue : rien n'est enregistré.")
+        return None
+
+
+def _assistant(cfg):
+    url = ""
+    essais = 0
+    while not url:
+        essais += 1
+        if essais > 5:
+            print("   Toujours pas d'adresse : configuration abandonnée.")
+            return None
+        url = nettoyer_adresse(_demander(
+            "1) Adresse de PilotRH (celle que vous tapez dans le navigateur, ex. https://pilotrh-xxx.up.railway.app)",
+            cfg.url if cfg.url and "VOTRE-APP" not in cfg.url else ""))
+        if not url:
+            print("   Adresse vide : recommencez (ou fermez la fenêtre pour abandonner).")
+    print("")
+    print("2) Clé de l'agent : dans PilotRH, bouton « Afficher la clé », puis copiez-la ici")
+    print("   (clic droit dans cette fenêtre pour coller).")
+    print("   Pas de clé ? Laissez vide et appuyez sur Entrée : on utilisera un compte PilotRH")
+    print("   de rôle « Chef d'atelier » (identifiant + mot de passe).")
+    cle = _demander("   Clé")
+    login = mdp = ""
+    if not cle:
+        login = _demander("   Identifiant du compte", "agent")
+        mdp = _demander("   Mot de passe de ce compte")
+        if not mdp:
+            print("   Ni clé ni mot de passe : la configuration n'est pas enregistrée.")
+            return None
+    lignes = ["; PilotRH - configuration de l'agent de la pointeuse",
+              "; Ecrit par l'assistant le %s. Ne diffusez pas ce fichier." % time.strftime("%d/%m/%Y"),
+              "", "[pilotrh]", "url = " + url, "cle = " + cle]
+    if not cle:
+        lignes += ["identifiant = " + login, "motdepasse = " + mdp]
+    lignes += ["", "[pointeuse]", "methode = " + (cfg.methode or "pointeuse"),
+               "; Laissez ces lignes vides : l'adresse de la pointeuse se regle dans PilotRH.",
+               "ip = " + (cfg.ip_locale or ""), "port = " + (cfg.port_local or ""),
+               "motdepasse = " + (cfg.mdp_local or ""), "intervalle_min = " + (cfg.intervalle_local or ""),
+               "fichier_mdb = " + (cfg.mdb or ""), ""]
+    try:
+        with open(cfg.fichier, "w", encoding="utf-8") as f:
+            f.write("\n".join(lignes))
+    except OSError as e:
+        print("   Impossible d'écrire %s : %s" % (cfg.fichier, e))
+        print("   Copiez le dossier ailleurs (Bureau, Documents) et relancez.")
+        return None
+    print("")
+    print("   Configuration enregistrée dans config.ini. On continue la vérification…")
+    log("config.ini écrit par l'assistant (serveur %s, accès par %s)." % (url, "clé" if cle else "compte " + login), ecran=False)
+    return Config()
+
+
+NOMS_MDB = ("attbackup.mdb", "att2000.mdb")
+RACINES_MDB = (r"C:\ZKTeco", r"C:\Program Files (x86)", r"C:\Program Files", "C:\\", "D:\\")
+
+
+def _racines_mdb():
+    env = os.environ.get("PILOTRH_RECHERCHE_MDB")
+    if env is not None:
+        return [x for x in env.split(os.pathsep) if x]
+    r = list(RACINES_MDB)
+    for v in ("USERPROFILE", "PUBLIC"):
+        if os.environ.get(v):
+            r.append(os.path.join(os.environ[v], "Documents"))
+    return r
+
+
+MOTS_MDB = ("zk", "att", "time", "pointe", "anviz")
+
+
+def chercher_mdb():
+    """Cherche le fichier du logiciel ZKTeco (attBackup.mdb, att2000.mdb) dans les
+    emplacements habituels ; rend le plus récemment modifié, ou ''.
+    Sous une racine générale (C:\\, Program Files, Documents), on ne descend que
+    dans les dossiers dont le nom évoque la pointeuse, et jamais à plus de
+    3 niveaux : la recherche reste rapide même sur un disque bien rempli."""
+    trouves = []
+    for racine in _racines_mdb():
+        if not os.path.isdir(racine):
+            continue
+        nom_racine = os.path.basename(racine.rstrip("\\/")).lower()
+        racine_parlante = any(m in nom_racine for m in MOTS_MDB)
+        for dossier, sous, fichiers in os.walk(racine):
+            rel = os.path.relpath(dossier, racine)
+            prof = 0 if rel == "." else rel.count(os.sep) + 1
+            for f in fichiers:
+                if f.lower() in NOMS_MDB:
+                    chemin = os.path.join(dossier, f)
+                    try:
+                        trouves.append((os.path.getmtime(chemin), chemin))
+                    except OSError:
+                        pass
+            if prof >= 3:
+                sous[:] = []
+            elif prof == 0 and not racine_parlante:
+                sous[:] = [d for d in sous if any(m in d.lower() for m in MOTS_MDB)]
+    return max(trouves)[1] if trouves else ""
+
+
+def mode_effectif(cfg, du_serveur):
+    """La source choisie dans PilotRH l'emporte, sauf si config.ini en impose une."""
+    if cfg.methode in ("fichier", "pointeuse_seule"):
+        return cfg.methode
+    src = (du_serveur or {}).get("source") or "auto"
+    return src if src in ("fichier", "pointeuse_seule") else "auto"
+
+
+def chemin_mdb(cfg, du_serveur, etat=None):
+    """Le fichier .mdb à envoyer : celui de config.ini, sinon celui réglé dans
+    PilotRH, sinon le dernier trouvé, sinon une recherche sur ce PC."""
+    for c in (cfg.mdb, (du_serveur or {}).get("mdb") or ""):
+        if c:
+            return c
+    deja = (etat or {}).get("mdb_trouve")
+    if deja and os.path.exists(deja):
+        return deja
+    c = chercher_mdb()
+    if etat is not None and c:
+        etat["mdb_trouve"] = c
+    return c
 
 
 def reglages_effectifs(cfg, du_serveur):
@@ -156,6 +335,10 @@ def reglages_effectifs(cfg, du_serveur):
     return r
 
 
+def _sans_temporaire(e):
+    return dict((k, v) for k, v in e.items() if not k.startswith("_"))
+
+
 def lire_etat():
     try:
         with open(ETAT, encoding="utf-8") as f:
@@ -168,7 +351,7 @@ def ecrire_etat(e):
     try:
         tmp = ETAT + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(e, f)
+            json.dump(_sans_temporaire(e), f)
         os.replace(tmp, ETAT)
     except Exception:
         pass
@@ -273,6 +456,23 @@ def rapport(cfg, etat, code="", message="", conseil="", pointeuse=None, extra=No
 
 
 # ------------------------------------------------------------- la pointeuse
+def memoire(punches):
+    """Ce que la pointeuse a réellement en mémoire : premier et dernier badge, et
+    combien aujourd'hui. Un premier badge très récent veut dire qu'un logiciel
+    (ZKTeco, ZKTime…) vide la pointeuse après l'avoir téléchargée."""
+    auj = time.strftime("%Y-%m-%d")
+    if not punches:
+        return {"premier": "", "dernier": "", "aujourdhui": 0, "videe_recemment": False}
+    premier = min(p["dt"] for p in punches)
+    try:
+        age = (datetime.date.today() - datetime.date.fromisoformat(premier[:10])).days
+    except ValueError:
+        age = 9999
+    return {"premier": premier[:16], "dernier": max(p["dt"] for p in punches)[:16],
+            "aujourdhui": sum(1 for p in punches if p["dt"][:10] == auj),
+            "videe_recemment": age <= 7}
+
+
 def ecart_horloge_min(heure_pointeuse):
     try:
         hp = datetime.datetime.strptime(heure_pointeuse, "%Y-%m-%d %H:%M:%S")
@@ -318,18 +518,26 @@ def a_envoyer(punches, etat, tout=False):
     return [p for p in punches if p["dt"][:10] >= du], du, False, signature
 
 
-def cycle_pointeuse(cfg, etat, tout=False):
-    """Une remontée complète. Rend le texte du résultat ; lève ErreurPointeuse / ErreurServeur."""
-    du_serveur = etat.get("reglages")
+def rafraichir_reglages(cfg, etat):
+    """Redemande à PilotRH les réglages (adresse, fréquence, source) AVANT de
+    choisir quoi lire : un changement fait dans PilotRH s'applique dès ce passage."""
+    if etat.get("_frais"):
+        return etat.get("reglages")
     try:
         rep = rapport(cfg, "demarrage" if not etat.get("vu") else "veille")
-        du_serveur = rep.get("reglages") or du_serveur
-        etat["reglages"] = du_serveur
+        etat["reglages"] = rep.get("reglages") or etat.get("reglages")
         etat["vu"] = True
     except ErreurServeur as e:
         if e.code in ("cle_refusee", "role", "ancienne_version", "pas_pilotrh"):
             raise
-        log("PilotRH injoignable pour l'instant (%s) : lecture de la pointeuse avec les derniers réglages connus." % e.message)
+        log("PilotRH injoignable pour l'instant (%s) : derniers réglages connus utilisés." % e.message)
+    etat["_frais"] = True
+    return etat.get("reglages")
+
+
+def cycle_pointeuse(cfg, etat, tout=False):
+    """Une remontée complète. Rend le texte du résultat ; lève ErreurPointeuse / ErreurServeur."""
+    du_serveur = rafraichir_reglages(cfg, etat)
     r = reglages_effectifs(cfg, du_serveur)
     etat["intervalle"] = r["intervalle"]
 
@@ -341,6 +549,7 @@ def cycle_pointeuse(cfg, etat, tout=False):
                      "pointages": len(d["punches"]), "personnes": len(d["users"]),
                      "heure": infos.get("heure"), "ecart_horloge_min": ecart,
                      "ignores": d["ignores"], "ip": r["ip"]}
+    infos_rapport.update(memoire(d["punches"]))
     log("Pointeuse %s lue : %d personnes, %d badgeages en mémoire%s." % (
         infos.get("nom") or "", len(d["users"]), len(d["punches"]),
         (" (%d enregistrements illisibles ignorés)" % d["ignores"]) if d["ignores"] else ""))
@@ -368,23 +577,23 @@ def cycle_pointeuse(cfg, etat, tout=False):
         rep.get("employees", "?"), rep.get("jours", "?"))
 
 
-def cycle_fichier(cfg, etat):
-    """Méthode de secours : envoi du fichier attBackup.mdb produit par le logiciel ZKTeco."""
-    try:
-        rapport(cfg, "veille")
-    except ErreurServeur as e:
-        if e.code in ("cle_refusee", "role", "ancienne_version", "pas_pilotrh"):
-            raise
-    if not os.path.exists(cfg.mdb):
+def cycle_fichier(cfg, etat, chemin=None, note=""):
+    """Envoi du fichier .mdb que le logiciel ZKTeco tient à jour sur ce PC. Il garde
+    tout l'historique et se complète au fil de la journée : c'est la source la plus
+    complète quand la pointeuse elle-même est vidée par ce logiciel."""
+    rafraichir_reglages(cfg, etat)
+    chemin = chemin or cfg.mdb
+    if not chemin or not os.path.exists(chemin):
         raise ErreurPointeuse(
-            "fichier_absent", "Fichier introuvable : %s" % cfg.mdb,
-            "Vérifiez le chemin (ligne « fichier_mdb » de config.ini). S'il est sur un dossier partagé, "
-            "ce dossier est-il bien accessible depuis ce PC ?")
-    mt = os.path.getmtime(cfg.mdb)
-    if etat.get("mdb_mtime") == mt and etat.get("dernier_complet") == time.strftime("%Y-%m-%d"):
-        rapport(cfg, "ok", message="Fichier .mdb inchangé depuis le dernier envoi.", extra={"envoyes": 0})
-        return "Rien à envoyer : le fichier n'a pas changé."
-    with open(cfg.mdb, "rb") as f:
+            "fichier_absent", "Fichier introuvable : %s" % (chemin or "aucun attBackup.mdb trouvé sur ce PC"),
+            "Indiquez son emplacement dans PilotRH (Pointeuse → « Fichier .mdb ») ou dans config.ini "
+            "(ligne « fichier_mdb »). S'il est sur un dossier partagé, ce dossier est-il accessible depuis ce PC ?")
+    mt = os.path.getmtime(chemin)
+    infos = {"mdb": chemin, "mdb_maj": time.strftime("%Y-%m-%d %H:%M", time.localtime(mt))}
+    if etat.get("mdb_mtime") == mt and etat.get("mdb_jour") == time.strftime("%Y-%m-%d"):
+        rapport(cfg, "ok", message="Fichier .mdb inchangé depuis le dernier envoi." + note, extra=dict(infos, envoyes=0))
+        return "Fichier .mdb inchangé depuis le dernier envoi."
+    with open(chemin, "rb") as f:
         contenu = f.read()
     limite = "----PilotRHAgent%d" % int(time.time() * 1000)
     corps = (("--%s\r\nContent-Disposition: form-data; name=\"file\"; filename=\"attBackup.mdb\"\r\n"
@@ -392,15 +601,23 @@ def cycle_fichier(cfg, etat):
              + contenu + ("\r\n--%s--\r\n" % limite).encode("ascii"))
     appel(cfg, "/api/import-mdb", brut=corps, type_contenu="multipart/form-data; boundary=" + limite, delai=600)
     etat["mdb_mtime"] = mt
-    etat["dernier_complet"] = time.strftime("%Y-%m-%d")
-    rapport(cfg, "ok", message="Fichier .mdb envoyé (%d Ko)." % (len(contenu) // 1024), extra={"envoyes": 1})
-    return "Fichier envoyé à PilotRH (%d Ko)." % (len(contenu) // 1024)
+    etat["mdb_jour"] = time.strftime("%Y-%m-%d")
+    rapport(cfg, "ok", message="Fichier .mdb envoyé (%d Ko)." % (len(contenu) // 1024) + note,
+            extra=dict(infos, envoyes=1))
+    return "Fichier .mdb envoyé à PilotRH (%d Ko, modifié à %s)." % (len(contenu) // 1024, infos["mdb_maj"][11:])
 
 
 def un_cycle(cfg, etat, tout=False):
     """Rend True si tout s'est bien passé. N'échoue jamais : toute panne est expliquée."""
+    etat.pop("_frais", None)
     try:
-        res = cycle_fichier(cfg, etat) if cfg.methode == "fichier" else cycle_pointeuse(cfg, etat, tout)
+        mode = mode_effectif(cfg, rafraichir_reglages(cfg, etat))
+        if mode == "fichier":
+            res = cycle_fichier(cfg, etat, chemin_mdb(cfg, etat.get("reglages"), etat))
+        elif mode == "pointeuse_seule":
+            res = cycle_pointeuse(cfg, etat, tout)
+        else:
+            return cycle_deux(cfg, etat, tout)
         log("OK — " + res)
         ecrire_etat(etat)
         return True
@@ -422,6 +639,53 @@ def un_cycle(cfg, etat, tout=False):
             pass
     ecrire_etat(etat)
     return False
+
+
+def cycle_deux(cfg, etat, tout=False):
+    """La pointeuse ET le fichier .mdb. Les envois s'additionnent côté PilotRH :
+    ce que l'un a manqué, l'autre l'apporte. Il suffit que l'un des deux marche."""
+    ok, panne_pointeuse = False, None
+    try:
+        log("OK — " + cycle_pointeuse(cfg, etat, tout))
+        ok = True
+    except ErreurServeur as e:
+        if e.code in ("cle_refusee", "role", "ancienne_version", "pas_pilotrh"):
+            log("ÉCHEC — " + e.message)
+            if e.conseil:
+                log("   Que faire : " + e.conseil)
+            ecrire_etat(etat)
+            return False
+        panne_pointeuse = e
+    except ErreurPointeuse as e:
+        panne_pointeuse = e
+    except Exception as e:
+        log(traceback.format_exc(), ecran=False)
+        panne_pointeuse = ErreurPointeuse("interne", "Erreur interne en lisant la pointeuse : %s" % e)
+    if panne_pointeuse is not None:
+        log("Pointeuse : " + panne_pointeuse.message)
+    chemin = chemin_mdb(cfg, etat.get("reglages"), etat)
+    if chemin and os.path.exists(chemin):
+        note = (" (Pointeuse non lue : %s)" % panne_pointeuse.message) if panne_pointeuse else ""
+        try:
+            log("OK — " + cycle_fichier(cfg, etat, chemin, note))
+            ok = True
+        except (ErreurPointeuse, ErreurServeur) as e:
+            log("Fichier .mdb : " + e.message)
+        except Exception as e:
+            log("Fichier .mdb : erreur %s" % e)
+            log(traceback.format_exc(), ecran=False)
+    elif panne_pointeuse is not None and not ok:
+        log("   (aucun fichier attBackup.mdb trouvé sur ce PC pour prendre le relais)")
+    if not ok and panne_pointeuse is not None:
+        if getattr(panne_pointeuse, "conseil", ""):
+            log("   Que faire : " + panne_pointeuse.conseil)
+        try:
+            rapport(cfg, "erreur", code=panne_pointeuse.code, message=panne_pointeuse.message,
+                    conseil=getattr(panne_pointeuse, "conseil", ""))
+        except Exception:
+            pass
+    ecrire_etat(etat)
+    return ok
 
 
 # --------------------------------------------------------------- diagnostic
@@ -466,13 +730,20 @@ def diagnostic(cfg):
     dire("")
     dire("2. La configuration (config.ini)")
     pb = cfg.probleme()
+    if pb and interactif():
+        if not cfg.fichier_lu:
+            dire("   Le fichier config.ini est absent : l'assistant va le créer avec vous.")
+        nouveau = assistant_config(cfg)
+        if nouveau is not None:
+            cfg = nouveau
+            pb = cfg.probleme()
     if pb:
         if not cfg.fichier_lu:
             dire("   Le fichier config.ini est absent de ce dossier : %s" % DOSSIER)
         return echec(pb[0], pb[1])
     dire("   [OK] Serveur : %s" % cfg.url)
     dire("   [OK] Accès : %s" % ("clé du kit" if cfg.cle else "compte « %s »" % cfg.login))
-    dire("   Méthode : %s" % ("fichier .mdb" if cfg.methode == "fichier" else "lecture directe de la pointeuse"))
+
 
     dire("")
     dire("3. Le serveur PilotRH répond-il ?")
@@ -490,18 +761,31 @@ def diagnostic(cfg):
     except ErreurServeur as e:
         return echec(e.message, e.conseil)
     r = reglages_effectifs(cfg, rep.get("reglages"))
+    mode = mode_effectif(cfg, rep.get("reglages"))
+    dire("   Sources : %s" % {"fichier": "fichier .mdb seulement", "pointeuse_seule": "pointeuse seulement",
+                              "auto": "la pointeuse ET le fichier .mdb du logiciel ZKTeco s'il est sur ce PC"}[mode])
 
-    if cfg.methode == "fichier":
+    chemin = ""
+    if mode != "pointeuse_seule":
         dire("")
-        dire("5. Le fichier de la pointeuse")
-        if not os.path.exists(cfg.mdb):
-            return echec("Fichier introuvable : %s" % cfg.mdb,
-                         "Vérifiez le chemin (ligne « fichier_mdb » de config.ini). S'il est sur un "
-                         "dossier partagé, ce dossier est-il bien accessible depuis ce PC ?")
-        dire("   [OK] %s — %d Ko, modifié le %s" % (
-            cfg.mdb, os.path.getsize(cfg.mdb) // 1024,
-            time.strftime("%d/%m/%Y %H:%M", time.localtime(os.path.getmtime(cfg.mdb)))))
-        return fin(True)
+        dire("4 bis. Le fichier du logiciel ZKTeco (attBackup.mdb)")
+        chemin = chemin_mdb(cfg, rep.get("reglages"))
+        if chemin and os.path.exists(chemin):
+            dire("   [OK] %s — %d Ko, modifié le %s" % (
+                chemin, os.path.getsize(chemin) // 1024,
+                time.strftime("%d/%m/%Y %H:%M", time.localtime(os.path.getmtime(chemin)))))
+            if not (cfg.mdb or (rep.get("reglages") or {}).get("mdb")):
+                dire("   (trouvé automatiquement sur ce PC)")
+        elif mode == "fichier":
+            return echec("Fichier introuvable : %s" % (chemin or "aucun attBackup.mdb trouvé sur ce PC"),
+                         "Indiquez son emplacement dans PilotRH (Pointeuse → « Fichier .mdb ») ou dans config.ini "
+                         "(ligne « fichier_mdb »). S'il est sur un dossier partagé, ce dossier est-il accessible depuis ce PC ?")
+        else:
+            chemin = ""
+            dire("   Aucun fichier attBackup.mdb trouvé sur ce PC%s." % (" à l'emplacement %s" % (cfg.mdb or (rep.get("reglages") or {}).get("mdb")) if (cfg.mdb or (rep.get("reglages") or {}).get("mdb")) else ""))
+            dire("   Ce n'est pas bloquant : l'agent lira la pointeuse directement.")
+        if mode == "fichier":
+            return fin(True)
 
     dire("")
     dire("5. La pointeuse est-elle joignable ?  (adresse %s, port %s%s)" % (
@@ -542,11 +826,22 @@ def diagnostic(cfg):
                         "\n        Si le ping ne répond pas : câble, prise réseau, ou PC sur un autre réseau (Wi-Fi invité…)."
                         "\n        Si le ping répond mais pas le port : un autre logiciel ZKTeco est peut-être"
                         "\n        connecté à la pointeuse en même temps — fermez-le.") % r["ip"]
+        if chemin:
+            dire("   [ATTENTION] " + e.message)
+            dire("   La pointeuse ne répond pas, mais le fichier .mdb prend le relais : les pointages remonteront.")
+            dire("   Pour lire aussi la pointeuse directement : " + conseil)
+            return fin(True)
         return echec(e.message, conseil)
     dire("   [OK] Connectée en %s — modèle « %s », n° de série %s" % (i["liaison"], i["nom"] or "?", i["serie"] or "?"))
     dire("   [OK] %d personnes enregistrées, %d badgeages en mémoire" % (len(us), len(pts)))
     if pts:
         dire("   Badgeages du %s au %s" % (min(x["dt"] for x in pts)[:10], max(x["dt"] for x in pts)[:16]))
+    mem = memoire(pts)
+    dire("   Aujourd'hui : %d badgeage(s) dans la mémoire de la pointeuse" % mem["aujourdhui"])
+    if mem["videe_recemment"]:
+        dire("   NOTE : la mémoire de la pointeuse ne remonte qu'au %s. Un logiciel (ZKTeco, ZKTime…) la vide" % mem["premier"][:10])
+        dire("   sans doute après l'avoir téléchargée. Ce n'est pas bloquant : PilotRH additionne ce que")
+        dire("   l'agent et le fichier .mdb apportent, aucune source n'efface l'autre.")
     if p.ignores:
         dire("   Note : %d enregistrements à date impossible ont été ignorés." % p.ignores)
     ecart = ecart_horloge_min(i.get("heure") or "")
@@ -588,6 +883,11 @@ def main(argv):
     log("=" * 50)
     log("Agent PilotRH %s démarré sur « %s » (Python %s)." % (VERSION, socket.gethostname(), platform.python_version()))
     pb = cfg.probleme()
+    if pb and interactif():
+        nouveau = assistant_config(cfg)
+        if nouveau is not None:
+            cfg = nouveau
+            pb = cfg.probleme()
     if pb:
         log("ÉCHEC — " + pb[0])
         log("   Que faire : " + pb[1])

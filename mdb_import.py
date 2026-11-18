@@ -160,6 +160,30 @@ def merge_punches(state, users_rows, punch_rows, du=DEFAULT_DU, au=None):
     return _merge_assembled(state, *parse_punches(users_rows, punch_rows, du, au))
 
 
+def _badges_rec(r):
+    """Les heures badgées déjà connues pour une journée (« HH:MM »)."""
+    if not isinstance(r, dict):
+        return []
+    p = r.get("punches")
+    if isinstance(p, list) and p:
+        src = p
+    else:
+        src = [r.get("entree"), r.get("sortie")]
+    return [str(x)[:5] for x in src if x and len(str(x)) >= 5 and str(x)[2] == ":"]
+
+
+def _fusion_badges(*listes):
+    """Réunion de plusieurs lectures d'une même journée, triée, en ne gardant
+    qu'un passage par tranche de 5 minutes (même règle qu'à l'assemblage)."""
+    tout = sorted(set(x for l in listes for x in l))
+    out = []
+    for t in tout:
+        if out and (int(t[:2]) * 60 + int(t[3:5])) - (int(out[-1][:2]) * 60 + int(out[-1][3:5])) < 5:
+            continue
+        out.append(t)
+    return out
+
+
 def _est_protege(rec):
     """Un enregistrement de pointage est protégé (jamais écrasé par un import) dès
     qu'il a été touché manuellement : statut/entrée/sortie corrigés (rec['manuel']),
@@ -313,7 +337,7 @@ def _merge_assembled(state, users, actifs, day_user):
     # pointages
     pointages = state.get("pointages", {})
     emp_ids = [e["id"] for e in employees if e.get("actif", True)]
-    stats = {"protegees": 0, "jours": 0, "feries": 0, "ignores_clos": 0,
+    stats = {"protegees": 0, "jours": 0, "feries": 0, "ignores_clos": 0, "badges_conserves": 0,
              "nouvelles": nouvelles, "ignores": ignores, "anciens": anciens,
              "rattaches": len(badge_to_id)}
     for d in sorted(day_user):
@@ -336,10 +360,20 @@ def _merge_assembled(state, users, actifs, day_user):
                 rec[eid] = existant
                 stats["protegees"] += 1
                 continue
-            r = {"statut": "present", "entree": plist[0],
-                 "sortie": plist[-1] if len(plist) > 1 else "", "src": "import"}
-            if len(plist) > 2:
-                r["punches"] = plist
+            # Un import AJOUTE des badges, il n'en retire jamais. Chaque source ne
+            # voit qu'une partie de la journée : l'agent ne lit que ce que la
+            # pointeuse a encore en mémoire (le logiciel ZKTeco peut l'avoir vidée
+            # après son propre téléchargement), le fichier .mdb s'arrête à sa
+            # dernière copie. Remplacer la journée par la dernière lecture effaçait
+            # ce que l'autre source avait apporté.
+            avant = _badges_rec(existant)
+            tous = _fusion_badges(avant, plist)
+            if avant and len(tous) > len(plist):
+                stats["badges_conserves"] = stats.get("badges_conserves", 0) + 1
+            r = {"statut": "present", "entree": tous[0],
+                 "sortie": tous[-1] if len(tous) > 1 else "", "src": "import"}
+            if len(tous) > 2:
+                r["punches"] = tous
             rec[eid] = r
         for eid in emp_ids:
             if eid in present:
@@ -352,6 +386,12 @@ def _merge_assembled(state, users, actifs, day_user):
             if _est_protege(existant):
                 rec[eid] = existant
                 stats["protegees"] += 1
+            elif _badges_rec(existant) or (isinstance(existant, dict) and
+                                           existant.get("statut") not in (None, "", "absent", "ferie", "repos")):
+                # cette lecture ne la voit pas, mais une lecture précédente l'avait
+                # vue badger : elle reste présente (c'était le bug « journée effacée »)
+                rec[eid] = existant
+                stats["badges_conserves"] = stats.get("badges_conserves", 0) + 1
             elif est_ferie:
                 # NE PAS marquer absent un jour férié
                 rec[eid] = {"statut": "ferie", "entree": "", "sortie": "", "src": "calendrier"}

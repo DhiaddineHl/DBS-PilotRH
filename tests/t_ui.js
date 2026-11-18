@@ -479,6 +479,11 @@ const { chromium } = require('playwright');
   t('on voit sur quel PC tourne l\'agent', /PC-ATELIER/.test(ag) && /Windows 10/.test(ag), ag.slice(0,200));
   t('et quand il a donné des nouvelles', /vu il y a \d+ min/.test(ag), ag.slice(0,200));
   t('le modèle et la mémoire de la pointeuse sont affichés', /F18\/ID/.test(ag) && /98500 badgeages/.test(ag));
+  t('le fichier .mdb envoyé par l\'agent est affiché, avec sa date', /Fichier \.mdb envoyé : C:\\ZKTeco\\attBackup\.mdb/.test(ag) && /modifié le \d\d\/\d\d\/\d{4} 10:32/.test(ag), ag);
+  t('la source se choisit dans PilotRH (par défaut : pointeuse + fichier)', (await page.inputValue('#ptzSrc'))==='auto' && await page.locator('#ptzSrc option').count()===3);
+  t('le chemin du fichier est facultatif (recherche automatique)', /recherché automatiquement/.test(await page.getAttribute('#ptzMdb','placeholder')));
+  t('la mémoire réelle de la pointeuse est affichée (premier et dernier badge, badges du jour)', /Mémoire de la pointeuse : badges du/.test(ag) && /184 badge\(s\) aujourd’hui/.test(ag), ag);
+  t('une pointeuse vidée par un autre logiciel est expliquée, et dite sans conséquence', /vidée récemment/.test(ag) && /aucune source n’efface l’autre/.test(ag));
   t('le décalage d\'horloge de la pointeuse est signalé', /décalée de 47 min/.test(ag) && /en retard/.test(ag), ag);
   const er = await page.locator('#ptzErr').innerText();
   t('la dernière panne de l\'agent est lisible depuis PilotRH', /Rien ne répond à l’adresse 192\.168\.1\.201/.test(er), er);
@@ -512,14 +517,27 @@ const { chromium } = require('playwright');
   await page.waitForTimeout(500);
   t('après téléchargement, la clé peut être changée',
     await page.locator('#ptzBox button:has-text("Changer la clé")').count() === 1);
+  /* « Afficher la clé » : de quoi répondre à l'assistant de DIAGNOSTIC.bat */
+  await page.click('#ptzBox button:has-text("Afficher la clé")'); await page.waitForSelector('#ckCle');
+  t('« Afficher la clé » montre l\'adresse et la clé à coller dans l\'assistant',
+    (await page.inputValue('#ckUrl'))==='https://demo.up.railway.app' && (await page.inputValue('#ckCle'))==='CLE-DEMO-abc123');
+  t('avec un bouton Copier pour chacune', await page.locator('.modal-body button:has-text("Copier")').count()===2);
+  await page.evaluate(()=>closeModal());
+  /* le bug vu en vrai : un écran resté en cache clique sur l'ancien bouton */
+  const ancien = await page.evaluate(async()=>{const r=await fetch('/api/pointeuse/agent.txt');let m='erreur '+r.status;try{m=(JSON.parse(await r.text()).error)||m}catch(x){};return m});
+  t('ancien écran en cache : message clair au lieu de « erreur 404 »', /Rechargez la page \(touches Ctrl \+ F5\)/.test(ancien), ancien);
+  const vers = await page.evaluate(()=>[...document.scripts].filter(s=>s.src.includes('/assets/')).map(s=>s.src));
+  t('chaque script de la page porte un numéro de version', vers.length>=7 && vers.every(u=>/\?v=[0-9a-f]{10}$/.test(u)), vers.join(' '));
 
   await page.fill('#ptzIp','192.168.1.55');
   await page.fill('#ptzInt','15');
   await page.click('#ptzBox button:has-text("Enregistrer")');
   await page.waitForTimeout(700);
+  await page.selectOption('#ptzSrc','fichier'); await page.fill('#ptzMdb','D:\\Pointage\\attBackup.mdb');
   t('les réglages sont enregistrés et relus',
     (await page.locator('#ptzIp').inputValue()) === '192.168.1.55',
     await page.locator('#ptzIp').inputValue());
+  t('source et chemin du fichier enregistrés et relus', (await page.inputValue('#ptzSrc'))==='fichier' && (await page.inputValue('#ptzMdb'))==='D:\\Pointage\\attBackup.mdb');
   await page.fill('#ptzIp','pas-une-adresse');
   await page.click('#ptzBox button:has-text("Enregistrer")');
   /* le message apparaît de façon asynchrone : on l'attend au lieu de deviner un délai */

@@ -12,7 +12,7 @@ mode de paie (à l’heure / à la journée) et taux avec repli sur le taux par 
 ```
 cd tests && python3 t_mdb.py
 ```
-55 tests : correction du sexe, protections anti-écrasement, fériés, mois clôturé,
+69 tests : correction du sexe, protections anti-écrasement, fériés, mois clôturé,
 collision d'identifiants après suppression, démissions — et surtout **aucune personne de la
 pointeuse écartée en silence** : inscrite sans nom, recrue d'un seul jour, fiche créée à la main,
 zéros en tête du badge, badge redonné après une démission (signalé, jamais réintégré d'office).
@@ -30,7 +30,7 @@ changement, pointages intacts, 120 fiches d'un coup.
 ```
 cd tests && python3 t_app.py
 ```
-392 tests, dont le **portier d'authentification exercé tel quel** : tout endpoint
+408 tests, dont le **portier d'authentification exercé tel quel** : tout endpoint
 de l'espace salarié doit passer sans session (c'est l'oubli qui empêchait les votes
 de partir), tout le reste doit rester fermé, et un compte en lecture seule ne doit
 rien pouvoir écrire. Depuis cette version, le **chef d'atelier** est explicitement
@@ -55,7 +55,7 @@ jamais régénéré au démarrage).
 cd tests && node mock.js &        # faux serveur avec 120 salariés et 75 jours
 node t_ui.js                      # nécessite playwright
 ```
-207 tests : XSS avec un nom hostile, filtres et tri, saisie rapide, correction sur
+217 tests : XSS avec un nom hostile, filtres et tri, saisie rapide, correction sur
 plage de dates, graphiques sans CDN, menu mobile, parcours complet de l'espace salarié,
 alertes cliquables jusqu'à la ligne surlignée, saisie du prix de l'heure ou de la
 journée, colonnes Taux et Montant du rapport de paie, import de fiches de bout en bout, vote d'une salariée suivi jusqu'à la réponse HTTP
@@ -74,7 +74,7 @@ lui-même, la fausse pointeuse est d'abord interrogée par `pyzk`, la bibliothè
 ```
 cd tests && python3 t_agent.py
 ```
-109 tests : l'agent est lancé pour de vrai, face à la fausse pointeuse et à un faux serveur.
+158 tests : l'agent est lancé pour de vrai, face à la fausse pointeuse et à un faux serveur.
 Chaque panne doit être nommée avec sa solution, à l'écran et dans PilotRH. Les fichiers `.bat`
 ne peuvent pas être exécutés ici (pas de Windows) : leurs deux pièges connus — fins de ligne et
 accents — et la cohérence de leurs `goto` sont vérifiés. Ils se régénèrent avec
@@ -92,7 +92,7 @@ modifient ses données (vote enregistré, réglages, corrections).
 ```
 cd tests && python3 t_deploiement.py
 ```
-36 tests sur la panne « Permission denied: /app/data/backups » : résolution du
+42 tests sur la panne « Permission denied: /app/data/backups » : résolution du
 dossier de données (`PILOTRH_DATA`, puis `RAILWAY_VOLUME_MOUNT_PATH`), message
 d'erreur qui explique quoi faire au lieu d'afficher une trace, et surtout le
 **script d'entrée réellement exécuté** — droits du volume ajustés, privilèges

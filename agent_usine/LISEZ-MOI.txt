@@ -27,6 +27,13 @@ Mise en route (5 minutes)
     double-cliquez une fois sur   DEMARRAGE_AUTOMATIQUE.bat
 
 
+Pointeuse et fichier attBackup.mdb
+----------------------------------
+Par défaut l'agent envoie les deux : ce qu'il lit sur la pointeuse, et le fichier
+attBackup.mdb du logiciel ZKTeco s'il le trouve sur ce PC (il le cherche tout seul).
+PilotRH additionne les deux : plus besoin d'importer le fichier à la main.
+
+
 Où régler l'adresse de la pointeuse ?
 -------------------------------------
 Dans PilotRH : Sécurité & accès -> Pointeuse. Pas sur ce PC.

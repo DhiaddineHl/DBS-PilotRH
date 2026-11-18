@@ -13,7 +13,7 @@ Ce fichier vérifie les trois pièces du correctif :
   3. le script d'entrée, qui ajuste les droits du volume PUIS lâche les
      privilèges — vérifié en le lançant réellement.
 """
-import os
+import os, re
 import shutil
 import subprocess
 import sys
@@ -192,6 +192,21 @@ tv("plus de USER figé avant le montage du volume",
 tv("l'utilisateur non privilégié existe toujours", "useradd -r -u 10001" in df)
 tv("le contrôle de santé est conservé", "HEALTHCHECK" in df)
 tv("le fuseau de l'usine est conservé", "Africa/Tunis" in df)
+
+print("\n--- Mise a jour : le navigateur ne garde jamais un ancien script ---")
+sys.path.insert(0, os.path.join(RACINE, "outils"))
+import versionner as V
+for page in ("index.html", "moi.html"):
+    html = open(os.path.join(RACINE, "static", page), encoding="utf-8").read()
+    t("%s : chaque script porte l'empreinte de son contenu actuel (sinon : python3 outils/versionner.py)" % page,
+      V.versionner(html) == html, True)
+    t("%s : aucun script sans numero de version" % page,
+      bool(re.search(r'src="/assets/[\w.-]+\.js"', html)), False)
+app_src = open(os.path.join(RACINE, "app.py"), encoding="utf-8").read()
+t("le serveur oblige a reverifier les scripts a chaque ouverture",
+  '"no-cache, must-revalidate"' in app_src and 'p.startswith("/assets/")' in app_src, True)
+t("l'ancienne adresse du bouton de la version precedente explique quoi faire (pas de 404 muet)",
+  '"/api/pointeuse/agent.txt"' in app_src and "Ctrl + F5" in app_src, True)
 
 print("\n=========================")
 print("  %d réussis · %d échoués" % (ok, ko))

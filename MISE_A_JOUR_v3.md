@@ -519,6 +519,18 @@ Ce qui change :
   qu'un `.bat` « s'ouvre et se referme » sans rien dire. Lancé depuis l'intérieur du ZIP, le kit
   le détecte et explique quoi faire au lieu de se fermer.
 
+**Kit sans `config.ini`** : `DIAGNOSTIC.bat` pose deux questions (adresse de PilotRH, clé) et
+écrit le fichier. La clé s'affiche dans PilotRH (*Pointeuse → « Afficher la clé »*, avec bouton
+Copier, consultation tracée). À défaut de clé, un compte **Chef d'atelier** fonctionne aussi —
+il était refusé par le serveur au moment du rapport de l'agent, c'est corrigé. Sans clavier
+(tâche planifiée), aucune question n'est posée : la cause et la solution sont écrites.
+
+**Plus d'écran resté en cache après une mise à jour** : le bouton « Fichier de lancement de
+l'agent » d'une version précédente répondait « erreur 404 », parce que le navigateur gardait les
+anciens scripts. Chaque script porte désormais un numéro de version (`outils/versionner.py`,
+vérifié par un test), le serveur oblige le navigateur à les revérifier, et l'ancienne adresse
+répond « rechargez la page (Ctrl + F5) » au lieu d'une erreur muette.
+
 **Les anciens fichiers** (`pilotrh_agent.py` à la racine, `push_pointeuse.py`,
 `installer_agent.bat`, `lancer_agent_pointeuse.bat`, `DIAGNOSTIC_POINTEUSE.bat`,
 `diagnostic_pointeuse.py`) sont retirés : supprimez-les du PC de l'atelier et remplacez-les par
@@ -678,6 +690,34 @@ Ce qui change aussi :
   réintégré d'office, seulement signalé.
 - Restent écartés, et comptés dans le rapport : le badge n° 0 (test), et les anciens badges sans
   aucun pointage depuis 5 mois et sans fiche (personnes parties).
+
+### Correction : l'agent effaçait la journée en cours
+
+Constat : le fichier `.mdb` importé à la main remplissait bien la journée, puis le passage
+suivant de l'agent la vidait. Cause : chaque import **reconstruisait toute la journée avec ce
+qu'il venait de lire**, et marquait « absente » toute personne qu'il n'avait pas vue. Or l'agent
+ne lit que ce que la pointeuse a encore en mémoire : quand le logiciel ZKTeco la vide après son
+propre téléchargement (réglage courant), l'agent ne trouve que les quelques badges suivants.
+
+Désormais **un import ajoute des badges, il n'en retire jamais** : la journée de chaque personne
+est la réunion de tout ce qui a été reçu (agent, fichier `.mdb`, lecture directe), sans doublon
+(un passage par tranche de 5 minutes, comme avant). Une personne déjà vue présente ne repasse
+jamais « absente » parce qu'une source ne la voit pas. Les journées corrigées à la main restent
+intouchables, comme avant. Les deux sources peuvent donc fonctionner ensemble sans se gêner.
+
+**Plus d'import manuel du fichier `.mdb`** : l'agent envoie désormais, par défaut, la pointeuse
+**et** le fichier `attBackup.mdb` du logiciel ZKTeco s'il le trouve sur son PC (recherche
+automatique, ou chemin réglé dans PilotRH). Vérifié sur deux copies réelles du fichier prises à
+une heure d'intervalle : le fichier garde tout depuis avril 2023 et se complète au fil de la
+journée (10 badges ajoutés, aucun retiré) ; son import complet prend 7 secondes. Si la pointeuse
+ne répond pas, le fichier prend le relais sans que le diagnostic échoue. La source se règle dans
+*Pointeuse → « Ce que l'agent envoie »* (les deux, la pointeuse seule, le fichier seul) et
+s'applique dès le passage suivant. Les anciens `config.ini` (« methode = pointeuse ») en
+profitent sans modification.
+
+Pour voir ce que la pointeuse a réellement en mémoire : l'encadré *Pointeuse* (et `DIAGNOSTIC.bat`)
+affiche le premier et le dernier badge en mémoire et le nombre de badges du jour, et signale une
+pointeuse vidée récemment par un autre logiciel.
 
 À faire une fois après la mise à jour : lancer un import (ou attendre le passage de l'agent),
 puis ouvrir le rapport : les personnes jusqu'ici invisibles y apparaissent. **Vérifiez les fiches
@@ -1015,24 +1055,24 @@ dans `pilotrh-core.js`.
 
 ## 8. Tests
 
-**1 461 tests automatisés** accompagnent cette version (dont 14 qui ne tournent qu'avec votre propre sauvegarde) :
+**1 556 tests automatisés** accompagnent cette version (dont 14 qui ne tournent qu'avec votre propre sauvegarde) :
 
 | Suite | Nombre | Ce qu'elle vérifie |
 |---|---|---|
 | Moteur de calcul (`node`) | 84 | pause partielle, fériés, repos travaillé, badge unique, `hM`/`hsM`, arrondi cumul vs jour, Ramadan, échappement, **mode de paie et taux (heure / journée, repli sur le taux par défaut)**, **bilan d'assiduité d'une personne** (justificatifs, jour non importé, date d'embauche, férié) |
-| Import et calendrier (`python`) | 55 | correction du sexe, protections anti-écrasement, fériés, mois clos, collision d'identifiants, démissions, **personnes de la pointeuse jamais écartées en silence** : inscrite sans nom, recrue d'un seul jour, fiche saisie à la main, zéros en tête, badge redonné après une démission, badge 0, anciens badges, fichier `.mdb` avec un nom vide |
-| Serveur (`python`) | 392 | fuite de `_secret`, élévation de privilèges, écritures concurrentes, sauvegardes, sondages, anti-force brute, SSRF, audit, modèle de fiches et import en masse, le portier d'authentification exercé pour de vrai, **messagerie (message personnel, réponse, cloisonnement des réponses entre collègues, appel léger de l'application)**, **réglages et surveillance de la pointeuse** (bornes des valeurs, rôles, silence détecté), **clé de l'agent** (n'ouvre que l'envoi de pointages, révocable), **kit téléchargeable** (contenu, fins de ligne), **rapport de l'agent**, lecture directe sans `pyzk`, **dossiers disciplinaires** (accès refusé au chef d'atelier et à la lecture seule, numérotation, suppression, audit, jamais dans l'état général), **« mes absences et retards »** (jeton + code, code d'une collègue refusé, ses seuls jours, note RH jamais transmise, bornes de période, anti-force brute), **rapport d'import** (fiches créées, badges écartés, date de sortie, « Créer la fiche » puis rattachement des pointages sans doublon, rôles) |
+| Import et calendrier (`python`) | 69 | correction du sexe, protections anti-écrasement, fériés, mois clos, collision d'identifiants, démissions, **personnes de la pointeuse jamais écartées en silence** : inscrite sans nom, recrue d'un seul jour, fiche saisie à la main, zéros en tête, badge redonné après une démission, badge 0, anciens badges, fichier `.mdb` avec un nom vide, **imports qui s'additionnent : le passage de l'agent n'efface plus la journée apportée par le `.mdb`**, pas de doublon, corrections manuelles intactes |
+| Serveur (`python`) | 408 | fuite de `_secret`, élévation de privilèges, écritures concurrentes, sauvegardes, sondages, anti-force brute, SSRF, audit, modèle de fiches et import en masse, le portier d'authentification exercé pour de vrai, **messagerie (message personnel, réponse, cloisonnement des réponses entre collègues, appel léger de l'application)**, **réglages et surveillance de la pointeuse** (bornes des valeurs, rôles, silence détecté), **clé de l'agent** (n'ouvre que l'envoi de pointages, révocable), **kit téléchargeable** (contenu, fins de ligne), **rapport de l'agent**, lecture directe sans `pyzk`, **dossiers disciplinaires** (accès refusé au chef d'atelier et à la lecture seule, numérotation, suppression, audit, jamais dans l'état général), **« mes absences et retards »** (jeton + code, code d'une collègue refusé, ses seuls jours, note RH jamais transmise, bornes de période, anti-force brute), **rapport d'import** (fiches créées, badges écartés, date de sortie, « Créer la fiche » puis rattachement des pointages sans doublon, rôles) |
 | Import de fiches (`python`) | 82 | en-têtes tolérants, dates et nombres, listes de référence, doublons, cellule vide sans effet, `-` qui efface, aller-retour du classeur prérempli sans aucun changement, 120 fiches |
-| Interface (navigateur réel) | 207 | XSS avec un nom hostile, filtres et tri, saisie rapide, correction par plage, graphiques sans CDN, menu mobile, espace salarié, alertes cliquables jusqu'à la ligne surlignée, saisie du taux, colonnes Taux / Montant, import de fiches, vote d'une salariée suivi jusqu'à sa remontée côté RH, **panneau de la pointeuse : kit, état de l'agent, dernière panne, horloge décalée**, **espace salarié : absences et retards par mois, année ou dates choisies, mêmes chiffres que la vue RH, affichage téléphone**, **rapport d'import et alertes « badges non importés » / « nouvelles fiches »** |
+| Interface (navigateur réel) | 217 | XSS avec un nom hostile, filtres et tri, saisie rapide, correction par plage, graphiques sans CDN, menu mobile, espace salarié, alertes cliquables jusqu'à la ligne surlignée, saisie du taux, colonnes Taux / Montant, import de fiches, vote d'une salariée suivi jusqu'à sa remontée côté RH, **panneau de la pointeuse : kit, état de l'agent, dernière panne, horloge décalée**, **espace salarié : absences et retards par mois, année ou dates choisies, mêmes chiffres que la vue RH, affichage téléphone**, **rapport d'import et alertes « badges non importés » / « nouvelles fiches »** |
 | Données réelles (`file://`) | 14 | reprise d'une sauvegarde de l'ancienne version : effectif, réglages, périodes, plages de pause, totaux de paie |
 | Démonstration hors ligne (`file://`) | 65 | ouverture sans serveur, modification réelle des données, saisie rapide, correction par plage, messagerie, export CSV, mobile, espace salarié, **alertes cliquables**, **assiduité, corrections, document arabe hors ligne** |
 | Arrondi (`node`) | 18 | écart entre arrondi par jour et arrondi sur le cumul, sur des arrivées réalistes |
 | Application Android (`python` + `javac`) | 80 | le projet compile réellement, aucune permission superflue, aucune adresse codée en dur, normalisation de l'adresse du serveur, **notifications : canal par son et vibration, plage « ne pas déranger » qui passe minuit, réveil inexact, pas de renotification en boucle, aucune passerelle JavaScript exposée** |
-| Agent de la pointeuse (`python`) | 109 | l'agent **réellement lancé** face à une fausse pointeuse et à un faux serveur : premier envoi complet, rien de renvoyé sans nouveauté, journée envoyée entière, badge en attente renvoyé après une panne serveur, chaque panne nommée à l'écran **et** remontée à PilotRH (pointeuse injoignable, mot de passe de communication, clé refusée, serveur absent, adresse fausse, serveur non mis à jour, page qui n'est pas PilotRH), diagnostic pas à pas sans aucun envoi, méthode `.mdb`, un seul agent à la fois, console Windows en vieille page de code, **les `.bat` : fins de ligne Windows, ASCII pur, chaque `goto` a son étiquette** |
+| Agent de la pointeuse (`python`) | 158 | l'agent **réellement lancé** face à une fausse pointeuse et à un faux serveur : premier envoi complet, rien de renvoyé sans nouveauté, journée envoyée entière, badge en attente renvoyé après une panne serveur, chaque panne nommée à l'écran **et** remontée à PilotRH (pointeuse injoignable, mot de passe de communication, clé refusée, serveur absent, adresse fausse, serveur non mis à jour, page qui n'est pas PilotRH), diagnostic pas à pas sans aucun envoi, méthode `.mdb`, un seul agent à la fois, console Windows en vieille page de code, **les deux sources (pointeuse + fichier `.mdb`), relais par le fichier quand la pointeuse ne répond pas, fichier non renvoyé s'il n'a pas changé, recherche du fichier sur le disque, source choisie dans PilotRH**, **assistant de configuration** (adresse collée depuis le navigateur nettoyée, clé ou compte, réponse vide, pas de clavier), **les `.bat` : fins de ligne Windows, ASCII pur, chaque `goto` a son étiquette** |
 | Dialogue avec la pointeuse (`python`) | 77 | `zkproto.py` contre une pointeuse simulée **elle-même validée par la bibliothèque de référence `pyzk`** : les 6 formats de mémoire, 110 000 badgeages, réseau lent qui découpe les réponses, petite mémoire en un bloc, pointeuse vide, ancien modèle sans tampon, UDP seul, mot de passe de communication (calcul identique à `pyzk`), date impossible ignorée sans tout bloquer, pannes nommées (port fermé, appareil muet, coupure en plein transfert, autre appareil à l'adresse), bibliothèque standard seule |
 | Assiduité, corrections, discipline (navigateur réel) | 182 | **calculs vérifiés sur des données faites à la main** (tolérance, justificatifs, congés, arrivée en cours de période, taux), détection des quatre familles et du caractère collectif, **chaque règle de correction cas par cas** (dont les refus), documents arabes (accords, pluriels, antécédents, suite d'un questionnaire avec ou sans réponse, fin de mise à pied qui saute le dimanche, échappement), puis les écrans : de l'assiduité au questionnaire prérempli, suite en avertissement, **ce qui part réellement vers le serveur** à la validation, annulation exacte, horaire exceptionnel d'un jour, mois clos, rôles |
 | Reprise d'une sauvegarde (`python`) | 26 | séparation des identifiants dupliqués, **révocation des accès des deux fiches concernées et conservation de toutes les autres cartes**, réglages complétés sans être modifiés |
-| Déploiement en conteneur (`python` + `sh`) | 36 | résolution du dossier de données, message d'erreur utile sur un volume non accessible, **le script d'entrée est réellement lancé** : droits du volume ajustés puis privilèges lâchés, uvicorn en utilisateur non root |
+| Déploiement en conteneur (`python` + `sh`) | 42 | résolution du dossier de données, message d'erreur utile sur un volume non accessible, **le script d'entrée est réellement lancé** : droits du volume ajustés puis privilèges lâchés, uvicorn en utilisateur non root, **scripts versionnés pour qu'aucun ancien écran ne reste en cache** |
 | Mots de passe et dépannage (`python`) | 34 | compatibilité des empreintes de la v2, renforcement transparent, réinitialisation par variable et par script, **une carte QR de la v2 avec son code à 4 chiffres ouvre encore l'espace salarié**, ancien appel `GET` toléré |
 
 Points vérifiés qui méritent d'être signalés : un nom d'employée contenant

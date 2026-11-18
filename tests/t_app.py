@@ -536,6 +536,12 @@ def poste(body, admin=True):
 rep = poste({'ip':'192.168.1.55','port':4370,'motdepasse':0,'intervalle':15,'alerte_h':12,'note':'atelier A'})
 t("reglages enregistres", rep['reglages']['ip'], '192.168.1.55')
 t("intervalle enregistre", A.pointeuse_reglages()['intervalle'], 15)
+t("source par defaut : la pointeuse ET le fichier .mdb", A.pointeuse_reglages()['source'], 'auto')
+rep2 = poste({'ip':'192.168.1.55','port':4370,'intervalle':15,'alerte_h':12,'source':'fichier','mdb':'C:\\ZKTeco\\attBackup.mdb'})
+t("source et chemin du .mdb enregistres", (rep2['reglages']['source'], rep2['reglages']['mdb']), ('fichier', 'C:\\ZKTeco\\attBackup.mdb'))
+t("une source inconnue revient a « auto »", poste({'ip':'192.168.1.55','port':4370,'intervalle':15,'alerte_h':12,'source':'nimporte'})['reglages']['source'], 'auto')
+t("le chemin du .mdb est garde si on ne le renvoie pas", A.pointeuse_reglages()['mdb'], 'C:\\ZKTeco\\attBackup.mdb')
+poste({'ip':'192.168.1.55','port':4370,'intervalle':15,'alerte_h':12,'source':'auto','mdb':''})
 t("delai d'alerte enregistre", A.pointeuse_reglages()['alerte_h'], 12)
 t("adresse IP invalide refusee",
   getattr(poste({'ip':'pas-une-ip'}),'status_code',None), 400)
@@ -652,6 +658,7 @@ def rapporte(body, cle=CLE_AGENT):
 t("rapport sans la bonne cle : refuse", getattr(rapporte({"etat": "ok"}, "fausse"), 'status_code', None), 401)
 r = rapporte({"etat": "demarrage", "version": "4.0", "pc": "PC-ATELIER", "systeme": "Windows 10"})
 t("l'agent recoit l'adresse de la pointeuse reglee dans PilotRH", r["reglages"]["ip"], "192.168.1.55")
+t("et la source a utiliser", (r["reglages"]["source"], r["reglages"]["mdb"]), ("auto", ""))
 t("et la frequence", r["reglages"]["intervalle"], 15)
 tv("un simple demarrage ne vaut pas lecture reussie", A.pointeuse_etat().get("agent", {}).get("etat") == "demarrage")
 
@@ -663,6 +670,11 @@ rapporte({"etat": "ok", "message": "Pointeuse lue : aucun nouveau badgeage.", "p
 tv("une lecture reussie SANS nouveau badge garde la liaison vivante (dimanche, conges)",
    not A._resume_pointeuse()["muet"])
 e = A.pointeuse_etat()
+rapporte({"etat": "ok", "pc": "PC-ATELIER", "mdb": "C:\\ZKTeco\\attBackup.mdb", "mdb_maj": "2026-11-18 10:32"})
+t("PilotRH sait quel fichier .mdb l'agent envoie, et de quand il date", (A.pointeuse_etat()["agent"]["mdb"], A.pointeuse_etat()["agent"]["mdb_maj"]), ("C:\\ZKTeco\\attBackup.mdb", "2026-11-18 10:32"))
+rapporte({"etat": "ok", "pc": "PC-ATELIER", "pointeuse": {"nom": "F18", "pointages": 98500, "personnes": 97, "serie": "CJ9X", "liaison": "TCP", "heure": "2026-11-14 10:00:00", "ecart_horloge_min": 0, "ip": "192.168.1.55"}})
+e = A.pointeuse_etat()
+t("un rapport sans fichier ne l'oublie pas", e["agent"]["mdb"], "C:\\ZKTeco\\attBackup.mdb")
 t("PilotRH sait sur quel PC tourne l'agent", e["agent"]["pc"], "PC-ATELIER")
 t("et quel appareil il lit", e["agent"]["pointeuse"]["nom"], "F18")
 t("voie du dernier contact", e["voie"], "agent")
@@ -679,6 +691,50 @@ t("la lecture suivante efface la panne", A.pointeuse_etat()["derniere_erreur"], 
 t("le decalage d'horloge de la pointeuse est expose pour les alertes", A._resume_pointeuse()["ecart_horloge_min"], -47)
 rapporte({"etat": "ok", "pointeuse": "pas un dictionnaire", "message": "x" * 5000, "pc": ["liste"]})
 tv("un rapport mal forme ne casse rien et reste borne", len(A.pointeuse_etat()["agent"]["message"]) <= 300)
+
+# ---- un agent configure avec un compte (et non la cle) doit pouvoir faire son rapport
+class ReqAgU(Req):
+    def __init__(self, role):
+        super().__init__({'pilotrh_sess': A._sign_session({"login":"chef","role":role,"nom":"Chef"})}); self._b={"etat":"veille"}
+    async def json(self): return self._b
+r = asyncio.get_event_loop().run_until_complete(A.api_agent_rapport(ReqAgU("atelier")))
+t("rapport avec un compte Chef d'atelier : accepte, reglages renvoyes", (r.get("ok"), r["reglages"]["ip"]), (True, "192.168.1.55"))
+r = asyncio.get_event_loop().run_until_complete(A.api_agent_rapport(ReqAgU("lecture")))
+A.set_meta_serveur({A.POINTEUSE_META: dict(A.get_meta()[A.POINTEUSE_META], etat={})})
+asyncio.get_event_loop().run_until_complete(A.api_agent_rapport(ReqAg({"etat":"ok","pc":"SERVER","pointeuse":{"nom":"F18","pointages":42,
+    "premier":"2026-11-18 07:02","dernier":"2026-11-18 09:01","aujourdhui":42,"videe_recemment":True}})))
+pt = A.pointeuse_etat()["agent"]["pointeuse"]
+t("PilotRH garde ce que la pointeuse a vraiment en memoire (premier, dernier, aujourd'hui, videe)",
+  (pt["premier"], pt["dernier"], pt["aujourdhui"], pt["videe_recemment"]), ("2026-11-18 07:02", "2026-11-18 09:01", 42, True))
+# deux envois de l'agent qui voient des personnes differentes le meme jour : personne n'est efface
+A.set_state({'employees':[{'id':'E001','matricule':'101','nom':'A','prenom':'a','actif':True},
+                          {'id':'E002','matricule':'102','nom':'B','prenom':'b','actif':True}],
+             'settings':A.default_settings(),'pointages':{}},remplacer=True)
+_auj = A.today().isoformat()
+class _ReqPun(Req):
+    def __init__(self, b):
+        super().__init__({'pilotrh_sess': A._sign_session({"login":"agent","role":"atelier","nom":"Agent"})}); self._b=b
+    async def json(self): return self._b
+for corps in ({'users':[{'badge':'101','name':'A a'}],'punches':[{'badge':'101','dt':_auj+' 07:30:00'}]},
+              {'users':[{'badge':'102','name':'B b'}],'punches':[{'badge':'102','dt':_auj+' 07:45:00'}]}):
+    asyncio.get_event_loop().run_until_complete(A.api_punches(_ReqPun(corps)))
+_j = A.get_pointages(_auj, _auj)[_auj]
+t("deux envois successifs : les deux personnes restent presentes (le second n'efface plus le premier)",
+  (_j['E001']['statut'], _j['E001']['entree'], _j['E002']['statut']), ('present', '07:30', 'present'))
+t("rapport avec un compte en lecture seule : refuse", getattr(r, 'status_code', 200), 401)
+class ReqVoir(Req):
+    def __init__(self, role):
+        super().__init__({'pilotrh_sess': A._sign_session({"login":"x","role":role,"nom":"X"})}, {"host":"interne"})
+        self.url = type("u", (), {"path": "/api/pointeuse/cle", "scheme": "https"})()
+v = A.api_pointeuse_cle_voir(ReqVoir("rh"))
+t("« Afficher la cle » : la cle et l'adresse a coller dans l'assistant", (v["cle"], v["url"]), (A.pointeuse_cle(creer=False), "https://pilotrh-dbs.up.railway.app"))
+t("« Afficher la cle » refuse a un chef d'atelier", getattr(A.api_pointeuse_cle_voir(ReqVoir("atelier")), 'status_code', 200), 403)
+tv("chaque affichage de la cle est trace", any("Clé de l'agent de la pointeuse affichée" in x["action"] for x in A.api_audit(limit=30)))
+
+r = A.api_agent_ancien()
+t("ancien bouton (ecran reste en cache) : plus de 404 muet, un 410 qui dit quoi faire",
+  (r.status_code, "Ctrl + F5" in r.content["error"] and "Télécharger le kit" in r.content["error"]), (410, True))
+t("cette adresse reste reservee aux comptes connectes", passe('/api/pointeuse/agent.txt', 'GET'), ("BLOQUE", 401))
 
 # ---- changer la cle
 class ReqCle(ReqP):

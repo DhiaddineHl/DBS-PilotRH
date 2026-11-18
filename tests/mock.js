@@ -82,8 +82,10 @@ const ptzEtat={ts:new Date(Date.now()-SILENCE*3600e3).toISOString(),voie:'agent'
     message:'Rien ne répond à l’adresse 192.168.1.201 (port 4370).',
     conseil:'Pointeuse éteinte, câble débranché, mauvaise adresse IP, ou PC sur un autre réseau.'},
   agent:{ts:new Date(Date.now()-600e3).toISOString(),etat:'erreur',pc:'PC-ATELIER',systeme:'Windows 10',version:'4.0',
+    mdb:'C:\\ZKTeco\\attBackup.mdb',mdb_maj:TODAY+' 10:32',
     message:'Rien ne répond à l’adresse 192.168.1.201 (port 4370).',
-    pointeuse:{nom:'F18/ID',serie:'CJ9X123456789',liaison:'TCP',pointages:98500,personnes:97,ecart_horloge_min:-47}}};
+    pointeuse:{nom:'F18/ID',serie:'CJ9X123456789',liaison:'TCP',pointages:98500,personnes:97,ecart_horloge_min:-47,
+      premier:TODAY+' 07:02',dernier:TODAY+' 09:01',aujourdhui:184,videe_recemment:true}}};
 let cleCreee=false;
 /* rapport du dernier import : une fiche créée (badge sans nom) et un badge redonné */
 const RAPPORT={ts:new Date().toISOString(),voie:'agent',anciens:3,rattaches:118,
@@ -263,6 +265,8 @@ http.createServer((req,res)=>{
           service:'Couture',atelier:'Atelier A',contrat:'CDI',embauche:b.depuis||'',sexe:'F',actif:true,aCompleter:true});
         RAPPORT.ignores=RAPPORT.ignores.filter(x=>x.badge!==b.badge);STORE.reintegres=(STORE.reintegres||[]).concat([b]);
         return json(res,{ok:true,id})}
+      if(p==='/api/pointeuse/agent.txt')return json(res,{error:"Votre navigateur affiche une ancienne version de PilotRH. Rechargez la page (touches Ctrl + F5), puis utilisez « Télécharger le kit de l'agent »."},410);
+      if(p==='/api/pointeuse/cle'&&req.method==='GET'){cleCreee=true;return json(res,{cle:'CLE-DEMO-abc123',url:'https://demo.up.railway.app'})}
       if(p==='/api/import/vu'){RAPPORT.nouvelles=[];return json(res,{ok:true})}
       if(p==='/api/__reint')return json(res,STORE.reintegres||[]);
       if(p==='/api/pointeuse/kit.zip'){cleCreee=true;res.writeHead(200,{'Content-Type':'application/zip',
@@ -276,7 +280,7 @@ http.createServer((req,res)=>{
           return json(res,{error:'Port inattendu pour une pointeuse ZKTeco'},400);
         Object.assign(pointeuse,{ip:b.ip||pointeuse.ip,port:+b.port||pointeuse.port,
           motdepasse:+b.motdepasse||0,intervalle:+b.intervalle||pointeuse.intervalle,
-          alerte_h:+b.alerte_h||pointeuse.alerte_h,note:b.note||''});
+          alerte_h:+b.alerte_h||pointeuse.alerte_h,note:b.note||'',source:b.source||'auto',mdb:b.mdb||''});
         return json(res,{ok:true,reglages:pointeuse});
       }
       if(p==='/api/employees/modele.xlsx'){

@@ -16,7 +16,8 @@ Rien n'est enregistré : à chaque rechargement, tout repart de zéro.
 
     python outils/faire_demo.py
 """
-import os, json, datetime, random, sys
+import os
+import re, json, datetime, random, sys
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS = os.path.join(BASE, "static", "assets")
@@ -560,6 +561,7 @@ def faire_rh(data):
 def faire_salarie(data):
     html = lire(BASE, "static", "moi.html")
     core = lire(ASSETS, "pilotrh-core.js")
+    html = re.sub(r'<script src="/assets/pilotrh-core\.js(?:\?v=\w+)?"></script>', lambda m: '<script src="/assets/pilotrh-core.js"></script>', html)
     html = html.replace('<script src="/assets/pilotrh-core.js"></script>',
                         "<script>window.__DEMO__ = %s;</script>\n<script>%s</script>\n<script>%s</script>"
                         % (json.dumps(data, ensure_ascii=False), FAUX_RESEAU, core))
@@ -586,8 +588,10 @@ def faire_arrondi():
     if not os.path.exists(src):
         return None
     html = open(src, encoding="utf-8").read()
+    html = re.sub(r'<script src="/assets/pilotrh-core\.js(?:\?v=\w+)?"></script>', lambda m: '<script src="/assets/pilotrh-core.js"></script>', html)
     if '<script src="/assets/pilotrh-core.js"></script>' in html:
-        html = html.replace('<script src="/assets/pilotrh-core.js"></script>',
+        html = re.sub(r'<script src="/assets/pilotrh-core\.js(?:\?v=\w+)?"></script>', lambda m: '<script src="/assets/pilotrh-core.js"></script>', html)
+    html = html.replace('<script src="/assets/pilotrh-core.js"></script>',
                             "<script>%s</script>" % lire(ASSETS, "pilotrh-core.js"))
     return html
 

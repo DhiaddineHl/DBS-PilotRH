@@ -72,7 +72,9 @@ class Faux(BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
         brut = self.rfile.read(n)
-        cle_ok = self.headers.get("X-PilotRH-Cle") == CLE
+        import base64 as _b64
+        cle_ok = (self.headers.get("X-PilotRH-Cle") == CLE or
+                  self.headers.get("Authorization") == "Basic " + _b64.b64encode(b"chef:secret123").decode())
         if self.path == "/api/agent/rapport":
             if S["code_rapport"] != 200:
                 return self._rep(S["code_rapport"], {"error": "x"})
@@ -115,8 +117,13 @@ def lancer(d, *args, **env):
     e = dict((k, v) for k, v in os.environ.items() if not k.startswith("PILOTRH_"))
     e["PILOTRH_AGENT_DOSSIER"] = d
     e["PYTHONIOENCODING"] = "utf-8"
+    e["PILOTRH_ASSISTANT"] = "0"            # pas de questions, sauf test explicite
+    saisie = env.pop("_saisie", None)
     e.update(env)
-    r = subprocess.run([sys.executable, AGENT] + list(args), capture_output=True, env=e, timeout=120)
+    if saisie is not None:
+        e["PILOTRH_ASSISTANT"] = "1"
+    r = subprocess.run([sys.executable, AGENT] + list(args), capture_output=True, env=e, timeout=120,
+                       input=(saisie or "").encode("utf-8") if saisie is not None else None)
     return r.returncode, (r.stdout + r.stderr).decode("utf-8", "replace")
 
 
@@ -145,6 +152,9 @@ jr = open(os.path.join(d, "journal_agent.txt"), encoding="utf-8").read()
 tv("le journal contient le résultat", "Envoyé à PilotRH" in jr)
 dernier = S["rapports"][-1]
 t("l'agent a dit à PilotRH que tout va bien", dernier["etat"], "ok")
+t("il dit combien de badges la pointeuse a aujourd'hui", dernier["pointeuse"]["aujourdhui"], len(PERS))
+tv("et l'étendue de sa mémoire", dernier["pointeuse"]["premier"].startswith("2024-03-01") and dernier["pointeuse"]["dernier"][:10] == AUJ)
+t("mémoire ancienne : pas d'alerte « vidée »", dernier["pointeuse"]["videe_recemment"], False)
 t("avec le modèle de la pointeuse", dernier["pointeuse"]["nom"], "F18/ID")
 t("et le nombre de badgeages en mémoire", dernier["pointeuse"]["pointages"], len(BADG))
 tv("et l'écart d'horloge", abs(dernier["pointeuse"]["ecart_horloge_min"]) <= 1)
@@ -239,6 +249,48 @@ tv("clé absente : nommée", "Aucune clé d'accès" in s, s[-300:])
 code, s = lancer(dossier(url=URL.replace("http://", "")), "--une-fois", PILOTRH_URL=URL)
 t("la variable d'environnement prime sur le fichier", code, 0)
 
+print("\n--- config.ini absent : l'assistant pose les deux questions ---")
+reglages()
+vide = tempfile.mkdtemp(prefix="agent_")
+raz()
+code, s = lancer(vide, "--diagnostic", _saisie=URL + "/moi?t=JETON123\n" + CLE + "\n")
+t("avec l'adresse collée telle quelle et la clé : le diagnostic va au bout", code, 0)
+tv("l'assistant s'annonce", "deux questions, une seule fois" in s, s[-600:])
+tv("puis le diagnostic continue jusqu'à la pointeuse", "TOUT FONCTIONNE" in s and "6. Dialogue avec la pointeuse" in s, s[-400:])
+cfg = open(os.path.join(vide, "config.ini"), encoding="utf-8").read()
+tv("config.ini est écrit", "url = " + URL in cfg and "cle = " + CLE in cfg, cfg)
+tv("l'adresse collée depuis le navigateur est nettoyée (plus de /moi?t=…)", "JETON123" not in cfg and "/moi" not in cfg)
+raz()
+code, s = lancer(vide, "--une-fois")
+t("ensuite DEMARRER.bat marche sans rien redemander", code, 0)
+tv("et envoie les pointages", len(S["recus"]) == 1)
+raz()
+vide2 = tempfile.mkdtemp(prefix="agent_")
+code, s = lancer(vide2, "--diagnostic", _saisie=URL + "\n\nchef\nsecret123\n")
+t("sans clé : identifiant et mot de passe d'un compte Chef d'atelier", code, 0)
+cfg2 = open(os.path.join(vide2, "config.ini"), encoding="utf-8").read()
+tv("le compte est enregistré", "identifiant = chef" in cfg2 and "motdepasse = secret123" in cfg2, cfg2)
+tv("le diagnostic indique l'accès par compte", "compte « chef »" in s)
+raz()
+code, s = lancer(vide2, "--une-fois")
+t("et l'agent envoie avec ce compte", (code, len(S["recus"])), (0, 1))
+vide3 = tempfile.mkdtemp(prefix="agent_")
+code, s = lancer(vide3, "--diagnostic", _saisie="\n\n")
+tv("réponse vide : il redemande au lieu d'écrire un fichier faux", "Adresse vide" in s and not os.path.exists(os.path.join(vide3, "config.ini")), s[-300:])
+code, s = lancer(tempfile.mkdtemp(prefix="agent_"), "--diagnostic", _saisie=URL + "\n\nagent\n\n")
+tv("ni clé ni mot de passe : rien n'est enregistré, et c'est dit", "n'est pas enregistrée" in s and code == 1, s[-300:])
+code, s = lancer(tempfile.mkdtemp(prefix="agent_"), "--diagnostic")
+tv("lancé sans clavier (tâche planifiée) : pas de question, la cause et la solution", "Relancez DIAGNOSTIC.bat" in s and code == 1, s[-300:])
+sys.path.insert(0, AGENT_DIR)
+import importlib.util as _iu
+_sp = _iu.spec_from_file_location("agent_mod", AGENT); _ag = _iu.module_from_spec(_sp); _sp.loader.exec_module(_ag)
+for brut, att in (("pilotrh-dbs.up.railway.app", "https://pilotrh-dbs.up.railway.app"),
+                  ("https://pilotrh-dbs.up.railway.app/moi?t=abc", "https://pilotrh-dbs.up.railway.app"),
+                  (" https://pilotrh-dbs.up.railway.app/ ", "https://pilotrh-dbs.up.railway.app"),
+                  ("HTTPS://X.up.railway.app/#/parametres", "https://X.up.railway.app"),
+                  ("http://192.168.1.10:8000/", "http://192.168.1.10:8000"), ("", "")):
+    t("adresse nettoyée : %r" % brut, _ag.nettoyer_adresse(brut), att)
+
 print("\n--- Diagnostic : pas à pas, sans rien envoyer ---")
 raz(); reglages()
 d3 = dossier()
@@ -253,6 +305,17 @@ tv("horloge vérifiée", "Horloge de la pointeuse à l'heure" in s)
 tv("verdict final", "TOUT FONCTIONNE" in s)
 t("AUCUN pointage envoyé par le diagnostic", len(S["recus"]), 0)
 tv("compte rendu enregistré dans un fichier", os.path.exists(os.path.join(d3, "diagnostic.txt")))
+s3d = s
+import re as _re
+tv("le diagnostic compte les badges d'aujourd'hui", _re.search(r"Aujourd'hui : \d+ badgeage\(s\)", s3d), s3d[-700:])
+pv = FaussePointeuse(personnes=PERS, badgeages=[(b, AUJ + " 07:40:00") for (_u, b, _n) in PERS[:4]])
+reglages(port=pv.port); raz()
+code, s = lancer(dossier(), "--diagnostic")
+tv("pointeuse vidée par un autre logiciel : expliqué, et dit sans conséquence", "a été vidée" not in s and "ne remonte qu'au" in s and "aucune source n'efface l'autre" in s, s[-700:])
+t("signalé aussi à PilotRH", S["rapports"][-1]["pointeuse"].get("videe_recemment") if S["rapports"][-1].get("pointeuse") else None, None)
+raz(); code, s = lancer(dossier(), "--une-fois")
+t("lors d'une remontée, PilotRH apprend que la mémoire a été vidée", S["rapports"][-1]["pointeuse"]["videe_recemment"], True)
+pv.arreter(); reglages()
 
 raz(); reglages(ip="198.51.100.77")
 code, s = lancer(dossier(), "--diagnostic")
@@ -288,6 +351,78 @@ code, s = lancer(dm, "--une-fois", PILOTRH_METHODE="fichier", PILOTRH_MDB=mdb)
 t("fichier inchangé : pas renvoyé", len(S["recus"]), 0)
 code, s = lancer(dossier(), "--une-fois", PILOTRH_METHODE="fichier", PILOTRH_MDB=os.path.join(ICI, "absent.mdb"))
 tv("fichier absent : nommé, avec la piste du dossier partagé", "Fichier introuvable" in s and "dossier partagé" in s, s[-400:])
+
+print("\n--- Les deux sources : la pointeuse ET le fichier .mdb du logiciel ZKTeco ---")
+def faux_mdb(dossier, taille=6000):
+    os.makedirs(dossier, exist_ok=True)
+    f = os.path.join(dossier, "attBackup.mdb")
+    open(f, "wb").write(b"\x00\x01\x00\x00Standard Jet DB" + os.urandom(taille))
+    return f
+racine = tempfile.mkdtemp(prefix="disque_")
+mdb_auto = faux_mdb(os.path.join(racine, "ZKTeco", "Att"))
+raz(); reglages()
+da = dossier()
+code, s = lancer(da, "--une-fois", PILOTRH_RECHERCHE_MDB=racine)
+t("mode automatique : tout s'est bien passé", code, 0)
+t("deux envois : les badges lus sur la pointeuse, puis le fichier", ["punches" in x and "punches" or "mdb" for x in S["recus"]], ["punches", "mdb"])
+tv("le fichier a été trouvé tout seul (aucun chemin réglé)", "Fichier .mdb envoyé" in s and S["rapports"][-1].get("mdb") == mdb_auto, s[-400:])
+tv("PilotRH sait quel fichier est envoyé et de quand il date", bool(S["rapports"][-1].get("mdb_maj")))
+raz()
+code, s = lancer(da, "--une-fois", PILOTRH_RECHERCHE_MDB=racine)
+t("fichier inchangé : pas renvoyé (12 Mo économisés à chaque passage)", [x for x in S["recus"] if "mdb" in x], [])
+time.sleep(1.1); open(mdb_auto, "ab").write(b"10 nouveaux badges")
+raz()
+code, s = lancer(da, "--une-fois", PILOTRH_RECHERCHE_MDB=racine)
+t("le logiciel ZKTeco a ajouté des badges : le fichier repart", len([x for x in S["recus"] if "mdb" in x]), 1)
+
+print("\n--- La pointeuse ne répond pas : le fichier prend le relais ---")
+raz(); reglages(ip="192.0.2.77")
+code, s = lancer(dossier(), "--une-fois", PILOTRH_RECHERCHE_MDB=racine)
+t("pas d'échec : le fichier .mdb est envoyé", (code, len([x for x in S["recus"] if "mdb" in x])), (0, 1))
+t("PilotRH voit la liaison vivante", S["rapports"][-1]["etat"], "ok")
+tv("et sait que la pointeuse elle-même n'a pas répondu", "Pointeuse non lue" in S["rapports"][-1]["message"], S["rapports"][-1]["message"])
+raz()
+code, s = lancer(dossier(), "--diagnostic", PILOTRH_RECHERCHE_MDB=racine)
+tv("diagnostic : le fichier est trouvé et affiché", "4 bis. Le fichier du logiciel ZKTeco" in s and mdb_auto in s and "trouvé automatiquement" in s, s[-1200:])
+tv("la pointeuse muette est signalée sans bloquer", "[ATTENTION] Rien ne répond" in s and "le fichier .mdb prend le relais" in s and "TOUT FONCTIONNE" in s, s[-900:])
+t("diagnostic : rien n'est envoyé", S["recus"], [])
+code, s = lancer(dossier(), "--une-fois", PILOTRH_RECHERCHE_MDB=tempfile.mkdtemp())
+t("ni pointeuse ni fichier : échec, et c'est expliqué", code, 1)
+tv("le message dit qu'aucun fichier n'a pu prendre le relais", "aucun fichier attBackup.mdb trouvé" in s, s[-400:])
+
+print("\n--- La source se règle dans PilotRH ---")
+raz(); reglages(); S["reglages"]["source"] = "fichier"
+code, s = lancer(dossier(), "--une-fois", PILOTRH_RECHERCHE_MDB=racine)
+t("« fichier .mdb seulement » : la pointeuse n'est pas lue", [("punches" in x) for x in S["recus"]], [False])
+raz(); reglages(); S["reglages"]["source"] = "pointeuse_seule"
+code, s = lancer(dossier(), "--une-fois", PILOTRH_RECHERCHE_MDB=racine)
+t("« pointeuse seulement » : le fichier n'est pas envoyé", [("punches" in x) for x in S["recus"]], [True])
+autre = faux_mdb(os.path.join(tempfile.mkdtemp(), "Partage"))
+raz(); reglages(); S["reglages"]["mdb"] = autre
+code, s = lancer(dossier(), "--une-fois", PILOTRH_RECHERCHE_MDB=racine)
+t("un chemin réglé dans PilotRH l'emporte sur la recherche", S["rapports"][-1].get("mdb"), autre)
+raz(); reglages()
+code, s = lancer(dossier(), "--une-fois", PILOTRH_RECHERCHE_MDB=racine, PILOTRH_METHODE="pointeuse")
+t("un ancien config.ini (« methode = pointeuse ») profite aussi du fichier", len([x for x in S["recus"] if "mdb" in x]), 1)
+
+print("\n--- La recherche du fichier sur le disque ---")
+_sp2 = _iu.spec_from_file_location("agent_mod2", AGENT); _ag2 = _iu.module_from_spec(_sp2); _sp2.loader.exec_module(_ag2)
+disque = tempfile.mkdtemp(prefix="C_")
+vieux = faux_mdb(os.path.join(disque, "ZKTeco", "ZKTime5.0"))
+os.utime(vieux, (time.time() - 86400 * 30, time.time() - 86400 * 30))
+recent = faux_mdb(os.path.join(disque, "Att2000"))
+faux_mdb(os.path.join(disque, "Windows", "Temp"))                          # dossier sans rapport : non visité
+faux_mdb(os.path.join(disque, "ZKTeco", "a", "b", "c", "d"))               # trop profond
+os.environ["PILOTRH_RECHERCHE_MDB"] = disque
+t("le fichier le plus récemment modifié est retenu", _ag2.chercher_mdb(), recent)
+os.remove(recent)
+t("sinon le suivant", _ag2.chercher_mdb(), vieux)
+os.environ["PILOTRH_RECHERCHE_MDB"] = os.path.join(disque, "Windows")
+t("sous une racine générale, un dossier sans rapport avec la pointeuse n'est pas fouillé",
+  _ag2.chercher_mdb(), "")
+os.environ["PILOTRH_RECHERCHE_MDB"] = tempfile.mkdtemp()
+t("rien trouvé : chaîne vide, pas d'erreur", _ag2.chercher_mdb(), "")
+del os.environ["PILOTRH_RECHERCHE_MDB"]
 
 print("\n--- Deux agents ne tournent pas en même temps ---")
 import socket as _so

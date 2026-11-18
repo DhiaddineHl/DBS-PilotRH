@@ -332,7 +332,11 @@ def set_meta_serveur(partial):
 
 
 POINTEUSE_DEFAUT = {"ip": "192.168.1.201", "port": 4370, "motdepasse": 0,
-                    "intervalle": 30, "alerte_h": 24, "note": ""}
+                    "intervalle": 30, "alerte_h": 24, "note": "",
+                    # « auto » : l'agent lit la pointeuse ET envoie le fichier .mdb du
+                    # logiciel ZKTeco s'il le trouve sur son PC (les envois s'additionnent)
+                    "source": "auto", "mdb": ""}
+SOURCES_POINTAGE = ("auto", "pointeuse_seule", "fichier")
 
 
 def pointeuse_reglages():
@@ -394,15 +398,19 @@ def _note_agent(b, ip=""):
     fiche = {"ts": ts(), "etat": etat_agent, "code": str(b.get("code") or "")[:40],
              "message": str(b.get("message") or "")[:300], "conseil": str(b.get("conseil") or "")[:600],
              "version": str(b.get("version") or "")[:12], "pc": str(b.get("pc") or "")[:60],
-             "systeme": str(b.get("systeme") or "")[:60], "ip": ip}
+             "systeme": str(b.get("systeme") or "")[:60], "ip": ip,
+             "mdb": str(b.get("mdb") or "")[:300], "mdb_maj": str(b.get("mdb_maj") or "")[:16]}
     with _WLOCK:
         p = dict(get_meta().get(POINTEUSE_META) or {})
         etat = dict(p.get("etat") or {})
         ancien = etat.get("agent") or {}
         # on garde la dernière description connue de l'appareil : un rapport de
         # simple veille n'en contient pas
+        if not fiche["mdb"]:                               # un rapport de veille n'en parle pas
+            fiche["mdb"], fiche["mdb_maj"] = ancien.get("mdb", ""), ancien.get("mdb_maj", "")
         fiche["pointeuse"] = ({k: pt.get(k) for k in ("nom", "serie", "liaison", "pointages", "personnes",
-                                                      "heure", "ecart_horloge_min", "ignores", "ip")}
+                                                      "heure", "ecart_horloge_min", "ignores", "ip",
+                                                      "premier", "dernier", "aujourdhui", "videe_recemment")}
                               if pt else ancien.get("pointeuse") or {})
         etat["agent"] = fiche
         if etat_agent == "erreur":
@@ -866,6 +874,12 @@ async def auth_gate(request: Request, call_next):
         resp.headers["Cache-Control"] = "no-store"
     elif p in ("/", "/moi", "/login") or p.endswith(".html"):
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    elif p.startswith("/assets/") and p.endswith((".js", ".css", ".webmanifest")):
+        # Sans cette ligne, le navigateur gardait les anciens scripts après une mise
+        # à jour : le bouton d'une version précédente appelait une adresse qui
+        # n'existe plus (« Téléchargement impossible : erreur 404 »). « no-cache »
+        # n'empêche pas le cache : il oblige seulement à revérifier à chaque ouverture.
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["Referrer-Policy"] = "no-referrer"
     resp.headers["X-Frame-Options"] = "DENY"
@@ -1370,7 +1384,10 @@ async def api_agent_rapport(req: Request):
     """L'agent d'usine dit comment il va, et reçoit les réglages à appliquer.
     C'est ce qui permet de changer l'adresse de la pointeuse depuis PilotRH sans
     retourner sur le PC de l'atelier, et de voir sa dernière panne à distance."""
-    if not (OPEN_MODE or _cle_agent_valide(req)):
+    # la clé du kit, OU un compte qui a le droit d'envoyer des pointages : sans ce
+    # second cas, un agent configuré avec identifiant + mot de passe était refusé ici
+    if not (OPEN_MODE or _cle_agent_valide(req)
+            or (_current_user(req) or {}).get("role") in ("admin", "rh", "atelier")):
         return erreur("Clé de l'agent refusée", 401)
     try:
         b = await req.json()
@@ -1382,7 +1399,20 @@ async def api_agent_rapport(req: Request):
     r = pointeuse_reglages()
     return {"ok": True, "heure_serveur": ts(),
             "reglages": {"ip": r["ip"], "port": r["port"], "motdepasse": r["motdepasse"],
-                         "intervalle": r["intervalle"]}}
+                         "intervalle": r["intervalle"], "source": r.get("source") or "auto",
+                         "mdb": r.get("mdb") or ""}}
+
+
+@app.get("/api/pointeuse/cle")
+def api_pointeuse_cle_voir(request: Request):
+    """Affiche la clé pour la coller dans l'assistant de l'agent, sans passer par le
+    téléchargement du kit. Réservé aux RH, et chaque consultation est tracée."""
+    u = _current_user(request) or {}
+    if u.get("role") not in ("admin", "rh") and not OPEN_MODE:
+        return erreur("Réservé aux RH", 403)
+    qui, role = _acteur(request)
+    audit(qui, "Clé de l'agent de la pointeuse affichée", role, _ip(request))
+    return {"cle": pointeuse_cle(), "url": _adresse_publique(request)}
 
 
 @app.post("/api/pointeuse/cle")
@@ -1427,8 +1457,12 @@ async def api_pointeuse_set(req: Request):
     with _WLOCK:
         m = get_meta()
         p = dict(m.get(POINTEUSE_META) or {})
+        source = str(b.get("source") or r.get("source") or "auto")
+        if source not in SOURCES_POINTAGE:
+            source = "auto"
         p["reglages"] = {"ip": ip, "port": port, "motdepasse": mdp, "intervalle": inter,
-                         "alerte_h": alerte, "note": str(b.get("note") or "")[:200]}
+                         "alerte_h": alerte, "note": str(b.get("note") or "")[:200],
+                         "source": source, "mdb": str(b.get("mdb") if b.get("mdb") is not None else r.get("mdb") or "").strip()[:300]}
         set_meta_serveur({POINTEUSE_META: p})
     qui, role = _acteur(req)
     audit(qui, "Réglages de la pointeuse modifiés (%s:%d, toutes les %d min)" % (ip, port, inter),
@@ -1446,6 +1480,15 @@ def _ip_valide(ip):
 
 
 AGENT_DIR = os.path.join(BASE, "agent_usine")
+
+
+@app.get("/api/pointeuse/agent.txt")
+def api_agent_ancien():
+    """Adresse de la version précédente (« Fichier de lancement de l'agent »). Elle
+    n'est appelée que par un écran resté en cache dans le navigateur : on dit
+    quoi faire au lieu de répondre 404."""
+    return erreur("Votre navigateur affiche une ancienne version de PilotRH. Rechargez la page "
+                  "(touches Ctrl + F5), puis utilisez « Télécharger le kit de l'agent ».", 410)
 
 
 def _adresse_publique(request):
@@ -1480,16 +1523,19 @@ def api_kit_agent(request: Request):
         "cle = %s" % pointeuse_cle(),
         "",
         "[pointeuse]",
-        "; methode = pointeuse : lecture directe par le reseau (recommande)",
-        "; methode = fichier   : envoi du fichier attBackup.mdb du logiciel ZKTeco",
-        "methode = pointeuse",
+        "; methode = auto      : la pointeuse ET le fichier attBackup.mdb du logiciel ZKTeco",
+        ";                       s'il est sur ce PC (recommande : les envois s'additionnent)",
+        "; methode = pointeuse_seule / fichier : une seule source",
+        "; La source se regle aussi dans PilotRH (Securite & acces -> Pointeuse).",
+        "methode = auto",
         "; Laissez ces lignes vides : l'adresse de la pointeuse se regle dans PilotRH",
         "; (Securite & acces -> Pointeuse). Ne les remplissez que pour forcer une valeur.",
         "ip =",
         "port =",
         "motdepasse =",
         "intervalle_min =",
-        "fichier_mdb = C:\\ZKTeco\\attBackup.mdb",
+        "; Vide : l'agent cherche lui-meme attBackup.mdb sur ce PC.",
+        "fichier_mdb =",
         ""])
     tampon = io.BytesIO()
     with zipfile.ZipFile(tampon, "w", zipfile.ZIP_DEFLATED) as z:

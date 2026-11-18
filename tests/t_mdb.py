@@ -189,6 +189,44 @@ finally:
 t("import .mdb : la personne sans nom dans USERINFO est importée", sorted(e['matricule'] for e in s['employees']), ['101', '208'])
 t("avec ses pointages", s['pointages'][J(1)][[e for e in s['employees'] if e['matricule'] == '208'][0]['id']]['entree'], '07:31')
 
+print("\n--- le bug vu en vrai : l'agent effaçait la journée apportée par le fichier .mdb ---")
+emps = [emp('E%03d' % i, str(100 + i)) for i in range(1, 6)]
+users = [{'badge': str(100 + i), 'name': 'NOM%d Prenom' % i} for i in range(1, 6)]
+AUJ = J(0)
+# 1) le fichier .mdb (logiciel ZKTeco) apporte la matinée de tout le monde
+mdb = [{'badge': str(100 + i), 'dt': AUJ + ' 07:2%d:00' % i} for i in range(1, 6)]
+s = M.merge_punches(base(emps), users, mdb)
+t("après le .mdb : 5 présentes ce matin", sum(1 for r in s['pointages'][AUJ].values() if r['statut'] == 'present'), 5)
+# 2) le logiciel a vidé la pointeuse ; l'agent ne lit plus que deux badges arrivés après
+agent = [{'badge': '103', 'dt': AUJ + ' 12:00:00'}, {'badge': '105', 'dt': AUJ + ' 12:31:00'}]
+s = M.merge_punches(s, users, agent, du=J(60))
+jr = s['pointages'][AUJ]
+t("après l'agent : les 5 sont TOUJOURS présentes (avant : 3 repassaient « absentes »)",
+  sum(1 for r in jr.values() if r['statut'] == 'present'), 5)
+t("l'entrée du matin apportée par le .mdb est conservée", jr['E001']['entree'], '07:21')
+t("les badges de l'agent s'ajoutent à ceux du .mdb", (jr['E003']['entree'], jr['E003']['sortie']), ('07:23', '12:00'))
+t("compté dans le rapport", s['_import_stats']['badges_conserves'] >= 3, True)
+# 3) puis le .mdb du soir : ni doublon, ni perte
+mdb2 = mdb + [{'badge': str(100 + i), 'dt': AUJ + ' 16:3%d:00' % i} for i in range(1, 6)]
+s = M.merge_punches(s, users, mdb2)
+jr = s['pointages'][AUJ]
+t("le soir : la journée complète de chacune", [(jr['E00%d' % i]['entree'], jr['E00%d' % i]['sortie']) for i in (1, 3)], [('07:21', '16:31'), ('07:23', '16:33')])
+t("les badges de midi de l'agent sont gardés au milieu", jr['E003'].get('punches'), ['07:23', '12:00', '16:33'])
+t("réimporter la même chose ne change rien (pas de doublon)", M.merge_punches(s, users, mdb2)['pointages'][AUJ]['E003'].get('punches'), ['07:23', '12:00', '16:33'])
+t("deux badges à moins de 5 minutes d'écart, venant de deux sources, ne comptent qu'une fois",
+  M._fusion_badges(['07:30'], ['07:32', '16:30']), ['07:30', '16:30'])
+# 4) une absence marquée par un import devient présence si un badge arrive ensuite
+s = M.merge_punches(base(emps), users, [{'badge': '101', 'dt': AUJ + ' 07:30:00'}])
+t("une personne non vue est d'abord « absente »", s['pointages'][AUJ]['E002']['statut'], 'absent')
+s = M.merge_punches(s, users, [{'badge': '102', 'dt': AUJ + ' 08:05:00'}])
+t("puis présente dès qu'un badge arrive", s['pointages'][AUJ]['E002']['statut'], 'present')
+t("sans que l'autre ne repasse « absente »", s['pointages'][AUJ]['E001']['statut'], 'present')
+# 5) les corrections manuelles restent intouchables
+s['pointages'][AUJ]['E001'] = {'statut': 'present', 'entree': '07:30', 'sortie': '16:30', 'manuel': 1}
+s = M.merge_punches(s, users, [{'badge': '101', 'dt': AUJ + ' 13:13:00'}])
+t("une journée corrigée à la main n'est pas complétée par l'import", s['pointages'][AUJ]['E001'].get('punches'), None)
+t("ni modifiée", (s['pointages'][AUJ]['E001']['entree'], s['pointages'][AUJ]['E001']['sortie']), ('07:30', '16:30'))
+
 print("\n=========================")
 print("  %d réussis · %d échoués" % (ok,ko))
 sys.exit(1 if ko else 0)
