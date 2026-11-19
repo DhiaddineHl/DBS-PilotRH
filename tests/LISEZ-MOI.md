@@ -55,7 +55,7 @@ jamais régénéré au démarrage).
 cd tests && node mock.js &        # faux serveur avec 120 salariés et 75 jours
 node t_ui.js                      # nécessite playwright
 ```
-217 tests : XSS avec un nom hostile, filtres et tri, saisie rapide, correction sur
+220 tests : XSS avec un nom hostile, filtres et tri, saisie rapide, correction sur
 plage de dates, graphiques sans CDN, menu mobile, parcours complet de l'espace salarié,
 alertes cliquables jusqu'à la ligne surlignée, saisie du prix de l'heure ou de la
 journée, colonnes Taux et Montant du rapport de paie, import de fiches de bout en bout, vote d'une salariée suivi jusqu'à la réponse HTTP
@@ -85,7 +85,7 @@ accents — et la cohérence de leurs `goto` sont vérifiés. Ils se régénère
 cd tests && node mock.js &
 node t_suivi.js
 ```
-182 tests dans un vrai navigateur. Relancez `mock.js` avant chaque suite navigateur : les suites
+213 tests dans un vrai navigateur (dont la saisie des passages). Relancez `mock.js` avant chaque suite navigateur : les suites
 modifient ses données (vote enregistré, réglages, corrections).
 
 ## Déploiement en conteneur (Railway, Docker)

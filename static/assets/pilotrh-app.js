@@ -584,7 +584,8 @@ function openRevue(a,b){
       '<td>'+(x.m.heures?hLabel(x.m.heures):'<b style="color:var(--absent)">0 h</b>')+'</td>'+
       '<td><button class="linkish" onclick="closeModal();allerAuJour(\''+x.ds+'\',\''+escJs(x.e.id)+'\')" '+
         'title="Ouvre la feuille du '+fmtDate(x.ds)+' avec la ligne de '+esc(empName(x.e.id))+' en évidence">Corriger →</button>'+
-      (can('edit')?'<br><button class="linkish" style="font-size:11.5px" onclick="closeModal();openCorrection(\''+escJs(x.e.id)+'\',\''+x.ds+'\',\''+x.ds+'\')">Saisir les heures</button>':'')+
+      (can('edit')?'<br><button class="linkish" style="font-size:11.5px" onclick="closeModal();openPassages(\''+x.ds+'\',\''+escJs(x.e.id)+'\',\'\')">Saisir les passages</button>'+
+        '<br><button class="linkish" style="font-size:11.5px" onclick="closeModal();openCorrection(\''+escJs(x.e.id)+'\',\''+x.ds+'\',\''+x.ds+'\')">Saisir les heures</button>':'')+
       '</td></tr>').join('')
      ||'<tr><td colspan="6"><div class="empty">Rien à vérifier</div></td></tr>')+
     '</tbody></table></div></div>','wide');
@@ -780,11 +781,8 @@ function fillPres(){
       ' — journée protégée : les imports de la pointeuse ne l\'écraseront pas.'+
       (rec.manuel?' Cliquer pour retirer la protection.':' Videz les heures saisies pour lever la protection.')+
       '" onclick="revertManuel(\''+escJs(e.id)+'\')" aria-label="Journée protégée">&#128274;</button>':'';
-    const badges=(rec.punches&&rec.punches.length>2)
-      ? (rec.punches.length%2===0
-         ? ' <span class="tag t-neutral" title="Badges : '+esc(rec.punches.join(' · '))+' — coupure(s) déduite(s)">⇄ '+rec.punches.length+'</span>'
-         : ' <span class="tag t-late" title="Badges impairs : '+esc(rec.punches.join(' · '))+'">⚠ '+rec.punches.length+'</span>')
-      : '';
+    /* 1re entrée, 1re sortie, 2e entrée… : bouton vers la saisie détaillée */
+    const badges=window.boutonPassages?boutonPassages(PRES_DATE,e.id,r[e.id],'fillPres'):'';
     const hCell = (showTimes||m.manuel||m.manuelHS)
       ? '<input class="tinput'+(m.manuel?' manuel':'')+'" style="width:74px;text-align:center" value="'+
           (m.heures?fr2(hDec(m.heures)):'')+'" aria-label="Heures travaillées de '+esc(empName(e.id))+

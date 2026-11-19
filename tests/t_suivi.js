@@ -216,6 +216,79 @@ const { chromium } = require('playwright');
   eg('huit types de pièces, chacun avec son titre arabe', doc.titres.length, 8);
   t('chaque type a son modèle', doc.tousModeles);
 
+  console.log('\n--- Passages : 1re entrée, 1re sortie, 2e entrée, 2e sortie ---');
+  const ps = await page.evaluate(() => {
+    const V = v => { const r = verifierPassages(v); return r.ok ? {ok:true, p:r.passages, avis:!!r.avis} : {ok:false, e:r.erreur}; };
+    const rec = (base, l) => { const r = recDepuisPassages(base, l); return {st:r.statut, e:r.entree, s:r.sortie, p:r.punches||null, hM:r.hM, m:r.manuel, src:r.src}; };
+    DB.settings.jours = {0:{actif:false},1:{actif:true,debut:'07:30',fin:'16:30',pause:30,pauseDe:'12:00',pauseA:'12:30',tol:15,grace:15}};
+    ENGINE.invalidate();
+    const h = l => { const m = metrics(recDepuisPassages({}, l), '2026-10-05'); return [m.heures, m.revue]; };
+    return {
+      quatre: V(['07:30','12:00','12:30','16:30']), trois: V(['07:30','12:00','12:30','']),
+      trou: V(['07:30','','12:30','16:30']), ordre: V(['07:30','12:30','12:00','16:30']),
+      vide: V(['','','','']), invalide: V(['07:30','25:99','','']), six: V(['07:30','10:00','10:15','12:00','12:30','16:30']),
+      lib: [0,1,2,3,4,5].map(libellePassage),
+      r2: rec({statut:'present',punches:['07:30','12:00','12:30'],hM:300,hsM:20}, ['07:30','16:30']),
+      r4: rec({statut:'present',entree:'07:30',sortie:''}, ['07:30','12:00','12:30','16:30']),
+      rAut: rec({statut:'autorisation'}, ['07:30','11:00']),
+      h4: h(['07:30','12:00','12:30','16:30']), h3: h(['07:30','12:00','12:30']), hPause: h(['07:30','11:00','13:00','16:30']),
+      lu: passagesDe({entree:'07:30',sortie:'16:30'}).concat(['|'], passagesDe({punches:['07:31','12:02','12:41']}), ['|'], passagesDe(null)),
+    };
+  });
+  eg('quatre passages dans l\'ordre : acceptés', ps.quatre, {ok:true, p:['07:30','12:00','12:30','16:30'], avis:false});
+  eg('trois passages : acceptés, mais signalés impairs', ps.trois, {ok:true, p:['07:30','12:00','12:30'], avis:true});
+  t('une case vide au milieu : refusée, en nommant la case', !ps.trou.ok && /1re sortie/.test(ps.trou.e), ps.trou.e);
+  t('heures dans le désordre : refusées, en nommant les deux cases', !ps.ordre.ok && /2e entrée/.test(ps.ordre.e) && /1re sortie/.test(ps.ordre.e), ps.ordre.e);
+  t('rien de saisi : refusé', !ps.vide.ok && /1re entrée/.test(ps.vide.e));
+  t('heure impossible : refusée', !ps.invalide.ok && /non comprise/.test(ps.invalide.e), ps.invalide.e);
+  eg('trois coupures (6 passages) : acceptées', ps.six.ok, true);
+  eg('libellés des cases', ps.lib, ['1re entrée','1re sortie','2e entrée','2e sortie','3e entrée','3e sortie']);
+  eg('deux passages : une entrée et une sortie simples, sans liste', [ps.r2.e, ps.r2.s, ps.r2.p], ['07:30','16:30',null]);
+  eg('les heures saisies à la main sont remplacées par le calcul des passages', ps.r2.hM, undefined);
+  eg('quatre passages : la liste est gardée', ps.r4.p, ['07:30','12:00','12:30','16:30']);
+  eg('la journée corrigée est protégée des imports', [ps.r4.m, ps.r4.src, ps.r4.st], [1,'manuel','present']);
+  eg('une autorisation reste une autorisation', ps.rAut.st, 'autorisation');
+  eg('07:30-12:00 + 12:30-16:30 = 8 h 30, plus « à vérifier »', ps.h4, [510, false]);
+  eg('trois passages : toujours « à vérifier »', ps.h3[1], true);
+  eg('sortie de 11:00 à 13:00 : la pause n\'est pas déduite une seconde fois (7 h)', ps.hPause, [420, false]);
+  eg('lecture des passages existants', ps.lu, ['07:30','16:30','|','07:31','12:02','12:41','|']);
+
+  console.log('\n--- Passages : à l\'écran, jusqu\'à ce qui part vers le serveur ---');
+  await page.evaluate(() => { DB.settings = JSON.parse(JSON.stringify(__sauve.s)); ENGINE.invalidate(); });
+  const dsPas = await page.evaluate(async () => { for (let k = 1; k < 60; k++) { const d = addDays(TODAY, -k);
+    if (estOuvre(d) && regimeFor(d).fin === '16:30') { await ensureRange(d, d); DB.pointages[d] = Object.assign({}, __sauve.p[d] || DB.pointages[d] || {});
+      DB.pointages[d]['E003'] = {statut:'present', punches:['07:31','12:02','12:41']}; return d; } } });
+  await page.evaluate(d => { DB.employees = __sauve.e; PRES_DATE = d; return go('presences'); }, dsPas); await page.waitForTimeout(800);
+  const ligne = page.locator('tr[data-emp="E003"]');
+  t('journée impaire : bouton « 3 passages — compléter » sur la ligne', /3 passages — compléter/.test(await ligne.innerText()));
+  await ligne.locator('button:has-text("compléter")').click(); await page.waitForSelector('#psGrille input');
+  t('quatre cases : 1re entrée, 1re sortie, 2e entrée, 2e sortie', (await page.locator('#psGrille label').allInnerTexts()).map(x=>x.split(' —')[0]).join('|') === '1re entrée|1re sortie|2e entrée|2e sortie');
+  t('préremplies avec les badges lus', (await page.inputValue('#ps0'))==='07:31' && (await page.inputValue('#ps1'))==='12:02' && (await page.inputValue('#ps2'))==='12:41' && (await page.inputValue('#ps3'))==='');
+  t('la case manquante est désignée : « 2e sortie — non badgée »', /2e sortie — non badgée/.test(await page.locator('#psGrille').innerText()));
+  t('l\'horaire prévu est rappelé', /Horaire prévu ce jour : 07:30 → 16:30/.test(await page.locator('.modal-body').innerText()));
+  await page.fill('#ps3','16:30'); await page.dispatchEvent('#ps3','input'); await page.waitForTimeout(150);
+  t('aperçu immédiat des heures', /07:31 → 12:02 · 12:41 → 16:30/.test(await page.locator('#psApercu').innerText()) && /8h18/.test(await page.locator('#psApercu').innerText()), await page.locator('#psApercu').innerText());
+  await page.fill('#ps2','11:00'); await page.dispatchEvent('#ps2','input'); await page.waitForTimeout(150);
+  t('une erreur bloque l\'enregistrement et dit pourquoi', await page.locator('#psOk').isDisabled() && /doit être après/.test(await page.locator('#psApercu').innerText()));
+  await page.fill('#ps2','12:41'); await page.dispatchEvent('#ps2','input'); await page.waitForTimeout(150);
+  await page.click('button:has-text("+ Ajouter un passage")'); await page.waitForTimeout(150);
+  t('« + Ajouter un passage » ajoute une 3e entrée et une 3e sortie', await page.locator('#psGrille input').count()===6 && (await page.inputValue('#ps3'))==='16:30');
+  const nAvant = (await (await page.request.get('http://localhost:8777/api/__pointage')).json()).length;
+  await page.click('#psOk'); await page.waitForTimeout(800);
+  const envois = await (await page.request.get('http://localhost:8777/api/__pointage')).json();
+  const dern = envois[envois.length-1];
+  t('un seul enregistrement part vers le serveur', envois.length === nAvant+1);
+  eg('avec les quatre passages, marqué manuel', dern && [dern.date, dern.id, dern.punches, dern.entree, dern.sortie, dern.manuel], [dsPas, 'E003', ['07:31','12:02','12:41','16:30'], '07:31', '16:30', 1]);
+  const l2 = await page.locator('tr[data-emp="E003"]').innerText();
+  t('la ligne affiche maintenant « 4 passages », sans « à vérifier »', /4 passages/.test(l2) && !/à vérifier/.test(l2), l2);
+  t('et la journée est protégée (cadenas)', await page.locator('tr[data-emp="E003"] button[aria-label="Journée protégée"]').count()===1);
+  await page.locator('tr[data-emp="E003"] button:has-text("4 passages")').click(); await page.waitForSelector('#psGrille input');
+  t('à la réouverture : « déjà corrigé à la main »', /déjà corrigé à la main/.test(await page.locator('.modal-body').innerText()));
+  await page.evaluate(()=>closeModal());
+  const lectPas = await page.evaluate(async d => { const v=ME.role; ME.role='lecture'; openPassages(d,'E003',''); await new Promise(r=>setTimeout(r,100));
+    const r={dis:[...document.querySelectorAll('#psGrille input')].every(i=>i.disabled), ok:!!document.getElementById('psOk')}; closeModal(); ME.role=v; return r; }, dsPas);
+  eg('un compte en lecture seule consulte les passages sans pouvoir les modifier', [lectPas.dis, lectPas.ok], [true, false]);
+
   /* on rend les vraies données de démonstration */
   await page.evaluate(() => { DB.employees=__sauve.e; DB.pointages=__sauve.p; DB.absences=__sauve.a; DB.settings=__sauve.s; ENGINE.invalidate(); DISC_OUTILS.donnees=null; });
 

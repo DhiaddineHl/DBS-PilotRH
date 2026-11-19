@@ -182,6 +182,11 @@ const { chromium } = require('playwright');
   t('matricule visible', s2.includes('101'));
   t('bloc congés affiché', s2.includes('Heures de congé dues'));
   t('journées incomplètes signalées au salarié', s2.includes('pointage incomplet'));
+  const pas = (await p2.locator('tr.pass').allInnerTexts()).join(' | ');
+  const pas4 = await p2.evaluate(()=>{const d=document.createElement('tbody');d.innerHTML=ligneDetailPassages({punches:['07:30','12:00','12:30','16:30'],manuel:1},true);return d.innerText});
+  t('la salariée voit les passages d\'une journée coupée (même détail que le service RH)', /Passages : 07:30 → 12:00 · 12:30 → 16:30/.test(pas4) && /corrigé RH/.test(pas4), pas4);
+  t('une journée simple (entrée + sortie) n\'ajoute pas de ligne', await p2.evaluate(()=>ligneDetailPassages({entree:'07:30',sortie:'16:30'},true)==='') );
+  t('et une sortie oubliée y est dite en clair', /→ sortie non badgée/.test(pas));
 
   console.log('\n--- Espace salarié : mes absences et retards ---');
   await p2.waitForSelector('#assiBox .kpi', { timeout:8000 });

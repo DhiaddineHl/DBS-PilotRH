@@ -272,7 +272,8 @@ async function coFill(){
       '<td>'+(clos?(m.hs?hLabel(m.hs):'—'):'<input class="tinput'+(m.manuelHS?' manuel':'')+'" style="width:74px;text-align:center" value="'+
         (m.hs?fr2(hDec(m.hs)):'')+'" onchange="coHM(\''+ds+'\',\'hsM\',this.value)" aria-label="Heures supplémentaires">')+'</td>'+
       '<td>'+(m.retard?'<b style="color:var(--late)">+'+m.retard+'</b>':'—')+'</td>'+
-      '<td>'+(C.estProtege(rec)&&!clos?'<button class="linkish" onclick="coDeprotege(\''+ds+'\')" title="Retirer la protection">déprotéger</button>':'')+'</td>'+
+      '<td style="white-space:nowrap">'+(window.boutonPassages?boutonPassages(ds,CO.id,rec,'coFill'):'')+
+        (C.estProtege(rec)&&!clos?' <button class="linkish" onclick="coDeprotege(\''+ds+'\')" title="Retirer la protection">déprotéger</button>':'')+'</td>'+
     '</tr>';
   }).join('');
   coMajInfo();

@@ -390,7 +390,8 @@ function fillCorrections(){
         '<td colspan="2" style="padding-left:26px">'+empCell(x.e.id,true)+'</td>'+
         '<td colspan="2" class="mono">'+x.P.map(fromMin).join(' · ')+'</td>'+
         '<td>'+(m.heures||m.hs?hLabel(m.heures+m.hs):'<b style="color:var(--absent)">0 h</b>')+'</td>'+
-        '<td><button class="linkish" onclick="allerAuJour(\''+x.ds+'\',\''+escJs(x.e.id)+'\')">Ouvrir →</button></td></tr>'}).join('');
+        '<td style="white-space:nowrap">'+(can('edit')&&!CM.jours[x.ds].clos?'<button class="linkish" onclick="openPassages(\''+x.ds+'\',\''+escJs(x.e.id)+'\',\'cmRecharger\')">Saisir les passages</button> · ':'')+
+          '<button class="linkish" onclick="allerAuJour(\''+x.ds+'\',\''+escJs(x.e.id)+'\')">Ouvrir →</button></td></tr>'}).join('');
     return h;
   }).join('')||'<tr><td colspan="7"><div class="empty">'+I.check+'<div>Aucune anomalie de ce type sur la période</div></div></td></tr>';
   const n=$('#cmN'); if(n) n.textContent=CM_SEL.size;
@@ -555,7 +556,8 @@ async function cmHoraireEnregistrer(ds){
   closeModal(); toast('Horaire du '+fmtDate(ds)+' enregistré : '+d+' → '+f,'ok',7000);
   await go('corrections');
 }
-Object.assign(window,{detecterAnomalies,corrigerUn,lireHeures,fillCorrections,cmCocher,cmCocherJour,cmToutCocher,cmOuvrir,cmFamille,cmPeriode,
+async function cmRecharger(){ await go('corrections'); }
+Object.assign(window,{cmRecharger,detecterAnomalies,corrigerUn,lireHeures,fillCorrections,cmCocher,cmCocherJour,cmToutCocher,cmOuvrir,cmFamille,cmPeriode,
   cmRaccourci,cmMajAction,cmApercu,cmValider,cmAnnuler,cmHoraireJour,cmHoraireEnregistrer});
 
 /* ----------------------------------------------------------------------------

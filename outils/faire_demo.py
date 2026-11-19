@@ -522,7 +522,7 @@ def faire_rh(data):
     css = lire(ASSETS, "pilotrh-ui.css")
     js = [lire(ASSETS, f) for f in ("pilotrh-core.js", "pilotrh-app.js",
                                     "pilotrh-views.js", "pilotrh-saisie.js", "pilotrh-coms.js",
-                                    "pilotrh-suivi.js", "pilotrh-discipline.js")]
+                                    "pilotrh-suivi.js", "pilotrh-discipline.js", "pilotrh-passages.js")]
     return """<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -550,13 +550,14 @@ def faire_rh(data):
 <script>%(js4)s</script>
 <script>%(js5)s</script>
 <script>%(js6)s</script>
+<script>%(js7)s</script>
 <script>demarrer();</script>
 </body>
 </html>
 """ % dict(css=css, banniere=BANNIERE, reseau=FAUX_RESEAU,
            data=json.dumps(data, ensure_ascii=False),
            js0=js[0], js1=js[1], js2=js[2], js3=js[3], js4=js[4],
-           js5=js[5], js6=js[6])
+           js5=js[5], js6=js[6], js7=js[7])
 
 def faire_salarie(data):
     html = lire(BASE, "static", "moi.html")

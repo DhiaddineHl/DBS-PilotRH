@@ -164,6 +164,16 @@ const MOIS=['janvier','février','mars','avril','mai','juin','juillet','août','
 const aff=(r,i)=>{if(!r)return '';const p=r.punches;
   if(i===0)return r.entree||(p&&p.length?p[0]:'');
   return r.sortie||(p&&p.length>1?p[p.length-1]:'')};
+/* Les passages d'une journée coupée (1re entrée, 1re sortie, 2e entrée…), tels
+   que le service RH les voit : c'est ce qui rend une correction compréhensible. */
+function ligneDetailPassages(rec,showT){
+  if(!showT||!rec)return '';
+  const p=(rec.punches&&rec.punches.length?rec.punches:[rec.entree,rec.sortie]).filter(Boolean);
+  if(p.length<=2&&p.length%2===0)return '';
+  const segs=[];for(let i=0;i<p.length;i+=2)segs.push(esc(p[i])+' → '+(p[i+1]?esc(p[i+1]):'<b style="color:var(--late)">sortie non badgée</b>'));
+  return '<tr class="pass"><td></td><td colspan="6" style="font-size:12px;color:var(--muted);padding-top:0">Passages : <span class="mono">'+
+    segs.join(' · ')+'</span>'+(rec.manuel?' <span class="tag t-neutral" title="Corrigé par le service RH">corrigé RH</span>':'')+'</td></tr>';
+}
 const fmtPer=iso=>{const p=String(iso||'').split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:(iso||'')};
 const shiftYm=(ym,d)=>{const a=ym.split('-');let Y=+a[0],M=+a[1]+d;while(M<1){M+=12;Y--}while(M>12){M-=12;Y++}return Y+'-'+pad(M)};
 
@@ -318,7 +328,8 @@ function vuePointage(moisTxt,ym){
       '<td class="mono">'+(showT?esc(aff(l.rec,1)||'—'):'—')+'</td>'+
       '<td class="mono">'+(l.m.heures?hLabel(l.m.heures):'—')+'</td>'+
       '<td class="mono">'+(l.m.retard?'+'+l.m.retard:'—')+'</td>'+
-      '<td class="mono">'+(l.m.hs?hLabel(l.m.hs):'—')+'</td></tr>';
+      '<td class="mono">'+(l.m.hs?hLabel(l.m.hs):'—')+'</td></tr>'+
+      ligneDetailPassages(l.rec,showT);
   }).join('');
   return '<div class="seg">'+
       '<button class="'+(DATA.mois===curYm?'on':'')+'" onclick="loadMonth(\''+curYm+'\')">Ce mois</button>'+

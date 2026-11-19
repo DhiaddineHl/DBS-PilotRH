@@ -238,6 +238,8 @@ http.createServer((req,res)=>{
       if(p==='/api/__bulks')return json(res,STORE.bulks||[]);
       if(p==='/api/state-meta'){try{STORE.meta=JSON.parse(body||'{}')}catch(e){}return json(res,{ok:true})}
       if(p==='/api/__meta')return json(res,STORE.meta||{});
+      if(p==='/api/pointage'){try{STORE.pointage=(STORE.pointage||[]).concat([JSON.parse(body||'{}')])}catch(e){}return json(res,{ok:true})}
+      if(p==='/api/__pointage')return json(res,STORE.pointage||[]);
       if(p==='/api/pointage'||p==='/api/day')
         return json(res,{ok:true});
       /* import de fiches : aperçu puis application, comme le vrai serveur */
