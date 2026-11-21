@@ -1613,7 +1613,7 @@ async def api_pull_device(req: Request):
 #   seule). Chaque écriture est tracée dans le journal d'audit.
 # ---------------------------------------------------------------------------
 DISCIPLINE_META = "discipline"
-DISC_TYPES = {"questionnaire": "Q", "observation": "OB", "avertissement": "AV", "blame": "BL",
+DISC_TYPES = {"questionnaire": "Q", "observation": "OB", "avertissement": "AV", "blame": "BL", "recommandee": "LR",
               "miseapied": "MP", "reprise": "RT", "convocation": "CV", "pv": "PV"}
 DISC_STATUTS = ("brouillon", "remis", "signe", "refus", "classe")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -1677,6 +1677,12 @@ async def api_discipline_ecrire(req: Request):
         existant = next((x for x in d["entrees"] if x.get("id") == b.get("id")), None) if b.get("id") else None
         if b.get("id") and not existant:
             return erreur("Pièce introuvable (supprimée entre-temps ?)", 404)
+        # deux postes RH ouverts en même temps préparent la même lettre automatique :
+        # la seconde demande reçoit la première, au lieu d'un doublon
+        if not existant and b.get("cle_auto"):
+            meme = next((x for x in d["entrees"] if x.get("cle_auto") == str(b.get("cle_auto"))[:60]), None)
+            if meme:
+                return {"ok": True, "entree": meme, "existait": True}
         if existant and existant.get("emp") != emp:
             return erreur("Une pièce ne peut pas changer de salarié(e)")
         e = dict(existant or {})
@@ -1695,6 +1701,8 @@ async def api_discipline_ecrire(req: Request):
                   "faits": _txt(b.get("faits"), 4000), "corps": _txt(b.get("corps"), 12000),
                   "reponse": _txt(b.get("reponse"), 4000), "note": _txt(b.get("note"), 1000),
                   "suite_de": _txt(b.get("suite_de"), 20), "remis_le": _txt(b.get("remis_le"), 10),
+                  # lettre préparée automatiquement : une seule par absence (personne + 1er jour)
+                  "cle_auto": _txt(b.get("cle_auto") or e.get("cle_auto"), 60),
                   "maj_le": ts(), "maj_par": qui})
         if existant:
             d["entrees"] = [e if x.get("id") == e["id"] else x for x in d["entrees"]]

@@ -280,7 +280,7 @@ FAUX_RESEAU = r"""
   const vrai = window.fetch.bind(window);
 
   /* --- dossiers disciplinaires (même logique que le serveur, en mémoire) --- */
-  const DISC_PREF = {questionnaire:'Q',observation:'OB',avertissement:'AV',blame:'BL',miseapied:'MP',reprise:'RT',convocation:'CV',pv:'PV'};
+  const DISC_PREF = {questionnaire:'Q',observation:'OB',avertissement:'AV',blame:'BL',miseapied:'MP',reprise:'RT',convocation:'CV',pv:'PV',recommandee:'LR'};
   function discApi(S, chemin, corps){
     if(!S.discipline) S.discipline = {entrees:[], societe:{}, modeles:{}, compteurs:{}};
     const d = S.discipline;
@@ -289,6 +289,7 @@ FAUX_RESEAU = r"""
       if(!DISC_PREF[corps.type]) return [400,{error:'Type de document inconnu'}];
       if(!corps.emp) return [400,{error:'Salarié(e) non précisé(e)'}];
       let e = corps.id ? d.entrees.find(x=>x.id===corps.id) : null;
+      if(!e && corps.cle_auto){ const meme=d.entrees.find(x=>x.cle_auto===corps.cle_auto); if(meme) return [200,{ok:true,entree:meme,existait:true}]; }
       if(corps.id && !e) return [404,{error:'Pièce introuvable'}];
       if(!e){
         const cle = DISC_PREF[corps.type]+'-'+String(corps.date).slice(0,4);
@@ -297,7 +298,7 @@ FAUX_RESEAU = r"""
              ref:cle+'-'+String(d.compteurs[cle]).padStart(3,'0'), cree_le:new Date().toISOString(), cree_par:'RH'};
         d.entrees.push(e);
       }
-      ['date','statut','jours','motif','date_faits','du','au','delai_h','faits','corps','reponse','note','suite_de','remis_le']
+      ['date','statut','jours','motif','date_faits','du','au','delai_h','faits','corps','reponse','note','suite_de','remis_le','cle_auto']
         .forEach(k=>{ if(corps[k]!==undefined) e[k]=corps[k] });
       return [200,{ok:true, entree:e}];
     }
@@ -522,7 +523,8 @@ def faire_rh(data):
     css = lire(ASSETS, "pilotrh-ui.css")
     js = [lire(ASSETS, f) for f in ("pilotrh-core.js", "pilotrh-app.js",
                                     "pilotrh-views.js", "pilotrh-saisie.js", "pilotrh-coms.js",
-                                    "pilotrh-suivi.js", "pilotrh-discipline.js", "pilotrh-passages.js")]
+                                    "pilotrh-suivi.js", "pilotrh-discipline.js", "pilotrh-passages.js",
+                                    "pilotrh-fiches.js")]
     return """<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -551,13 +553,14 @@ def faire_rh(data):
 <script>%(js5)s</script>
 <script>%(js6)s</script>
 <script>%(js7)s</script>
+<script>%(js8)s</script>
 <script>demarrer();</script>
 </body>
 </html>
 """ % dict(css=css, banniere=BANNIERE, reseau=FAUX_RESEAU,
            data=json.dumps(data, ensure_ascii=False),
            js0=js[0], js1=js[1], js2=js[2], js3=js[3], js4=js[4],
-           js5=js[5], js6=js[6], js7=js[7])
+           js5=js[5], js6=js[6], js7=js[7], js8=js[8])
 
 def faire_salarie(data):
     html = lire(BASE, "static", "moi.html")

@@ -57,12 +57,20 @@ employees.forEach((e,i)=>{
   if(i<6)pointages[J_NUIT][e.id]={statut:'present',entree:'22:0'+i,sortie:''};
   else if(i<10)pointages[J_NUIT][e.id]={statut:'present',punches:['00:4'+(i%9),'07:30']};
 });
+/* absences : E005 absente depuis 3 jours ouvrés sans justificatif ; E006 aussi, mais couverte
+   par un certificat ; E009 absente seulement hier */
+function joursOuvresAvant(n){const r=[];for(let k=1;r.length<n&&k<20;k++){const ds=d(-k),w=new Date(ds+'T12:00').getDay();if(w>=1&&w<=6&&pointages[ds])r.push(ds)}return r}
+const ABS3=joursOuvresAvant(3);
+ABS3.forEach(ds=>{pointages[ds]['E005']={statut:'absent',entree:'',sortie:''};pointages[ds]['E006']={statut:'absent',entree:'',sortie:''}});
+if(pointages[TODAY]){pointages[TODAY]['E005']={statut:'absent',entree:'',sortie:''};pointages[TODAY]['E006']={statut:'absent',entree:'',sortie:''}}
+pointages[ABS3[0]]['E009']={statut:'absent',entree:'',sortie:''};
 /* une journée déjà corrigée à la main ne doit plus être proposée */
 pointages[J_PANNE]['E002']={statut:'present',entree:'07:30',sortie:'',hM:480,manuel:1};
 const documents=[{docId:'D1',id:'E001',type:'Contrat CDI',date:'2019-03-11',resume:'CDI signé',source:'Manuel'}];
 const conges=[{cid:'C1',id:'E002',type:'Congé annuel',debut:d(5),fin:d(9),jours:4,statut:'En attente'},
               {cid:'C2',id:'E003',type:'Congé annuel',debut:d(-20),fin:d(-16),jours:4,statut:'Validé',applique:true}];
-const absences=[{id:'E001',type:'Maladie',debut:d(-9),fin:d(-8),jours:2,statut:'justifiée',note:'Certificat'}];
+const absences=[{id:'E001',type:'Maladie',debut:d(-9),fin:d(-8),jours:2,statut:'justifiée',note:'Certificat'},
+  {id:'E006',type:'Maladie',debut:d(-12),fin:d(1),jours:5,statut:'justifiée',note:'Certificat médical'}];
 const signalements=[{emp:'E004',nom:'Prenom4 Nom4',date:d(-2),message:'J etais presente',ts:new Date().toISOString(),traite:false}];
 const notes=[{id:'N1',titre:'Fermeture vendredi',texte:'Atelier ferme',cible:{},important:true,
   ts:new Date().toISOString(),par:'RH',lus:['E001'],
@@ -98,7 +106,7 @@ const PUBLIC_SALARIE=['/api/me','/api/me/flag','/api/me/lu','/api/me/vote',
 const STORE={discipline:{entrees:[],modeles:{},compteurs:{},societe:{}}};
 
   /* --- dossiers disciplinaires (même logique que le serveur, en mémoire) --- */
-  const DISC_PREF = {questionnaire:'Q',observation:'OB',avertissement:'AV',blame:'BL',miseapied:'MP',reprise:'RT',convocation:'CV',pv:'PV'};
+  const DISC_PREF = {questionnaire:'Q',observation:'OB',avertissement:'AV',blame:'BL',miseapied:'MP',reprise:'RT',convocation:'CV',pv:'PV',recommandee:'LR'};
   function discApi(S, chemin, corps){
     if(!S.discipline) S.discipline = {entrees:[], societe:{}, modeles:{}, compteurs:{}};
     const d = S.discipline;
@@ -107,6 +115,7 @@ const STORE={discipline:{entrees:[],modeles:{},compteurs:{},societe:{}}};
       if(!DISC_PREF[corps.type]) return [400,{error:'Type de document inconnu'}];
       if(!corps.emp) return [400,{error:'Salarié(e) non précisé(e)'}];
       let e = corps.id ? d.entrees.find(x=>x.id===corps.id) : null;
+      if(!e && corps.cle_auto){ const meme=d.entrees.find(x=>x.cle_auto===corps.cle_auto); if(meme) return [200,{ok:true,entree:meme,existait:true}]; }
       if(corps.id && !e) return [404,{error:'Pièce introuvable'}];
       if(!e){
         const cle = DISC_PREF[corps.type]+'-'+String(corps.date).slice(0,4);
@@ -115,7 +124,7 @@ const STORE={discipline:{entrees:[],modeles:{},compteurs:{},societe:{}}};
              ref:cle+'-'+String(d.compteurs[cle]).padStart(3,'0'), cree_le:new Date().toISOString(), cree_par:'RH'};
         d.entrees.push(e);
       }
-      ['date','statut','jours','motif','date_faits','du','au','delai_h','faits','corps','reponse','note','suite_de','remis_le']
+      ['date','statut','jours','motif','date_faits','du','au','delai_h','faits','corps','reponse','note','suite_de','remis_le','cle_auto']
         .forEach(k=>{ if(corps[k]!==undefined) e[k]=corps[k] });
       return [200,{ok:true, entree:e}];
     }

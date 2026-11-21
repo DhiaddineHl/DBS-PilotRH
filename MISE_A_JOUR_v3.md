@@ -724,16 +724,16 @@ puis ouvrir le rapport : les personnes jusqu'ici invisibles y apparaissent. **V�
 que vous aviez créées à la main** : si leur matricule est bien le numéro de badge, leurs pointages
 s'y rattachent ; sinon, corrigez le matricule pour éviter une seconde fiche.
 
-## 3 undecies. Saisir les passages : 1re entrée, 1re sortie, 2e entrée, 2e sortie
+## 3 undecies. Saisir les passages : jusqu'à 3 entrées et 3 sorties (et plus)
 
 Une journée aux badges impairs (une sortie oubliée) ne se corrigeait qu'avec une entrée et une
 sortie, ce qui effaçait la coupure du midi, ou en forçant un nombre d'heures, ce que personne ne
 pouvait relire. Désormais, chaque passage se saisit à sa place :
 
 - Sur la feuille de présence, une journée impaire porte le bouton **« ⚠ 3 passages —
-  compléter »**. Il ouvre quatre cases : 1re entrée, 1re sortie, 2e entrée, 2e sortie,
+  compléter »**. Il ouvre six cases : 1re, 2e et 3e entrée, 1re, 2e et 3e sortie,
   préremplies avec les badges lus, la case manquante désignée « non badgée ».
-  « + Ajouter un passage » ouvre une 3e entrée et une 3e sortie (jusqu'à 4 coupures).
+  « + Ajouter un passage » ouvre une 4e entrée et une 4e sortie.
 - L'**aperçu** montre aussitôt les segments et les heures obtenues, avec la même règle de
   calcul que la paie (la pause n'est déduite que si elle est prise pendant la plage prévue).
 - Une saisie incohérente est refusée en nommant la case : heure dans le désordre, case vide au
@@ -746,6 +746,49 @@ pouvait relire. Désormais, chaque passage se saisit à sa place :
 - **Dans l'espace salarié**, une journée coupée affiche ses passages
   (« Passages : 07:30 → 12:00 · 12:30 → 16:30 », mention « corrigé RH ») et une sortie oubliée
   est écrite en clair : l'ouvrière voit exactement ce que voit le service RH.
+
+## 3 duodecies. Fiches de pointage mensuelles à imprimer
+
+Pour une ouvrière qui veut vérifier son pointage d'un mois : *Rapports & paie → « Fiches de
+pointage individuelles »*, ou depuis la fiche de la personne → *« Fiche de pointage du mois »*.
+On choisit le mois et une ou plusieurs personnes (recherche, filtre par service, tout cocher),
+puis **Aperçu** ou **Imprimer** : une page A4 par personne.
+
+Chaque fiche porte, jour par jour : le statut, **les passages (Entrée 1, Sortie 1, Entrée 2,
+Sortie 2, Entrée 3, Sortie 3)**, les heures, le retard en minutes, les heures sup. et une
+observation (jour férié, sortie non badgée marquée « ? », corrigé RH, heures saisies, passages
+au-delà du 3e). En bas : les totaux du mois — **exactement ceux du rapport de paie**, vérifié par
+un test —, le nombre de jours travaillés, d'absences, de congés, de fériés et de retards, la règle
+de calcul appliquée, et deux cadres de signature (service du personnel, intéressée).
+
+L'impression est faite par le navigateur : elle fonctionne aussi hors ligne et dans la démonstration.
+
+## 3 terdecies. Absence non justifiée au-delà de 48 h : alerte et lettre recommandée en arabe
+
+PilotRH repère seul chaque ouvrière **absente au moins deux jours ouvrés de suite, sans
+justificatif ni congé, 48 heures après le premier jour**, et qui n'a pas badgé aujourd'hui :
+
+- **Une alerte urgente**, en tête des Alertes : qui, depuis quand, combien de jours.
+- **Une lettre recommandée en arabe préparée d'office** (brouillon numéroté `LR-2026-001`)
+  dans son dossier disciplinaire. Elle porte la mention « رسالة مضمونة الوصول مع الإعلام
+  بالبلوغ », l'objet « غياب غير مبرّر عن العمل », l'adresse de la destinataire, **chaque date
+  d'absence**, et la met en demeure de reprendre ou de justifier sous 48 heures (délai
+  modifiable). En bas : la ligne du numéro d'envoi recommandé et la signature de la direction.
+- Un clic sur l'alerte ouvre la lettre : on la relit, on l'imprime, on la passe en « Remis » avec
+  la date d'envoi ; l'alerte l'indique ensuite (« envoyée le … »).
+- **Une seule lettre par absence**, même si deux postes RH sont ouverts. Une nouvelle absence
+  plus tard donne une nouvelle lettre.
+- **L'alerte s'éteint d'elle-même** dès que l'ouvrière badge, qu'un justificatif est enregistré
+  (vue Absences) ou qu'une demande de congé existe pour ces jours — même en attente.
+- Un jour sans aucune donnée importée arrête le décompte : on ne conclut pas à une absence sans
+  pointage. Les jours fériés et de repos ne comptent pas.
+- L'adresse est prise dans la fiche (champ « Adresse », ou « adresseAr » si renseigné) ; si elle
+  manque, l'alerte le signale, car elle est indispensable à l'envoi.
+- Le chef d'atelier voit l'alerte ; seuls l'administrateur et les RH voient et préparent la lettre.
+
+La vérification a lieu à l'ouverture de PilotRH puis toutes les 30 minutes. Le modèle de lettre
+est dans *Discipline → En-tête et modèles* ; il figure dans `MODELES_DISCIPLINE_ARABE.pdf`, à
+faire relire comme les autres par votre conseil.
 
 ---
 
@@ -1067,6 +1110,7 @@ static/assets/
   pilotrh-suivi.js              assiduité par personne, corrections en masse
   pilotrh-discipline.js         dossiers disciplinaires, documents en arabe
   pilotrh-passages.js           saisie des passages (1re entrée, 1re sortie, 2e entrée…)
+  pilotrh-fiches.js             fiches de pointage mensuelles à imprimer
   sw.js, manifest.webmanifest   application installable (servis depuis / , voir §4)
 ```
 
@@ -1079,13 +1123,13 @@ dans `pilotrh-core.js`.
 
 ## 8. Tests
 
-**1 590 tests automatisés** accompagnent cette version (dont 14 qui ne tournent qu'avec votre propre sauvegarde) :
+**1 642 tests automatisés** accompagnent cette version (dont 14 qui ne tournent qu'avec votre propre sauvegarde) :
 
 | Suite | Nombre | Ce qu'elle vérifie |
 |---|---|---|
 | Moteur de calcul (`node`) | 84 | pause partielle, fériés, repos travaillé, badge unique, `hM`/`hsM`, arrondi cumul vs jour, Ramadan, échappement, **mode de paie et taux (heure / journée, repli sur le taux par défaut)**, **bilan d'assiduité d'une personne** (justificatifs, jour non importé, date d'embauche, férié) |
 | Import et calendrier (`python`) | 69 | correction du sexe, protections anti-écrasement, fériés, mois clos, collision d'identifiants, démissions, **personnes de la pointeuse jamais écartées en silence** : inscrite sans nom, recrue d'un seul jour, fiche saisie à la main, zéros en tête, badge redonné après une démission, badge 0, anciens badges, fichier `.mdb` avec un nom vide, **imports qui s'additionnent : le passage de l'agent n'efface plus la journée apportée par le `.mdb`**, pas de doublon, corrections manuelles intactes |
-| Serveur (`python`) | 408 | fuite de `_secret`, élévation de privilèges, écritures concurrentes, sauvegardes, sondages, anti-force brute, SSRF, audit, modèle de fiches et import en masse, le portier d'authentification exercé pour de vrai, **messagerie (message personnel, réponse, cloisonnement des réponses entre collègues, appel léger de l'application)**, **réglages et surveillance de la pointeuse** (bornes des valeurs, rôles, silence détecté), **clé de l'agent** (n'ouvre que l'envoi de pointages, révocable), **kit téléchargeable** (contenu, fins de ligne), **rapport de l'agent**, lecture directe sans `pyzk`, **dossiers disciplinaires** (accès refusé au chef d'atelier et à la lecture seule, numérotation, suppression, audit, jamais dans l'état général), **« mes absences et retards »** (jeton + code, code d'une collègue refusé, ses seuls jours, note RH jamais transmise, bornes de période, anti-force brute), **rapport d'import** (fiches créées, badges écartés, date de sortie, « Créer la fiche » puis rattachement des pointages sans doublon, rôles) |
+| Serveur (`python`) | 412 | fuite de `_secret`, élévation de privilèges, écritures concurrentes, sauvegardes, sondages, anti-force brute, SSRF, audit, modèle de fiches et import en masse, le portier d'authentification exercé pour de vrai, **messagerie (message personnel, réponse, cloisonnement des réponses entre collègues, appel léger de l'application)**, **réglages et surveillance de la pointeuse** (bornes des valeurs, rôles, silence détecté), **clé de l'agent** (n'ouvre que l'envoi de pointages, révocable), **kit téléchargeable** (contenu, fins de ligne), **rapport de l'agent**, lecture directe sans `pyzk`, **dossiers disciplinaires** (accès refusé au chef d'atelier et à la lecture seule, numérotation, suppression, audit, jamais dans l'état général), **« mes absences et retards »** (jeton + code, code d'une collègue refusé, ses seuls jours, note RH jamais transmise, bornes de période, anti-force brute), **rapport d'import** (fiches créées, badges écartés, date de sortie, « Créer la fiche » puis rattachement des pointages sans doublon, rôles) |
 | Import de fiches (`python`) | 82 | en-têtes tolérants, dates et nombres, listes de référence, doublons, cellule vide sans effet, `-` qui efface, aller-retour du classeur prérempli sans aucun changement, 120 fiches |
 | Interface (navigateur réel) | 220 | XSS avec un nom hostile, filtres et tri, saisie rapide, correction par plage, graphiques sans CDN, menu mobile, espace salarié, alertes cliquables jusqu'à la ligne surlignée, saisie du taux, colonnes Taux / Montant, import de fiches, vote d'une salariée suivi jusqu'à sa remontée côté RH, **panneau de la pointeuse : kit, état de l'agent, dernière panne, horloge décalée**, **espace salarié : absences et retards par mois, année ou dates choisies, mêmes chiffres que la vue RH, affichage téléphone**, **rapport d'import et alertes « badges non importés » / « nouvelles fiches »** |
 | Données réelles (`file://`) | 14 | reprise d'une sauvegarde de l'ancienne version : effectif, réglages, périodes, plages de pause, totaux de paie |
@@ -1094,7 +1138,7 @@ dans `pilotrh-core.js`.
 | Application Android (`python` + `javac`) | 80 | le projet compile réellement, aucune permission superflue, aucune adresse codée en dur, normalisation de l'adresse du serveur, **notifications : canal par son et vibration, plage « ne pas déranger » qui passe minuit, réveil inexact, pas de renotification en boucle, aucune passerelle JavaScript exposée** |
 | Agent de la pointeuse (`python`) | 158 | l'agent **réellement lancé** face à une fausse pointeuse et à un faux serveur : premier envoi complet, rien de renvoyé sans nouveauté, journée envoyée entière, badge en attente renvoyé après une panne serveur, chaque panne nommée à l'écran **et** remontée à PilotRH (pointeuse injoignable, mot de passe de communication, clé refusée, serveur absent, adresse fausse, serveur non mis à jour, page qui n'est pas PilotRH), diagnostic pas à pas sans aucun envoi, méthode `.mdb`, un seul agent à la fois, console Windows en vieille page de code, **les deux sources (pointeuse + fichier `.mdb`), relais par le fichier quand la pointeuse ne répond pas, fichier non renvoyé s'il n'a pas changé, recherche du fichier sur le disque, source choisie dans PilotRH**, **assistant de configuration** (adresse collée depuis le navigateur nettoyée, clé ou compte, réponse vide, pas de clavier), **les `.bat` : fins de ligne Windows, ASCII pur, chaque `goto` a son étiquette** |
 | Dialogue avec la pointeuse (`python`) | 77 | `zkproto.py` contre une pointeuse simulée **elle-même validée par la bibliothèque de référence `pyzk`** : les 6 formats de mémoire, 110 000 badgeages, réseau lent qui découpe les réponses, petite mémoire en un bloc, pointeuse vide, ancien modèle sans tampon, UDP seul, mot de passe de communication (calcul identique à `pyzk`), date impossible ignorée sans tout bloquer, pannes nommées (port fermé, appareil muet, coupure en plein transfert, autre appareil à l'adresse), bibliothèque standard seule |
-| Assiduité, corrections, discipline, passages (navigateur réel) | 213 | **calculs vérifiés sur des données faites à la main** (tolérance, justificatifs, congés, arrivée en cours de période, taux), détection des quatre familles et du caractère collectif, **chaque règle de correction cas par cas** (dont les refus), documents arabes (accords, pluriels, antécédents, suite d'un questionnaire avec ou sans réponse, fin de mise à pied qui saute le dimanche, échappement), puis les écrans : de l'assiduité au questionnaire prérempli, suite en avertissement, **ce qui part réellement vers le serveur** à la validation, annulation exacte, horaire exceptionnel d'un jour, mois clos, rôles, **saisie des passages** (contrôles case par case, calcul identique à la paie, ce qui part vers le serveur, protection, lecture seule) |
+| Assiduité, corrections, discipline, passages, fiches, absences > 48 h (navigateur réel) | 261 | **calculs vérifiés sur des données faites à la main** (tolérance, justificatifs, congés, arrivée en cours de période, taux), détection des quatre familles et du caractère collectif, **chaque règle de correction cas par cas** (dont les refus), documents arabes (accords, pluriels, antécédents, suite d'un questionnaire avec ou sans réponse, fin de mise à pied qui saute le dimanche, échappement), puis les écrans : de l'assiduité au questionnaire prérempli, suite en avertissement, **ce qui part réellement vers le serveur** à la validation, annulation exacte, horaire exceptionnel d'un jour, mois clos, rôles, **saisie des passages** (contrôles case par case, calcul identique à la paie, ce qui part vers le serveur, protection, lecture seule), **fiches de pointage mensuelles** (totaux identiques au rapport de paie, une page par personne, choix du mois et des personnes), **absences non justifiées > 48 h** (règles cas par cas : justificatif, congé en attente, retour le matin, jour non importé, embauche ; lettre recommandée préparée une seule fois, ouverte depuis l'alerte, alerte éteinte par un justificatif) |
 | Reprise d'une sauvegarde (`python`) | 26 | séparation des identifiants dupliqués, **révocation des accès des deux fiches concernées et conservation de toutes les autres cartes**, réglages complétés sans être modifiés |
 | Déploiement en conteneur (`python` + `sh`) | 42 | résolution du dossier de données, message d'erreur utile sur un volume non accessible, **le script d'entrée est réellement lancé** : droits du volume ajustés puis privilèges lâchés, uvicorn en utilisateur non root, **scripts versionnés pour qu'aucun ancien écran ne reste en cache** |
 | Mots de passe et dépannage (`python`) | 34 | compatibilité des empreintes de la v2, renforcement transparent, réinitialisation par variable et par script, **une carte QR de la v2 avec son code à 4 chiffres ouvre encore l'espace salarié**, ancien appel `GET` toléré |

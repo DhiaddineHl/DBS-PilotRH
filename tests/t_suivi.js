@@ -22,6 +22,86 @@ const { chromium } = require('playwright');
   const bulks = async () => (await (await page.request.get('http://localhost:8777/api/__bulks')).json());
 
   /* ======================================================================== */
+  console.log('\n--- Absence non justifiée > 48 h : lettre recommandée préparée d\'office ---');
+  let auto = [];
+  for (let k = 0; k < 20 && !auto.length; k++) {
+    await page.waitForTimeout(500);
+    auto = (await (await page.request.get('http://localhost:8777/api/discipline')).json()).entrees.filter(x => x.type === 'recommandee');
+  }
+  t('au démarrage, une lettre recommandée est préparée pour l\'absence de plus de 48 h', auto.length === 1, JSON.stringify(auto).slice(0,200));
+  const lr = auto[0] || {};
+  const abs3 = await page.evaluate(() => absencesSansJustif().map(x => [x.id, x.debut, x.jours.length]));
+  eg('pour la bonne personne et la bonne absence (E005, 3 jours ; E006 a un certificat ; E009 un seul jour)', abs3.map(x=>x[0]), ['E005']);
+  eg('brouillon, numéroté, motif absence, délai 48 h, rattaché à l\'absence', [lr.statut, /^LR-\d{4}-001$/.test(lr.ref), lr.motif, lr.delai_h, lr.cle_auto], ['brouillon', true, 'absence', 48, 'E005|'+abs3[0][1]]);
+  t('les dates d\'absence sont écrites en arabe dans les faits', /سُجّل غيابك عن العمل دون إذن أو مبرّر لمدّة 3 أيام/.test(lr.faits||''), lr.faits);
+  t('la note dit qu\'elle a été préparée automatiquement', /Préparée automatiquement par PilotRH/.test(lr.note||''));
+  const encore = await page.evaluate(async () => (await discAutoLettres()).length);
+  const tous = (await (await page.request.get('http://localhost:8777/api/discipline')).json()).entrees.filter(x => x.type === 'recommandee');
+  t('un second passage ne crée pas de doublon', encore === 0 && tous.length === 1);
+  await aller('alertes'); await page.waitForSelector('.alert-row');
+  const prem = await page.locator('.alert-row').first().innerText();
+  t('l\'alerte est en tête de liste', /Absence non justifiée > 48 h/.test(prem), prem);
+  t('elle dit qui, depuis quand, combien de jours', /3 jour\(s\) ouvré\(s\) d’absence depuis le/.test(prem));
+  t('et que la lettre est prête', /Lettre recommandée LR-\d{4}-001 préparée \(brouillon\)/.test(prem));
+  await page.locator('.alert-clic', {hasText:'Absence non justifiée'}).first().click(); await page.waitForSelector('#dCorps');
+  t('un clic ouvre la lettre', /LR-\d{4}-001 — Lettre recommandée/.test(await page.locator('.modal-head h3').innerText()));
+  const apLR = await page.evaluate(() => document.getElementById('discApercu').srcdoc);
+  t('mention « رسالة مضمونة الوصول مع الإعلام بالبلوغ »', /رسالة مضمونة الوصول مع الإعلام بالبلوغ/.test(apLR));
+  t('objet, adresse de la destinataire, délai de 48 h', /الموضوع: غياب غير مبرّر عن العمل/.test(apLR) && /العنوان:/.test(apLR) && /48 ساعة/.test(apLR));
+  t('ligne du numéro d\'envoi recommandé, sans signature de la destinataire', /عدد الإرسالية المضمونة الوصول/.test(apLR) && !/إمضاء المعنية بالأمر/.test(apLR));
+  await page.evaluate(()=>closeModal());
+  /* le certificat arrive : l'alerte s'éteint */
+  await page.evaluate(d => { DB.absences.push({id:'E005',type:'Maladie',debut:d,fin:addDays(TODAY,2),jours:3,statut:'justifiée'}); }, abs3[0][1]);
+  await aller('alertes');
+  t('justificatif enregistré : l\'alerte disparaît', !/Absence non justifiée/.test(await page.locator('#main').innerText()));
+  await page.evaluate(() => { DB.absences.pop(); });
+  const chef = await page.evaluate(async () => { const v=ME.role; ME.role='atelier';
+    const a = computeAlerts().find(x => /Absence non justifiée/.test(x.type)); const c = (await discAutoLettres()).length; ME.role=v; return {act:a&&a.actLbl, sub:a&&a.sub, c}; });
+  t('chef d\'atelier : il voit l\'alerte, sans la lettre ni la création', chef.act === 'Voir la journée' && !/LR-/.test(chef.sub||'') && chef.c === 0, JSON.stringify(chef));
+  /* on retire la lettre pour que la suite des tests parte d'un dossier vide */
+  await page.request.post('http://localhost:8777/api/discipline/supprimer', {data:{id:lr.id}});
+  await page.evaluate(async () => { await discCharger(true); });
+
+  console.log('\n--- Absence > 48 h : les règles, cas par cas ---');
+  const regl = await page.evaluate(() => {
+    const sv = {e:DB.employees, p:DB.pointages, a:DB.absences, c:DB.conges, s:JSON.parse(JSON.stringify(DB.settings))};
+    const J = {actif:true,debut:'07:30',fin:'16:30',pause:30,tol:15,grace:15};
+    DB.settings.jours = {0:{actif:false},1:J,2:J,3:J,4:J,5:J,6:J}; DB.settings.periodes=[]; DB.settings.feries=[]; DB.settings.feriesFixes=[]; DB.settings.suivi={};
+    ENGINE.invalidate();
+    const ouvres = []; for (let k = 1; ouvres.length < 6; k++) { const d = addDays(TODAY, -k); if (estOuvre(d)) ouvres.push(d); }
+    const ids = ['A','B','C','D','E','F','G','H','I'];
+    DB.employees = ids.map((id,i) => ({id, matricule:String(i+1), prenom:'P'+id, nom:'N'+id, sexe:'F', actif:id!=='H', adresse:id==='A'?'':'Nabeul'}));
+    const P = {statut:'present',entree:'07:30',sortie:'16:30'}, ABS = {statut:'absent',entree:'',sortie:''};
+    DB.pointages = {};
+    [TODAY, ...ouvres].forEach(d => { DB.pointages[d] = {}; ids.forEach(id => DB.pointages[d][id] = P); });
+    const absent = (id, n) => ouvres.slice(0, n).forEach(d => DB.pointages[d][id] = ABS);
+    ['A','B','C','D','F','G','H','I'].forEach(id => absent(id, 3)); absent('E', 1);
+    DB.pointages[TODAY].A = ABS; DB.pointages[TODAY].B = ABS;
+    DB.pointages[TODAY].F = {statut:'present',entree:'09:40',sortie:''};      // revenue ce matin
+    delete DB.pointages[ouvres[1]].G;                                        // jour sans enregistrement
+    DB.employees.find(e => e.id === 'I').embauche = TODAY;                    // embauchée aujourd'hui
+    DB.absences = [{id:'B',debut:ouvres[2],fin:TODAY,statut:'justifiée'}];
+    DB.conges = [{id:'C',debut:ouvres[2],fin:ouvres[0],statut:'En attente'}];
+    const r1 = absencesSansJustif().map(x => x.id + x.jours.length + (x.sansAdresse ? '-sansAdresse' : ''));
+    /* deux jours seulement, dont celui d'avant-hier : 48 h écoulées → alerte */
+    absent('D', 2); ouvres.slice(2).forEach(d => DB.pointages[d].D = P); DB.pointages[TODAY].D = ABS;
+    const r2 = absencesSansJustif().map(x => x.id + x.jours.length);
+    const r3 = absencesSansJustif(5).map(x => x.id);
+    DB.employees = sv.e; DB.pointages = sv.p; DB.absences = sv.a; DB.conges = sv.c; DB.settings = sv.s; ENGINE.invalidate();
+    return {r1, r2, r3};
+  });
+  t('3 jours sans justificatif : alerte (et adresse manquante signalée)', regl.r1.includes('A3-sansAdresse'), regl.r1);
+  t('couvert par un justificatif : pas d\'alerte', !regl.r1.some(x => x[0]==='B'));
+  t('une demande de congé, même en attente, suffit : pas d\'alerte', !regl.r1.some(x => x[0]==='C'));
+  t('absente un seul jour : pas d\'alerte', !regl.r1.some(x => x[0]==='E'));
+  t('revenue ce matin (a badgé) : pas d\'alerte', !regl.r1.some(x => x[0]==='F'));
+  t('un jour sans enregistrement arrête le décompte (on ne conclut pas sans données)', !regl.r1.some(x => x[0]==='G'));
+  t('sortie de l\'effectif : pas d\'alerte', !regl.r1.some(x => x[0]==='H'));
+  t('embauchée aujourd\'hui : pas d\'alerte pour des jours d\'avant son arrivée', !regl.r1.some(x => x[0]==='I'));
+  t('deux jours ouvrés complets sans nouvelles, 48 h passées : alerte', regl.r2.includes('D2'), regl.r2);
+  eg('le seuil est réglable (5 jours : plus personne)', regl.r3, []);
+
+  /* ======================================================================== */
   console.log('\n--- Assiduité : le calcul, sur des données faites à la main ---');
   /* Semaine du lundi 05/10/2026 au samedi 10/10/2026, horaire 07:30–16:30, tolérance 15 min.
      A : présente 4 j dont 2 retards (07:50, 08:10), absente mardi (injustifiée), absente jeudi (justifiée)
@@ -213,7 +293,7 @@ const { chromium } = require('playwright');
   t('PV : deux témoins et la direction, pas de destinataire', /الشاهد الأول/.test(doc.htmlPV) && /الشاهد الثاني/.test(doc.htmlPV) && !/class="dest"/.test(doc.htmlPV));
   t('un texte modifié à la main est imprimé tel quel, sans retour au modèle', /نص حرّره المسؤول بيده/.test(doc.htmlFige) && !/قرّرت إدارة المؤسسة/.test(doc.htmlFige));
   t('des faits contenant du HTML sont imprimés comme du texte', /&lt;img src=x/.test(doc.xss) && !/<img src=x/.test(doc.xss));
-  eg('huit types de pièces, chacun avec son titre arabe', doc.titres.length, 8);
+  eg('neuf types de pièces (dont la lettre recommandée), chacun avec son titre arabe', doc.titres.length, 9);
   t('chaque type a son modèle', doc.tousModeles);
 
   console.log('\n--- Passages : 1re entrée, 1re sortie, 2e entrée, 2e sortie ---');
@@ -262,7 +342,7 @@ const { chromium } = require('playwright');
   const ligne = page.locator('tr[data-emp="E003"]');
   t('journée impaire : bouton « 3 passages — compléter » sur la ligne', /3 passages — compléter/.test(await ligne.innerText()));
   await ligne.locator('button:has-text("compléter")').click(); await page.waitForSelector('#psGrille input');
-  t('quatre cases : 1re entrée, 1re sortie, 2e entrée, 2e sortie', (await page.locator('#psGrille label').allInnerTexts()).map(x=>x.split(' —')[0]).join('|') === '1re entrée|1re sortie|2e entrée|2e sortie');
+  t('six cases d\'office : 3 entrées et 3 sorties', (await page.locator('#psGrille label').allInnerTexts()).map(x=>x.split(' —')[0]).join('|') === '1re entrée|1re sortie|2e entrée|2e sortie|3e entrée|3e sortie');
   t('préremplies avec les badges lus', (await page.inputValue('#ps0'))==='07:31' && (await page.inputValue('#ps1'))==='12:02' && (await page.inputValue('#ps2'))==='12:41' && (await page.inputValue('#ps3'))==='');
   t('la case manquante est désignée : « 2e sortie — non badgée »', /2e sortie — non badgée/.test(await page.locator('#psGrille').innerText()));
   t('l\'horaire prévu est rappelé', /Horaire prévu ce jour : 07:30 → 16:30/.test(await page.locator('.modal-body').innerText()));
@@ -271,8 +351,15 @@ const { chromium } = require('playwright');
   await page.fill('#ps2','11:00'); await page.dispatchEvent('#ps2','input'); await page.waitForTimeout(150);
   t('une erreur bloque l\'enregistrement et dit pourquoi', await page.locator('#psOk').isDisabled() && /doit être après/.test(await page.locator('#psApercu').innerText()));
   await page.fill('#ps2','12:41'); await page.dispatchEvent('#ps2','input'); await page.waitForTimeout(150);
+  await page.fill('#ps3','14:00'); await page.dispatchEvent('#ps3','input');
+  await page.fill('#ps4','14:20'); await page.dispatchEvent('#ps4','input');
+  await page.fill('#ps5','16:30'); await page.dispatchEvent('#ps5','input'); await page.waitForTimeout(150);
+  t('3 entrées et 3 sorties : trois segments calculés', /07:31 → 12:02 · 12:41 → 14:00 · 14:20 → 16:30/.test(await page.locator('#psApercu').innerText()) && /7h58/.test(await page.locator('#psApercu').innerText()), await page.locator('#psApercu').innerText());
   await page.click('button:has-text("+ Ajouter un passage")'); await page.waitForTimeout(150);
-  t('« + Ajouter un passage » ajoute une 3e entrée et une 3e sortie', await page.locator('#psGrille input').count()===6 && (await page.inputValue('#ps3'))==='16:30');
+  t('« + Ajouter un passage » ajoute une 4e entrée et une 4e sortie, valeurs gardées', await page.locator('#psGrille input').count()===8 && (await page.inputValue('#ps5'))==='16:30');
+  t('au-delà de 4 coupures, le bouton disparaît', !(await page.locator('#psPlus').isVisible()));
+  for (const i of [5,4]) { await page.fill('#ps'+i,''); await page.dispatchEvent('#ps'+i,'input'); }
+  await page.fill('#ps3','16:30'); await page.dispatchEvent('#ps3','input'); await page.waitForTimeout(150);
   const nAvant = (await (await page.request.get('http://localhost:8777/api/__pointage')).json()).length;
   await page.click('#psOk'); await page.waitForTimeout(800);
   const envois = await (await page.request.get('http://localhost:8777/api/__pointage')).json();
@@ -553,6 +640,66 @@ const { chromium } = require('playwright');
 
   const lect = await page.evaluate(async () => { const v=ME.role; ME.role='lecture'; await go('corrections'); const b=!!document.getElementById('cmBarre'); ME.role=v; return b; });
   t('un compte en lecture seule voit les anomalies mais pas la barre de correction', lect===false);
+
+  console.log('\n--- Fiches de pointage mensuelles ---');
+  await page.evaluate(()=>closeModal());
+  const fi = await page.evaluate(async () => {
+    const ym = addDays(TODAY, -35).slice(0,7); const [a, b] = monthBounds(ym); await ensureRange(a, b);
+    const id = DB.employees.find(e => !/[<"]/.test(e.prenom+e.nom)).id;
+    /* une journée impaire, une à 8 passages, une corrigée */
+    const jo = []; eachDay(a, b, ds => { if (estOuvre(ds) && DB.pointages[ds]) jo.push(ds); });
+    DB.pointages[jo[0]][id] = {statut:'present', punches:['07:31','12:02','12:41']};
+    DB.pointages[jo[1]][id] = {statut:'present', punches:['07:30','09:00','09:10','10:00','10:10','12:00','12:30','16:30']};
+    DB.pointages[jo[2]][id] = {statut:'present', entree:'07:30', sortie:'16:30', manuel:1};
+    ENGINE.invalidate();
+    const F = lignesFiche(id, ym), s = summarize(a, b).find(x => x.e.id === id);
+    const dim = F.lignes.filter(l => l.w === 0);
+    const html = fichesHtml([id], ym);
+    const l0 = F.lignes.find(l => l.ds === jo[0]), l1 = F.lignes.find(l => l.ds === jo[1]), l2 = F.lignes.find(l => l.ds === jo[2]);
+    const cur = lignesFiche(id, TODAY.slice(0,7));
+    return { n: F.lignes.length, jours: +b.slice(8), tot: [F.t.trav, F.t.abs, F.t.conge, F.t.hN, F.t.hS, F.t.ret],
+      paie: [s.jT, s.jA, s.jC, s.hN, s.hS, s.rt],
+      dim: dim.every(l => l.statut === 'Repos' && !l.nonImporte),
+      impair: [l0.P.length, l0.obs.join('|')], huit: l1.obs.join('|'), corr: l2.obs.join('|'),
+      pages: (html.match(/class="page"/g)||[]).length, cols: (html.match(/<th>(Entrée|Sortie) \d<\/th>/g)||[]).length,
+      manque: /class="t s manque">\?</.test(html), societe: /STE DBS FASHION|<b>[^<]+<\/b><br><span>Fiche de pointage mensuelle/.test(html),
+      sig: /Visa du service du personnel/.test(html) && /Lu et vérifié par l’intéressé\(e\)/.test(html),
+      avenir: cur.lignes.filter(l => l.ds > TODAY).every(l => l.avenir && !l.m), regle: html.indexOf(mentionRegime()) > 0,
+      deux: (fichesHtml([id, DB.employees[1].id], ym).match(/class="page"/g)||[]).length };
+  });
+  eg('une ligne par jour du mois', fi.n, fi.jours);
+  eg('totaux identiques au rapport de paie (jours, absences, congés, heures, H. sup., retards)', fi.tot, fi.paie);
+  t('les dimanches sans donnée s\'affichent « Repos », pas « non importé »', fi.dim);
+  t('journée impaire : la sortie manquante est marquée « ? » et « Sortie non badgée »', fi.impair[0]===3 && /Sortie non badgée/.test(fi.impair[1]) && fi.manque, JSON.stringify(fi.impair));
+  t('au-delà de 3 entrées / 3 sorties, les autres passages sont écrits en observation', /Autres passages : 12:30 · 16:30/.test(fi.huit), fi.huit);
+  t('une journée corrigée porte « Corrigé RH »', /Corrigé RH/.test(fi.corr));
+  eg('6 colonnes de passages : Entrée 1 … Sortie 3', fi.cols, 6);
+  t('cadre « ? » sur la case manquante', fi.manque);
+  t('deux cadres de signature (service du personnel, intéressée)', fi.sig);
+  t('la règle de calcul est imprimée sur la fiche', fi.regle);
+  t('mois en cours : les jours à venir restent vides', fi.avenir);
+  eg('une page par personne', [fi.pages, fi.deux], [1, 2]);
+
+  await aller('rapports');
+  await page.click('button:has-text("Fiches de pointage individuelles")'); await page.waitForSelector('#fiBody tr');
+  t('le bouton du rapport ouvre le choix des personnes et du mois', await page.locator('#fiMois').count()===1);
+  t('sans personne cochée, impossible d\'imprimer', await page.locator('#fiImp').isDisabled());
+  await page.locator('#fiBody input[type=checkbox]').nth(0).check(); await page.locator('#fiBody input[type=checkbox]').nth(1).check();
+  t('le compte de pages s\'affiche', /2 fiche\(s\) — 2 page\(s\)/.test(await page.locator('#fiN').innerText()));
+  await page.fill('#fiQ','Nom1'); await page.waitForTimeout(150);
+  t('la recherche filtre la liste sans perdre les personnes cochées', /2 fiche\(s\)/.test(await page.locator('#fiN').innerText()));
+  await page.click('#fiImp'); await page.waitForTimeout(900);
+  const cad = await page.evaluate(()=>{const f=document.getElementById('ficheCadre');return f?f.srcdoc:''});
+  t('« Imprimer » prépare 2 pages A4', (cad.match(/class="page"/g)||[]).length===2 && /@page\{size:A4 portrait/.test(cad));
+  await page.fill('#fiQ',''); await page.click('button:has-text("Tout cocher")'); await page.waitForTimeout(150);
+  t('« Tout cocher » prend tout l\'effectif', +((await page.locator('#fiN').innerText()).match(/\d+/)||[0])[0] >= 100);
+  await page.evaluate(()=>closeModal());
+  await page.evaluate(()=>openProfile(DB.employees[2].id)); await page.waitForSelector('#histBox');
+  await page.click('.modal-body button:has-text("Fiche de pointage du mois")'); await page.waitForSelector('#fiBody tr');
+  t('depuis la fiche d\'une personne : elle est déjà cochée', /1 fiche\(s\)/.test(await page.locator('#fiN').innerText()));
+  t('le mois proposé est celui de l\'historique affiché', (await page.inputValue('#fiMois'))===await page.evaluate(()=>TODAY.slice(0,7)));
+  t('on ne peut pas choisir un mois futur', (await page.getAttribute('#fiMois','max'))===await page.evaluate(()=>TODAY.slice(0,7)));
+  await page.evaluate(()=>closeModal());
 
   t('aucune erreur JavaScript pendant tout le parcours', erreurs.length===0, erreurs.join(' | '));
   t('aucun script injecté n\'a été exécuté', !(await page.evaluate(()=>window.__XSS||window.__XSS2||window.__XSSD)));

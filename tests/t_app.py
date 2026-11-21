@@ -842,6 +842,12 @@ t("une piece ne peut pas changer de personne", code(disc(dict(q, emp="E002"))), 
 t("piece inexistante : 404", code(disc({"id":"Dinexistant","type":"avertissement","emp":"E001","date":"2026-11-14"})), 404)
 mp = disc({"type":"miseapied","emp":"E001","date":"2026-11-14","motif":"absence","jours":99,"du":"2026-11-16"})["entree"]
 t("la duree d'une mise a pied est bornee", mp["jours"], 30)
+lr1 = disc({"type":"recommandee","emp":"E001","date":"2026-11-20","motif":"absence","date_faits":"2026-11-17","delai_h":48,"cle_auto":"E001|2026-11-17"})
+t("lettre recommandee : numerotee LR", lr1["entree"]["ref"], "LR-2026-001")
+t("rattachee a son absence", lr1["entree"]["cle_auto"], "E001|2026-11-17")
+lr2 = disc({"type":"recommandee","emp":"E001","date":"2026-11-20","motif":"absence","cle_auto":"E001|2026-11-17"})
+t("deux postes qui la preparent en meme temps : pas de doublon, la premiere est rendue", (lr2.get("existait"), lr2["entree"]["id"]), (True, lr1["entree"]["id"]))
+t("une autre absence de la meme personne : une autre lettre", disc({"type":"recommandee","emp":"E001","date":"2026-12-10","motif":"absence","cle_auto":"E001|2026-12-07"})["entree"]["ref"], "LR-2026-002")
 t("un texte demesure est tronque", len(disc({"type":"pv","emp":"E001","date":"2026-11-14","faits":"x"*9000})["entree"]["faits"]), 4000)
 # suppression
 def suppr(i, role="rh"):

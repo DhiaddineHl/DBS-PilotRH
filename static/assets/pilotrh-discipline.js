@@ -27,6 +27,7 @@ const TYPES = {
   blame:        {fr:'Blâme', ar:'توبيخ', court:'Blâme'},
   miseapied:    {fr:'Mise à pied', ar:'قرار إيقاف عن العمل', court:'Mise à pied'},
   reprise:      {fr:'Mise en demeure de reprendre le travail', ar:'تنبيه بوجوب الالتحاق بالعمل', court:'Mise en demeure'},
+  recommandee:  {fr:'Lettre recommandée — absence non justifiée', ar:'غياب غير مبرّر عن العمل', court:'Lettre recommandée'},
   convocation:  {fr:'Convocation au conseil de discipline', ar:'استدعاء للمثول أمام مجلس التأديب', court:'Convocation'},
   pv:           {fr:'Procès-verbal de constat', ar:'محضر معاينة', court:'PV de constat'},
 };
@@ -81,6 +82,14 @@ const MODELES = {
     'لقد سجّلت إدارة المؤسسة تغيّبك عن العمل دون إذن مسبق ودون تقديم ما يبرّر ذلك منذ يوم {date_faits} وإلى غاية تاريخ هذا التنبيه.\n{faits}\n'+
     'وعليه، فإنّ إدارة المؤسسة تدعوك إلى الالتحاق بمركز عملك أو تقديم ما يبرّر غيابك في أجل أقصاه {delai} ساعة من تاريخ تسلّمك هذا التنبيه.\n'+
     'ونعلمك أنّه في صورة عدم الالتحاق بالعمل أو عدم تبرير الغياب في الأجل المذكور، تحتفظ الإدارة بحقّها في اتخاذ الإجراءات القانونية المترتّبة عن ذلك طبقا لأحكام مجلّة الشغل.',
+  recommandee:
+    'وبعد، لقد لاحظت إدارة المؤسسة تغيّبك عن العمل منذ يوم {date_faits} دون إعلام مسبق ودون تقديم أيّ مبرّر لهذا الغياب إلى غاية تاريخ تحرير هذه الرسالة، '+
+    'وذلك رغم انقضاء أجل الثماني والأربعين (48) ساعة المخصّص لإعلام الإدارة بسبب الغياب وتبريره.\n{faits}\n'+
+    'وعليه، فإنّنا ندعوك بمقتضى هذه الرسالة المضمونة الوصول مع الإعلام بالبلوغ إلى الالتحاق بمركز عملك، أو إلى تقديم ما يبرّر غيابك '+
+    '(شهادة طبية أو غيرها) إلى إدارة المؤسسة، وذلك في أجل أقصاه {delai} ساعة من تاريخ تسلّمك هذه الرسالة.\n'+
+    'ونعلمك أنّه في صورة عدم الالتحاق بالعمل وعدم تقديم المبرّر في الأجل المذكور، قد يُعتبر غيابك تخلّيا عن العمل، '+
+    'وتحتفظ الإدارة بحقّها في اتخاذ الإجراءات القانونية والتأديبية المترتّبة عن ذلك طبقا لأحكام مجلّة الشغل والاتفاقية المشتركة القطاعية والنظام الداخلي للمؤسسة.\n'+
+    '[وتقبّل|وتقبّلي] منّا فائق الاحترام.',
   convocation:
     'تبعا لما نُسب إليك بتاريخ {date_faits}: {motif}.\n{faits}\n{antecedents}\n'+
     'نعلمك أنّه تقرّر عرض ملفّك على مجلس التأديب، وندعوك إلى الحضور أمامه يوم {du} على الساعة ............ بمقرّ المؤسسة.\n'+
@@ -89,8 +98,8 @@ const MODELES = {
     'في يوم {date_faits}، نحن الممضين أسفله، نشهد بأنّه تمّت معاينة ما يلي بخصوص [السيد|السيدة] {nom}، رقم التسجيل {matricule}، {poste}:\n{motif}.\n{faits}\n'+
     'وقد حُرّر هذا المحضر لإثبات ما ذُكر والاستظهار به عند الاقتضاء.',
 };
-const AVEC_DELAI = ['questionnaire','reprise'], AVEC_JOURS = ['miseapied'], AVEC_DATE_CIBLE = ['miseapied','convocation'];
-const DELAI_DEFAUT = {questionnaire:48, reprise:48};
+const AVEC_DELAI = ['questionnaire','reprise','recommandee'], AVEC_JOURS = ['miseapied'], AVEC_DATE_CIBLE = ['miseapied','convocation'];
+const DELAI_DEFAUT = {questionnaire:48, reprise:48, recommandee:48};
 
 let DISC = null;          // {entrees, societe, modeles}
 
@@ -139,6 +148,7 @@ function variables(en){
   const mp=finMiseAPied(en.du,en.jours);
   const m=MOTIFS[en.motif]||{};
   return {femme, v:{
+    adresse:(e.adresseAr||e.adresse||'').trim(),
     nom:(e.nomAr||'').trim()||((e.prenom||'')+' '+(e.nom||'')).trim(), matricule:matOf(e), cin:e.cin&&e.cin!==matOf(e)?e.cin:'', poste:e.posteAr||(POSTES_AR[e.poste]?genre(POSTES_AR[e.poste],femme):(e.poste||'')),
     atelier:atelierAr(e.atelier), societe:so.nomAr||so.nom||'', ville:so.villeAr||so.ville||'', ref:en.ref||'',
     date:dateAr(en.date), date_faits:dateAr(en.date_faits||en.date), motif:m.ar||'', faits:(en.faits||'').trim(),
@@ -172,7 +182,7 @@ function discHtml(en,apercu){
     '.tete{display:flex;justify-content:space-between;gap:20px;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8px;line-height:1.45}'+
     '.tete .ar{text-align:right;font-weight:700;font-size:15pt}.tete .fr{text-align:left;direction:ltr;font-family:Georgia,"Times New Roman",serif;font-size:11pt}'+
     '.tete small{display:block;font-weight:400;font-size:10.5pt}'+
-    '.lieu{display:flex;justify-content:space-between;font-size:12.5pt;margin-bottom:6px}'+
+    '.recom{text-align:center;font-weight:700;font-size:12.5pt;border:1.5px solid #000;padding:2px 10px;margin:4px auto 0;width:max-content}'+'.lieu{display:flex;justify-content:space-between;font-size:12.5pt;margin-bottom:6px}'+
     'h1{text-align:center;font-size:18pt;margin:8px 0 10px;text-decoration:underline;text-underline-offset:6px}'+
     '.dest{border:1px solid #000;padding:4px 12px;margin-bottom:10px;line-height:1.6;font-size:12.5pt}.dest b{display:inline-block;min-width:38mm}'+
     'p{margin:0 0 4px;text-align:justify}.puce{padding-right:10mm;line-height:1.55}'+
@@ -186,11 +196,13 @@ function discHtml(en,apercu){
     '<div class="tete"><div class="ar">'+h(so.nomAr||so.nom||'')+'<small>'+h(so.adresseAr||'')+'</small></div>'+
       '<div class="fr"><b>'+h(so.nom||'')+'</b><small>'+h(so.adresse||'')+'</small>'+(so.mf?'<small>MF : '+h(so.mf)+'</small>':'')+'</div></div>'+
     '<div class="lieu"><span>عدد: <span class="ltr">'+h(en.ref||'........')+'</span></span><span>'+h(v.ville||'............')+' في '+h(v.date)+'</span></div>'+
-    '<h1>'+h(t.ar)+'</h1>'+
+    (en.type==='recommandee'?'<div class="recom">رسالة مضمونة الوصول مع الإعلام بالبلوغ</div>':'')+
+    '<h1>'+(en.type==='recommandee'?'الموضوع: ':'')+h(t.ar)+'</h1>'+
     (pv?'':'<div class="dest">'+
       '<div><b>إلى '+(femme?'السيدة':'السيد')+':</b> '+h(v.nom)+'</div>'+
       '<div><b>رقم التسجيل:</b> <span class="ltr">'+h(v.matricule)+'</span>'+(v.cin?' &nbsp;—&nbsp; <b style="min-width:0">ب.ت.و عدد:</b> <span class="ltr">'+h(v.cin)+'</span>':'')+'</div>'+
-      (v.poste||v.atelier?'<div><b>الخطّة:</b> '+h(v.poste)+(v.atelier?' — '+h(v.atelier):'')+'</div>':'')+'</div>')+
+      (v.poste||v.atelier?'<div><b>الخطّة:</b> '+h(v.poste)+(v.atelier?' — '+h(v.atelier):'')+'</div>':'')+
+      (['recommandee','reprise','convocation'].includes(en.type)?'<div><b>العنوان:</b> '+(v.adresse?h(v.adresse):'......................................................................')+'</div>':'')+'</div>')+
     paras+
     (en.type==='questionnaire'?'<div class="rep"><p><b>جواب '+(femme?'المعنية':'المعني')+' بالأمر:</b></p>'+lignes(5)+
       '<p style="margin-top:8px">التاريخ: ..................... &nbsp;&nbsp; الإمضاء: .....................</p></div>':'')+
@@ -198,6 +210,10 @@ function discHtml(en,apercu){
       ?'<div class="sig"><div>الشاهد الأول<small>الاسم واللقب والإمضاء</small><div class="cadre"></div></div>'+
         '<div>الشاهد الثاني<small>الاسم واللقب والإمضاء</small><div class="cadre"></div></div>'+
         '<div>عن الإدارة<small>'+h(so.representantAr||so.representant||'')+'</small><div class="cadre"></div></div></div>'
+      :en.type==='recommandee'
+      ?'<div class="sig"><div style="text-align:right;line-height:2">عدد الإرسالية المضمونة الوصول: ..............................<br>'+
+          'تاريخ الإرسال: ..............................</div>'+
+        '<div>عن الإدارة<small>'+h(so.qualiteAr||'المدير')+(so.representantAr||so.representant?' — '+h(so.representantAr||so.representant):'')+'</small><div class="cadre"></div></div></div>'
       :'<div class="sig"><div>إمضاء '+(femme?'المعنية':'المعني')+' بالأمر<small>(اطّلعتُ وتسلّمتُ نسخة بتاريخ ..................)</small><div class="cadre"></div></div>'+
         '<div>عن الإدارة<small>'+h(so.qualiteAr||'المدير')+(so.representantAr||so.representant?' — '+h(so.representantAr||so.representant):'')+'</small><div class="cadre"></div></div></div>'+
        '<div class="pied">في صورة رفض الإمضاء أو التسلّم — شاهدان (الاسم واللقب والإمضاء): &nbsp; 1) ............................................ &nbsp; 2) ............................................</div>')+
@@ -498,13 +514,69 @@ async function discReglagesEnregistrer(){
   }catch(e){ toast('Refusé : '+e.message,'err',9000) }
 }
 
-Object.assign(window,{discNouveau,discEditer,discImprimer,discProfil,discChamp,discCorps,discRegenerer,discNomAr,discFaitsPointage,discEnregistrer,
+Object.assign(window,{discLettreDe,discAutoLettres,discLettreAbsence,corpsLettreAuto,discNouveau,discEditer,discImprimer,discProfil,discChamp,discCorps,discRegenerer,discNomAr,discFaitsPointage,discEnregistrer,
   discSupprimer,discSuite,discReglages,discModeleMontrer,discModeleGarder,discReglagesEnregistrer,fillDiscipline,csvDiscipline,
   discHtml,corpsDepuisModele,faitsDepuisEvenements,discCharger,
   DISC_OUTILS:{TYPES,MOTIFS,MODELES,joursAr,foisAr,genre,dateAr,finMiseAPied,get donnees(){return DISC},set donnees(v){DISC=v}}});
 Object.defineProperty(window,'DI_Q',{get:()=>DI_Q,set:v=>{DI_Q=v},configurable:true});
 Object.defineProperty(window,'DI_TYPE',{get:()=>DI_TYPE,set:v=>{DI_TYPE=v},configurable:true});
 Object.defineProperty(window,'DI_STATUT',{get:()=>DI_STATUT,set:v=>{DI_STATUT=v},configurable:true});
+
+/* --- absences non justifiées au-delà de 48 h : lettre recommandée préparée d'office --- */
+function discLettreDe(cle){ return DISC ? (DISC.entrees||[]).find(x=>x.cle_auto===cle) || null : null; }
+function corpsLettreAuto(x){
+  return {type:'recommandee', emp:x.id, date:TODAY, statut:'brouillon', motif:'absence', date_faits:x.debut,
+    faits:faitsDepuisEvenements('absence', x.jours.map(ds=>({ds})), x.debut, x.dernier),
+    delai_h:48, cle_auto:x.cle, corps:'', reponse:'', jours:0, du:'', au:'', suite_de:'', remis_le:'',
+    note:'Préparée automatiquement par PilotRH le '+fmtDate(TODAY)+' : '+x.jours.length+' jour(s) ouvré(s) d’absence sans justificatif.'};
+}
+let AUTO_EN_COURS = false;
+async function discAutoLettres(){
+  if(AUTO_EN_COURS || !peutDisc() || !window.absencesSansJustif || !window.DB) return [];
+  AUTO_EN_COURS = true;
+  const crees = [];
+  try{
+    await discCharger();
+    if(DISC.erreur) return [];
+    for(const x of absencesSansJustif()){
+      if(discLettreDe(x.cle)) continue;
+      try{
+        const r = await api('/api/discipline', {method:'POST', body:corpsLettreAuto(x)});
+        if(!discLettreDe(x.cle)) DISC.entrees.push(r.entree);
+        if(!r.existait) crees.push(r.entree);
+      }catch(e){ /* réessayé au prochain passage */ }
+    }
+  } finally { AUTO_EN_COURS = false; }
+  if(crees.length){
+    toast(crees.length+' lettre(s) recommandée(s) préparée(s) pour absence non justifiée — voir les Alertes', 'warn', 12000);
+    if(typeof majSidebar === 'function') majSidebar();
+    if(VIEW === 'alertes') go('alertes');
+  }
+  return crees;
+}
+async function discLettreAbsence(cle){
+  await discCharger();
+  let l = discLettreDe(cle);
+  if(!l){
+    const x = (absencesSansJustif() || []).find(y => y.cle === cle);
+    if(!x){ toast('Cette absence n’est plus en cours (justifiée ou terminée)','warn'); return; }
+    try{ const r = await api('/api/discipline', {method:'POST', body:corpsLettreAuto(x)}); l = r.entree;
+      if(!discLettreDe(cle)) DISC.entrees.push(l); }
+    catch(e){ toast('Lettre non préparée : '+e.message,'err',9000); return; }
+  }
+  discEditer(l.id);
+}
+/* Au démarrage puis toutes les 30 minutes, tant que l'application est ouverte. */
+(function(){
+  let essais = 0;
+  const attendre = setInterval(() => {
+    if(window.DB && DB.employees && DB.pointages && window.ME && ME.role){
+      clearInterval(attendre);
+      discAutoLettres();
+      setInterval(discAutoLettres, 30*60*1000);
+    } else if(++essais > 120) clearInterval(attendre);
+  }, 1000);
+})();
 
 (function(){
   const i=NAV.findIndex(n=>n.v==='conges');

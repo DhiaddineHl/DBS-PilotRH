@@ -124,6 +124,7 @@ VUES.rapports = async function(main){
         '<button class="btn btn-gold" onclick="pdfPaie()">'+I.download+' PDF paie</button>'+
         '<button class="btn btn-ghost" onclick="csvPaie()">'+I.download+' CSV paie</button>'+
         '<button class="btn btn-ghost" onclick="csvJournalier()">'+I.download+' CSV journalier</button>'+
+        '<button class="btn btn-ghost" onclick="openFichesPointage([],REP_FROM.slice(0,7))">'+I.report+' Fiches de pointage individuelles</button>'+
       '</div>'+
       '<div class="hint" style="margin-top:10px">Les exports portent <b>exactement</b> sur la période affichée ci-dessus '+
       '(auparavant le PDF et le CSV de paie forçaient le mois entier, sans le signaler).</div>'+
@@ -424,6 +425,7 @@ function openProfile(id){
         '<div class="field"><label for="hFrom">Du</label><input type="date" id="hFrom" value="'+a+'" onchange="fillHist(\''+escJs(id)+'\')"></div>'+
         '<div class="field"><label for="hTo">Au</label><input type="date" id="hTo" value="'+TODAY+'" onchange="fillHist(\''+escJs(id)+'\')"></div>'+
         (can('edit')?'<button class="btn btn-gold" onclick="closeModal();openCorrection(\''+escJs(id)+'\')">'+I.gear+' Corriger sur une plage de dates</button>':'')+
+        '<button class="btn btn-ghost" onclick="closeModal();openFichesPointage([\''+escJs(id)+'\'],(document.getElementById(\'hFrom\')||{}).value?document.getElementById(\'hFrom\').value.slice(0,7):TODAY.slice(0,7))">'+I.report+' Fiche de pointage du mois</button>'+
       '</div><div id="histBox"><div class="skel"></div></div></div>'+
     '<div class="info-block"><h4>Dossier numérique</h4>'+
       (docs.map(d=>'<span class="doc-chip">'+I.doc+' '+esc(d.type)+' <small style="color:var(--faint)">'+fmtDate(d.date)+'</small></span>').join('')
@@ -1019,6 +1021,21 @@ function computeAlerts(){
     al.push({type:'Absence injustifiée',ic:I.warn,col:'var(--absent)',bg:'var(--absent-bg)',
       txt:empName(a.id),sub:'Non signalée aujourd’hui',when:'Aujourd’hui',id:a.id,
       act:"allerAuJour('"+TODAY+"','"+escJs(a.id)+"')",actLbl:'Aller à la feuille du jour'}));
+  /* absence de plus de 48 h sans justificatif : lettre recommandée — placée en tête, c'est le plus urgent */
+  if(window.absencesSansJustif){
+    const rh=['admin','rh'].includes(ME.role);
+    absencesSansJustif().forEach(x=>{
+      const l=rh&&window.discLettreDe?discLettreDe(x.cle):null;
+      const etat=l?(l.statut==='brouillon'?'Lettre recommandée '+l.ref+' préparée (brouillon) — à vérifier, imprimer et envoyer'
+                   :'Lettre recommandée '+l.ref+' : '+({remis:'envoyée',signe:'signée',refus:'refus de signer',classe:'classée sans suite'}[l.statut]||l.statut)+(l.remis_le?' le '+fmtDate(l.remis_le):''))
+                 :'Aucun justificatif ni congé enregistré'+(rh?' — lettre recommandée à préparer':'');
+      al.unshift({type:'Absence non justifiée > 48 h',ic:I.warn,col:'var(--absent)',bg:'var(--absent-bg)',
+        txt:empName(x.id)+' — '+x.jours.length+' jour(s) ouvré(s) d’absence depuis le '+fmtDate(x.debut),
+        sub:etat+(x.sansAdresse&&rh?' · adresse absente de la fiche (nécessaire pour l’envoi)':''),when:'Urgent',id:x.id,
+        act:rh?(l?"discEditer('"+escJs(l.id)+"')":"discLettreAbsence('"+escJs(x.cle)+"')"):"allerAuJour('"+x.dernier+"','"+escJs(x.id)+"')",
+        actLbl:rh?(l?'Ouvrir la lettre':'Préparer la lettre'):'Voir la journée'});
+    });
+  }
   return al;
 }
 function alertCount(){return computeAlerts().length}

@@ -561,6 +561,52 @@ Object.assign(window,{cmRecharger,detecterAnomalies,corrigerUn,lireHeures,fillCo
   cmRaccourci,cmMajAction,cmApercu,cmValider,cmAnnuler,cmHoraireJour,cmHoraireEnregistrer});
 
 /* ----------------------------------------------------------------------------
+   3. ABSENCES NON JUSTIFIÉES AU-DELÀ DE 48 HEURES
+   Une ouvrière absente plusieurs jours ouvrés de suite, sans justificatif ni
+   congé, 48 heures après le début de son absence : il faut le savoir le jour
+   même, et préparer la lettre recommandée qui la met en demeure de justifier
+   ou de reprendre. Fonction pure, testée telle quelle.
+   ---------------------------------------------------------------------------- */
+const JOURS_SANS_JUSTIF = 2;          // « plus de deux jours » = 48 h écoulées depuis le 1er jour
+
+function couvertParJustif(id, ds){
+  if(DB.absences.some(a => a.id === id && a.statut === 'justifiée' && a.debut <= ds && ds <= (a.fin || a.debut))) return true;
+  /* une demande de congé, même en attente, est une démarche : pas de lettre recommandée */
+  return (DB.conges || []).some(c => c.id === id && c.statut !== 'Refusé' && c.debut <= ds && ds <= (c.fin || c.debut));
+}
+function absencesSansJustif(seuil){
+  seuil = seuil || ((DB.settings.suivi || {}).absenceJours) || JOURS_SANS_JUSTIF;
+  const out = [];
+  DB.employees.forEach(e => {
+    if(e.actif === false) return;
+    /* aujourd'hui : si elle a badgé, l'absence est terminée ; sinon on ne compte
+       pas encore aujourd'hui (la journée n'est pas finie), on regarde la veille */
+    const auj = (DB.pointages[TODAY] || {})[e.id];
+    if(auj && ENGINE.badges(auj).length) return;
+    const jours = [];
+    let ds = addDays(TODAY, -1), garde = 0;
+    while(garde++ < 60){
+      if(!estOuvre(ds)){ ds = addDays(ds, -1); continue; }
+      const jour = DB.pointages[ds];
+      if(!jour) break;                                   // jour non importé : on ne conclut pas
+      const r = jour[e.id], m = metrics(r, ds);
+      if(m.statut !== 'absent' || couvertParJustif(e.id, ds)) break;
+      jours.unshift(ds);
+      ds = addDays(ds, -1);
+    }
+    if(jours.length < seuil) return;
+    /* 48 h écoulées depuis le premier jour d'absence (et pas seulement 2 jours ouvrés) */
+    const heures = (new Date(TODAY+'T12:00') - new Date(jours[0]+'T08:00')) / 36e5;
+    if(heures < 48) return;
+    if(e.embauche && !e.aCompleter && jours[0] < e.embauche) return;
+    out.push({e, id:e.id, debut:jours[0], dernier:jours[jours.length-1], jours,
+              cle:e.id+'|'+jours[0], sansAdresse:!String(e.adresse||'').trim()});
+  });
+  return out.sort((a, b) => b.jours.length - a.jours.length);
+}
+Object.assign(window, {absencesSansJustif, couvertParJustif});
+
+/* ----------------------------------------------------------------------------
    Navigation
    ---------------------------------------------------------------------------- */
 (function(){

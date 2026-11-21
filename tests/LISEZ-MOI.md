@@ -30,7 +30,7 @@ changement, pointages intacts, 120 fiches d'un coup.
 ```
 cd tests && python3 t_app.py
 ```
-408 tests, dont le **portier d'authentification exercé tel quel** : tout endpoint
+412 tests, dont le **portier d'authentification exercé tel quel** : tout endpoint
 de l'espace salarié doit passer sans session (c'est l'oubli qui empêchait les votes
 de partir), tout le reste doit rester fermé, et un compte en lecture seule ne doit
 rien pouvoir écrire. Depuis cette version, le **chef d'atelier** est explicitement
@@ -85,7 +85,7 @@ accents — et la cohérence de leurs `goto` sont vérifiés. Ils se régénère
 cd tests && node mock.js &
 node t_suivi.js
 ```
-213 tests dans un vrai navigateur (dont la saisie des passages). Relancez `mock.js` avant chaque suite navigateur : les suites
+261 tests dans un vrai navigateur (dont la saisie des passages, les fiches de pointage et les absences non justifiées au-delà de 48 h). Relancez `mock.js` avant chaque suite navigateur : les suites
 modifient ses données (vote enregistré, réglages, corrections).
 
 ## Déploiement en conteneur (Railway, Docker)

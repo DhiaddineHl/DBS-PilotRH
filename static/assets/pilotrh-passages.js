@@ -56,7 +56,7 @@ function openPassages(ds, id, apres){
   const clos = moisClos(ds.slice(0,7));
   const lecture = !can('edit') || clos;
   const liste = passagesDe(rec);
-  const n = Math.min(MAX_PASSAGES, Math.max(4, liste.length + (liste.length % 2)));
+  const n = Math.min(MAX_PASSAGES, Math.max(6, liste.length + (liste.length % 2)));
   PS = {ds, id, apres:apres||'', n, aHeures:!!(rec && (rec.hM != null || rec.hsM != null))};
   const reg = regimeFor(ds);
   openModal('<div class="modal-head">'+I.clock+'<h3>Passages du '+fmtDate(ds)+' — '+esc(empName(id))+'</h3>'+
